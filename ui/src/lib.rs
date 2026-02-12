@@ -1,16 +1,23 @@
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use basscript_core::{Cursor, Document, DocumentPath, ParsedLine, Position, parse_document};
 use bevy::{
+    log::{info, warn},
     input::{
         keyboard::{Key, KeyboardInput},
         mouse::{MouseScrollUnit, MouseWheel},
     },
     prelude::*,
+    tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
     text::{LineHeight, TextLayoutInfo},
     ui::RelativeCursorPosition,
+    window::{PrimaryWindow, RawHandleWrapper},
 };
-use rfd::FileDialog;
+use rfd::AsyncFileDialog;
 
 const FONT_PATH: &str = "fonts/Courier Prime/Courier Prime.ttf";
 const DEFAULT_LOAD_PATH: &str = "docs/humanDOC.md";
@@ -32,6 +39,8 @@ pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EditorState>()
+            .init_resource::<DialogState>()
+            .insert_non_send_resource(DialogMainThreadMarker)
             .add_systems(Startup, setup)
             .add_systems(
                 Update,
@@ -39,6 +48,7 @@ impl Plugin for UiPlugin {
                     handle_toolbar_buttons,
                     style_toolbar_buttons,
                     handle_file_shortcuts,
+                    resolve_dialog_results,
                     handle_text_input,
                     handle_navigation_input,
                     handle_mouse_scroll,
@@ -90,6 +100,47 @@ struct EditorState {
     status_message: String,
     caret_blink: Timer,
     caret_visible: bool,
+}
+
+#[derive(Resource, Default)]
+struct DialogState {
+    pending: Option<PendingDialog>,
+    opened_at: Option<Instant>,
+    last_watchdog_log_at: Option<Instant>,
+    poll_count: u64,
+}
+
+enum PendingDialog {
+    Load(Task<Option<PathBuf>>),
+    Save(Task<Option<PathBuf>>),
+}
+
+struct DialogMainThreadMarker;
+
+impl DialogState {
+    fn begin_pending(&mut self, pending: PendingDialog) {
+        let now = Instant::now();
+        self.pending = Some(pending);
+        self.opened_at = Some(now);
+        self.last_watchdog_log_at = Some(now);
+        self.poll_count = 0;
+    }
+
+    fn clear_pending(&mut self) {
+        self.pending = None;
+        self.opened_at = None;
+        self.last_watchdog_log_at = None;
+        self.poll_count = 0;
+    }
+}
+
+impl PendingDialog {
+    fn kind_name(&self) -> &'static str {
+        match self {
+            PendingDialog::Load(_) => "load",
+            PendingDialog::Save(_) => "save",
+        }
+    }
 }
 
 impl FromWorld for EditorState {
@@ -249,7 +300,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 children![
                     (
                         Text::new(
-                            "Ctrl+O load | Ctrl+S save | arrows/home/end/page keys move cursor | mouse wheel scroll | click to place cursor",
+                            "Cmd/Ctrl+O load | Cmd/Ctrl+S save | arrows/home/end/page keys move cursor | mouse wheel scroll | click to place cursor",
                         ),
                         TextFont {
                             font: font.clone(),
@@ -417,17 +468,29 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle
 }
 
 fn handle_toolbar_buttons(
+    _dialog_main_thread: NonSend<DialogMainThreadMarker>,
     interaction_query: Query<(&Interaction, &ToolbarAction), (Changed<Interaction>, With<Button>)>,
+    primary_window_query: Query<&RawHandleWrapper, With<PrimaryWindow>>,
     mut state: ResMut<EditorState>,
+    mut dialogs: ResMut<DialogState>,
 ) {
+    let parent_handle = primary_window_query.iter().next();
+
     for (interaction, action) in interaction_query.iter() {
         if *interaction != Interaction::Pressed {
             continue;
         }
 
+        info!(
+            "[dialog] Toolbar {:?} pressed (parent_handle: {}, has_pending: {})",
+            action,
+            parent_handle.is_some(),
+            dialogs.pending.is_some()
+        );
+
         match action {
-            ToolbarAction::Load => open_load_dialog(&mut state),
-            ToolbarAction::SaveAs => open_save_dialog(&mut state),
+            ToolbarAction::Load => open_load_dialog(&mut state, &mut dialogs, parent_handle),
+            ToolbarAction::SaveAs => open_save_dialog(&mut state, &mut dialogs, parent_handle),
         }
     }
 }
@@ -447,42 +510,130 @@ fn style_toolbar_buttons(
     }
 }
 
-fn handle_file_shortcuts(keys: Res<ButtonInput<KeyCode>>, mut state: ResMut<EditorState>) {
-    let ctrl_down = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
-    if !ctrl_down {
+fn handle_file_shortcuts(
+    _dialog_main_thread: NonSend<DialogMainThreadMarker>,
+    keys: Res<ButtonInput<KeyCode>>,
+    primary_window_query: Query<&RawHandleWrapper, With<PrimaryWindow>>,
+    mut state: ResMut<EditorState>,
+    mut dialogs: ResMut<DialogState>,
+) {
+    let parent_handle = primary_window_query.iter().next();
+    let shortcut_down = keys.any_pressed([
+        KeyCode::ControlLeft,
+        KeyCode::ControlRight,
+        KeyCode::SuperLeft,
+        KeyCode::SuperRight,
+    ]);
+    if !shortcut_down {
         return;
     }
 
     if keys.just_pressed(KeyCode::KeyO) {
-        open_load_dialog(&mut state);
+        info!(
+            "[dialog] Shortcut Cmd/Ctrl+O detected (parent_handle: {}, has_pending: {})",
+            parent_handle.is_some(),
+            dialogs.pending.is_some()
+        );
+        open_load_dialog(&mut state, &mut dialogs, parent_handle);
     }
 
     if keys.just_pressed(KeyCode::KeyS) {
-        open_save_dialog(&mut state);
+        info!(
+            "[dialog] Shortcut Cmd/Ctrl+S detected (parent_handle: {}, has_pending: {})",
+            parent_handle.is_some(),
+            dialogs.pending.is_some()
+        );
+        open_save_dialog(&mut state, &mut dialogs, parent_handle);
     }
 }
 
-fn open_load_dialog(state: &mut EditorState) {
-    let mut dialog = FileDialog::new()
+fn open_load_dialog(
+    state: &mut EditorState,
+    dialogs: &mut DialogState,
+    parent_handle: Option<&RawHandleWrapper>,
+) {
+    if dialogs.pending.is_some() {
+        let pending_kind = dialogs
+            .pending
+            .as_ref()
+            .map_or("unknown", PendingDialog::kind_name);
+        warn!(
+            "[dialog] Ignoring load request because {} dialog is already pending",
+            pending_kind
+        );
+        state.status_message = "A file dialog is already open.".to_string();
+        return;
+    }
+
+    info!(
+        "[dialog] Starting load dialog request on thread {:?}",
+        std::thread::current().id()
+    );
+
+    let mut dialog = AsyncFileDialog::new()
         .set_title("Open Script File")
         .add_filter("Script files", &["fountain", "txt", "md"]);
 
     if let Some(directory) = preferred_dialog_directory(state) {
+        info!("[dialog] Load dialog preferred directory: {}", directory.display());
         dialog = dialog.set_directory(directory);
+    } else {
+        warn!("[dialog] No preferred directory found for load dialog");
     }
 
-    if let Some(path) = dialog.pick_file() {
-        state.load_from_path(path);
-    }
+    dialog = attach_dialog_parent(dialog, parent_handle);
+
+    info!("[dialog] Creating native load dialog future");
+    let request = dialog.pick_file();
+    info!("[dialog] Native load future created; spawning task");
+
+    let task = AsyncComputeTaskPool::get().spawn(async move {
+        info!("[dialog] Load task awaiting picker result...");
+        let result = request.await.map(|file_handle| file_handle.path().to_path_buf());
+        match &result {
+            Some(path) => info!("[dialog] Load task received path: {}", path.display()),
+            None => info!("[dialog] Load task returned: canceled"),
+        }
+        result
+    });
+
+    dialogs.begin_pending(PendingDialog::Load(task));
+    info!("[dialog] Load dialog task spawned");
+    state.status_message = "Opening file picker...".to_string();
 }
 
-fn open_save_dialog(state: &mut EditorState) {
-    let mut dialog = FileDialog::new()
+fn open_save_dialog(
+    state: &mut EditorState,
+    dialogs: &mut DialogState,
+    parent_handle: Option<&RawHandleWrapper>,
+) {
+    if dialogs.pending.is_some() {
+        let pending_kind = dialogs
+            .pending
+            .as_ref()
+            .map_or("unknown", PendingDialog::kind_name);
+        warn!(
+            "[dialog] Ignoring save request because {} dialog is already pending",
+            pending_kind
+        );
+        state.status_message = "A file dialog is already open.".to_string();
+        return;
+    }
+
+    info!(
+        "[dialog] Starting save dialog request on thread {:?}",
+        std::thread::current().id()
+    );
+
+    let mut dialog = AsyncFileDialog::new()
         .set_title("Save Script File")
         .add_filter("Script files", &["fountain", "txt", "md"]);
 
     if let Some(directory) = preferred_dialog_directory(state) {
+        info!("[dialog] Save dialog preferred directory: {}", directory.display());
         dialog = dialog.set_directory(directory);
+    } else {
+        warn!("[dialog] No preferred directory found for save dialog");
     }
 
     let default_name = state
@@ -493,10 +644,116 @@ fn open_save_dialog(state: &mut EditorState) {
         .unwrap_or("script.fountain")
         .to_string();
 
+    info!("[dialog] Save dialog default filename: {}", default_name);
     dialog = dialog.set_file_name(default_name.as_str());
+    dialog = attach_dialog_parent(dialog, parent_handle);
 
-    if let Some(path) = dialog.save_file() {
-        state.save_to_path(path);
+    info!("[dialog] Creating native save dialog future");
+    let request = dialog.save_file();
+    info!("[dialog] Native save future created; spawning task");
+
+    let task = AsyncComputeTaskPool::get().spawn(async move {
+        info!("[dialog] Save task awaiting picker result...");
+        let result = request.await.map(|file_handle| file_handle.path().to_path_buf());
+        match &result {
+            Some(path) => info!("[dialog] Save task received path: {}", path.display()),
+            None => info!("[dialog] Save task returned: canceled"),
+        }
+        result
+    });
+
+    dialogs.begin_pending(PendingDialog::Save(task));
+    info!("[dialog] Save dialog task spawned");
+    state.status_message = "Opening save dialog...".to_string();
+}
+
+fn attach_dialog_parent(
+    dialog: AsyncFileDialog,
+    parent_handle: Option<&RawHandleWrapper>,
+) -> AsyncFileDialog {
+    let Some(parent_handle) = parent_handle else {
+        warn!("[dialog] No primary window handle found; opening unparented dialog");
+        return dialog;
+    };
+
+    // SAFETY: This is called from Bevy update systems on the main app thread.
+    let handle = unsafe { parent_handle.get_handle() };
+    info!("[dialog] Attached dialog parent to primary window handle");
+    dialog.set_parent(&handle)
+}
+
+fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<DialogState>) {
+    let Some(pending) = dialogs.pending.as_mut() else {
+        return;
+    };
+    let pending_kind = pending.kind_name();
+
+    enum DialogResult {
+        Load(Option<PathBuf>),
+        Save(Option<PathBuf>),
+    }
+
+    let finished = match pending {
+        PendingDialog::Load(task) => {
+            future::block_on(future::poll_once(task)).map(DialogResult::Load)
+        }
+        PendingDialog::Save(task) => {
+            future::block_on(future::poll_once(task)).map(DialogResult::Save)
+        }
+    };
+
+    dialogs.poll_count = dialogs.poll_count.saturating_add(1);
+
+    let now = Instant::now();
+    let should_log_watchdog = dialogs
+        .last_watchdog_log_at
+        .map_or(true, |last| now.duration_since(last) >= Duration::from_secs(2));
+    if should_log_watchdog {
+        if let Some(opened_at) = dialogs.opened_at {
+            let elapsed_ms = opened_at.elapsed().as_millis();
+            info!(
+                "[dialog] {} dialog pending for {}ms (poll_count={})",
+                pending_kind,
+                elapsed_ms,
+                dialogs.poll_count
+            );
+        }
+        dialogs.last_watchdog_log_at = Some(now);
+    }
+
+    let Some(result) = finished else {
+        return;
+    };
+
+    let elapsed_ms = dialogs
+        .opened_at
+        .map_or(0_u128, |opened_at| opened_at.elapsed().as_millis());
+    info!(
+        "[dialog] {} dialog future resolved after {}ms (poll_count={})",
+        pending_kind,
+        elapsed_ms,
+        dialogs.poll_count
+    );
+
+    dialogs.clear_pending();
+
+    match result {
+        DialogResult::Load(Some(path)) => {
+            info!("[dialog] Loading selected path: {}", path.display());
+            state.load_from_path(path);
+        }
+        DialogResult::Load(None) => {
+            info!("[dialog] Load dialog canceled by user");
+            state.status_message = "Load canceled.".to_string();
+        }
+        DialogResult::Save(Some(path)) => {
+            info!("[dialog] Saving to selected path: {}", path.display());
+            state.save_to_path(path);
+        }
+        DialogResult::Save(None) => {
+            info!("[dialog] Save dialog canceled by user");
+            state.status_message = "Save canceled.".to_string();
+        }
     }
 }
 
@@ -521,7 +778,12 @@ fn handle_text_input(
     body_query: Query<&ComputedNode, With<PanelBody>>,
     mut state: ResMut<EditorState>,
 ) {
-    if keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
+    if keys.any_pressed([
+        KeyCode::ControlLeft,
+        KeyCode::ControlRight,
+        KeyCode::SuperLeft,
+        KeyCode::SuperRight,
+    ]) {
         return;
     }
 
