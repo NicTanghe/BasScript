@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use basscript_core::{Cursor, Document, DocumentPath, ParsedLine, Position, parse_document};
 use bevy::{
@@ -730,8 +730,17 @@ fn handle_mouse_click(
         let local_x = (normalized.x * size.x - TEXT_PADDING_X).max(0.0);
         let local_y = (normalized.y * size.y - TEXT_PADDING_Y).max(0.0);
 
-        let line_offset = ((local_y / LINE_HEIGHT).floor().max(0.0) as usize)
-            .min(visible_lines.saturating_sub(1));
+        let panel_layout = match panel.kind {
+            PanelKind::Plain => plain_layout,
+            PanelKind::Processed => processed_layout,
+        };
+
+        let line_offset = panel_layout
+            .and_then(|layout| line_index_from_layout_y(layout, local_y, visible_lines))
+            .unwrap_or_else(|| {
+                ((local_y / LINE_HEIGHT).floor().max(0.0) as usize)
+                    .min(visible_lines.saturating_sub(1))
+            });
 
         let line = state
             .top_line
@@ -847,16 +856,19 @@ fn render_editor(
         let clamped_display_column = display_column.min(line_text.chars().count());
         let byte_index = char_to_byte_index(line_text, clamped_display_column);
 
-        let caret_x = match panel_caret.kind {
-            PanelKind::Plain => plain_layout
-                .and_then(|layout| caret_x_from_layout(layout, line_offset, line_text, byte_index)),
-            PanelKind::Processed => processed_layout
-                .and_then(|layout| caret_x_from_layout(layout, line_offset, line_text, byte_index)),
-        }
-        .unwrap_or(clamped_display_column as f32 * DEFAULT_CHAR_WIDTH);
+        let panel_layout = match panel_caret.kind {
+            PanelKind::Plain => plain_layout,
+            PanelKind::Processed => processed_layout,
+        };
+        let caret_x = panel_layout
+            .and_then(|layout| caret_x_from_layout(layout, line_offset, line_text, byte_index))
+            .unwrap_or(clamped_display_column as f32 * DEFAULT_CHAR_WIDTH);
+        let caret_top = panel_layout
+            .and_then(|layout| line_top_from_layout(layout, line_offset))
+            .unwrap_or(line_offset as f32 * LINE_HEIGHT);
 
         node.left = px(TEXT_PADDING_X + (caret_x + CARET_X_OFFSET).max(0.0));
-        node.top = px(TEXT_PADDING_Y + line_offset as f32 * LINE_HEIGHT);
+        node.top = px(TEXT_PADDING_Y + caret_top.max(0.0));
         node.width = px(CARET_WIDTH);
         node.height = px(LINE_HEIGHT);
         *visibility = Visibility::Visible;
@@ -922,6 +934,91 @@ fn panel_layout_info<'a>(
         .iter()
         .find(|(panel_text, _)| panel_text.kind == kind)
         .map(|(_, layout)| layout)
+}
+
+fn layout_line_centers(layout: &TextLayoutInfo) -> Vec<(usize, f32)> {
+    let mut per_line = BTreeMap::<usize, (f32, usize)>::new();
+
+    for glyph in &layout.glyphs {
+        let entry = per_line.entry(glyph.line_index).or_insert((0.0, 0));
+        entry.0 += glyph.position.y;
+        entry.1 += 1;
+    }
+
+    per_line
+        .into_iter()
+        .filter_map(|(line_index, (sum_y, count))| {
+            (count > 0).then_some((line_index, sum_y / count as f32))
+        })
+        .collect()
+}
+
+fn fit_line_centers(samples: &[(usize, f32)]) -> Option<(f32, f32)> {
+    if samples.is_empty() {
+        return None;
+    }
+
+    if samples.len() == 1 {
+        let x = samples[0].0 as f32;
+        let y = samples[0].1;
+        return Some((y - x * LINE_HEIGHT, LINE_HEIGHT));
+    }
+
+    let n = samples.len() as f32;
+    let mean_x = samples.iter().map(|(x, _)| *x as f32).sum::<f32>() / n;
+    let mean_y = samples.iter().map(|(_, y)| *y).sum::<f32>() / n;
+
+    let (numerator, denominator) = samples.iter().fold((0.0_f32, 0.0_f32), |acc, (x, y)| {
+        let dx = *x as f32 - mean_x;
+        let dy = *y - mean_y;
+        (acc.0 + dx * dy, acc.1 + dx * dx)
+    });
+
+    let mut slope = if denominator > f32::EPSILON {
+        numerator / denominator
+    } else {
+        LINE_HEIGHT
+    };
+
+    if !slope.is_finite() || slope < 0.1 {
+        slope = LINE_HEIGHT;
+    }
+
+    let intercept = mean_y - slope * mean_x;
+    Some((intercept, slope))
+}
+
+fn line_center_from_layout(layout: &TextLayoutInfo, line_index: usize) -> Option<f32> {
+    let samples = layout_line_centers(layout);
+    let (intercept, slope) = fit_line_centers(&samples)?;
+    Some(intercept + slope * line_index as f32)
+}
+
+fn line_top_from_layout(layout: &TextLayoutInfo, line_index: usize) -> Option<f32> {
+    line_center_from_layout(layout, line_index).map(|center| center - LINE_HEIGHT * 0.5)
+}
+
+fn line_index_from_layout_y(
+    layout: &TextLayoutInfo,
+    y: f32,
+    visible_lines: usize,
+) -> Option<usize> {
+    let samples = layout_line_centers(layout);
+    let (intercept, slope) = fit_line_centers(&samples)?;
+
+    let mut best_line = 0usize;
+    let mut best_distance = f32::MAX;
+
+    for line in 0..visible_lines.max(1) {
+        let center_y = intercept + slope * line as f32;
+        let distance = (center_y - y).abs();
+        if distance < best_distance {
+            best_distance = distance;
+            best_line = line;
+        }
+    }
+
+    Some(best_line)
 }
 
 fn line_boundaries(
