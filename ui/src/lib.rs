@@ -1296,7 +1296,7 @@ fn handle_mouse_click(
     }
     let visible_lines = viewport_lines_from_panels(&panel_query);
     let plain_lines = visible_plain_lines(&state, visible_lines);
-    let processed_lines = visible_processed_lines(&state, visible_lines);
+    let processed_view = build_processed_view(&state, visible_lines);
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
     let processed_layout = panel_layout_info(&text_layout_query, PanelKind::Processed);
 
@@ -1323,63 +1323,66 @@ fn handle_mouse_click(
             PanelKind::Plain => plain_layout,
             PanelKind::Processed => processed_layout,
         };
+        let panel_line_count = match panel.kind {
+            PanelKind::Plain => plain_lines.len().max(1),
+            PanelKind::Processed => processed_view.lines.len().max(1),
+        };
 
+        // Anchor Y mapping to measured layout origin while keeping fixed line-height steps.
         let line_offset = panel_layout
             .and_then(|layout| {
-                line_index_from_layout_y(layout, local_y, visible_lines, inverse_scale)
+                line_index_from_layout_y(layout, local_y, panel_line_count, inverse_scale)
             })
             .unwrap_or_else(|| {
                 ((local_y / LINE_HEIGHT).floor().max(0.0) as usize)
-                    .min(visible_lines.saturating_sub(1))
+                    .min(panel_line_count.saturating_sub(1))
             });
 
-        let line = state
-            .top_line
-            .saturating_add(line_offset)
-            .min(state.document.line_count().saturating_sub(1));
-        let visible_offset = line.saturating_sub(state.top_line);
-        let display_line = match panel.kind {
-            PanelKind::Plain => plain_lines
-                .get(visible_offset)
-                .map_or("", |line| line.as_str()),
-            PanelKind::Processed => processed_lines
-                .get(visible_offset)
-                .map_or("", |line| line.as_str()),
-        };
-
-        let display_column = match panel.kind {
-            PanelKind::Plain => plain_layout
-                .and_then(|layout| {
-                    column_from_layout_x(
-                        layout,
-                        visible_offset,
-                        local_x,
-                        display_line,
-                        inverse_scale,
-                    )
-                })
-                .unwrap_or_else(|| (local_x / DEFAULT_CHAR_WIDTH).round().max(0.0) as usize),
-            PanelKind::Processed => processed_layout
-                .and_then(|layout| {
-                    column_from_layout_x(
-                        layout,
-                        visible_offset,
-                        local_x,
-                        display_line,
-                        inverse_scale,
-                    )
-                })
-                .unwrap_or_else(|| (local_x / DEFAULT_CHAR_WIDTH).round().max(0.0) as usize),
-        };
-
-        let raw_column = match panel.kind {
-            PanelKind::Plain => display_column,
+        let (line, raw_column) = match panel.kind {
+            PanelKind::Plain => {
+                let line = state
+                    .top_line
+                    .saturating_add(line_offset)
+                    .min(state.document.line_count().saturating_sub(1));
+                let visible_offset = line.saturating_sub(state.top_line);
+                let display_line = plain_lines
+                    .get(visible_offset)
+                    .map_or("", |line| line.as_str());
+                let display_column = plain_layout
+                    .and_then(|layout| {
+                        column_from_layout_x(
+                            layout,
+                            visible_offset,
+                            local_x,
+                            display_line,
+                            inverse_scale,
+                        )
+                    })
+                    .unwrap_or_else(|| (local_x / DEFAULT_CHAR_WIDTH).round().max(0.0) as usize);
+                (line, display_column)
+            }
             PanelKind::Processed => {
-                let indent = state
-                    .parsed
-                    .get(line)
-                    .map_or(0, basscript_core::ParsedLine::indent_width);
-                display_column.saturating_sub(indent)
+                let visual_index = line_offset.min(processed_view.lines.len().saturating_sub(1));
+                let Some(visual_line) = processed_view.lines.get(visual_index) else {
+                    continue;
+                };
+
+                let display_line = visual_line.text.as_str();
+                let display_column = processed_layout
+                    .and_then(|layout| {
+                        column_from_layout_x(
+                            layout,
+                            visual_index,
+                            local_x,
+                            display_line,
+                            inverse_scale,
+                        )
+                    })
+                    .unwrap_or_else(|| (local_x / DEFAULT_CHAR_WIDTH).round().max(0.0) as usize);
+
+                let raw_column =
+                    processed_raw_column_from_display(&state, visual_line, display_column);
+                (visual_line.source_line, raw_column)
             }
         };
 
@@ -1421,7 +1424,7 @@ fn render_editor(
     state.clamp_scroll(visible_lines);
 
     let plain_lines = visible_plain_lines(&state, visible_lines);
-    let processed_lines = visible_processed_lines(&state, visible_lines);
+    let processed_view = build_processed_view(&state, visible_lines);
     let plain_view = plain_lines.join("\n");
 
     for (panel_text, mut text) in text_query.iter_mut() {
@@ -1431,7 +1434,7 @@ fn render_editor(
         };
     }
 
-    apply_processed_styles(&mut processed_span_query, &state, visible_lines, &fonts);
+    apply_processed_styles(&mut processed_span_query, &state, &processed_view, &fonts);
 
     if let Ok(mut status) = status_query.single_mut() {
         **status = state.visible_status();
@@ -1440,49 +1443,56 @@ fn render_editor(
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
     let processed_layout = panel_layout_info(&text_layout_query, PanelKind::Processed);
 
-    let in_view = state.cursor.position.line >= state.top_line
-        && state.cursor.position.line < state.top_line + visible_lines;
-
     for (panel_caret, mut node, mut visibility) in caret_query.iter_mut() {
-        if !state.caret_visible || !in_view {
+        if !state.caret_visible {
             *visibility = Visibility::Hidden;
             continue;
         }
 
-        let line_offset = state.cursor.position.line - state.top_line;
+        let (line_offset, display_column, line_text, panel_layout) = match panel_caret.kind {
+            PanelKind::Plain => {
+                let in_view = state.cursor.position.line >= state.top_line
+                    && state.cursor.position.line < state.top_line + visible_lines;
+                if !in_view {
+                    *visibility = Visibility::Hidden;
+                    continue;
+                }
 
-        let display_column = match panel_caret.kind {
-            PanelKind::Plain => state.cursor.position.column,
-            PanelKind::Processed => state
-                .parsed
-                .get(state.cursor.position.line)
-                .map_or(state.cursor.position.column, |line| {
-                    line.processed_column(state.cursor.position.column)
-                }),
+                let line_offset = state.cursor.position.line - state.top_line;
+                let line_text = plain_lines
+                    .get(line_offset)
+                    .map_or("", |line| line.as_str());
+                (
+                    line_offset,
+                    state.cursor.position.column,
+                    line_text,
+                    plain_layout,
+                )
+            }
+            PanelKind::Processed => {
+                let Some((visual_index, display_column, line_text)) =
+                    processed_caret_visual(&state, &processed_view)
+                else {
+                    *visibility = Visibility::Hidden;
+                    continue;
+                };
+
+                (visual_index, display_column, line_text, processed_layout)
+            }
         };
 
-        let line_text = match panel_caret.kind {
-            PanelKind::Plain => plain_lines
-                .get(line_offset)
-                .map_or("", |line| line.as_str()),
-            PanelKind::Processed => processed_lines
-                .get(line_offset)
-                .map_or("", |line| line.as_str()),
-        };
         let clamped_display_column = display_column.min(line_text.chars().count());
         let byte_index = char_to_byte_index(line_text, clamped_display_column);
-
-        let panel_layout = match panel_caret.kind {
-            PanelKind::Plain => plain_layout,
-            PanelKind::Processed => processed_layout,
-        };
         let caret_x = panel_layout
             .and_then(|layout| {
                 caret_x_from_layout(layout, line_offset, line_text, byte_index, inverse_scale)
             })
             .unwrap_or(clamped_display_column as f32 * DEFAULT_CHAR_WIDTH);
         let caret_top = panel_layout
-            .and_then(|layout| line_top_from_layout(layout, line_offset, inverse_scale))
+            .and_then(|layout| {
+                caret_top_from_layout(layout, line_offset, byte_index, inverse_scale)
+                    .or_else(|| line_top_from_layout(layout, line_offset, inverse_scale))
+            })
             .unwrap_or(line_offset as f32 * LINE_HEIGHT);
 
         node.left = px(TEXT_PADDING_X + (caret_x + CARET_X_OFFSET).max(0.0));
@@ -1665,14 +1675,22 @@ fn processed_caret_visual<'a>(
             || next_start.is_some_and(|start| raw_column < start)
             || entry_index + 1 == relevant.len()
         {
-            return Some((*visual_index, indent.saturating_add(local_column), &visual_line.text));
+            return Some((
+                *visual_index,
+                indent.saturating_add(local_column),
+                &visual_line.text,
+            ));
         }
     }
 
     let default_len = default_line
         .raw_end_column
         .saturating_sub(default_line.raw_start_column);
-    Some((default_index, indent.saturating_add(default_len), &default_line.text))
+    Some((
+        default_index,
+        indent.saturating_add(default_len),
+        &default_line.text,
+    ))
 }
 
 fn apply_processed_styles(
@@ -1753,66 +1771,74 @@ fn panel_layout_info<'a>(
         .map(|(_, layout)| layout)
 }
 
-fn layout_line_centers(layout: &TextLayoutInfo, inverse_scale: f32) -> Vec<(usize, f32)> {
-    let mut per_line = BTreeMap::<usize, (f32, usize)>::new();
+fn layout_line_bounds(layout: &TextLayoutInfo, inverse_scale: f32) -> Vec<(usize, f32, f32)> {
+    let mut per_line = BTreeMap::<usize, (f32, f32)>::new();
 
     for glyph in &layout.glyphs {
-        let entry = per_line.entry(glyph.line_index).or_insert((0.0, 0));
-        entry.0 += glyph.position.y * inverse_scale;
-        entry.1 += 1;
+        let top = glyph.position.y * inverse_scale;
+        let bottom = (glyph.position.y + glyph.size.y) * inverse_scale;
+        let entry = per_line.entry(glyph.line_index).or_insert((top, bottom));
+        entry.0 = entry.0.min(top);
+        entry.1 = entry.1.max(bottom);
     }
 
     per_line
         .into_iter()
-        .filter_map(|(line_index, (sum_y, count))| {
-            (count > 0).then_some((line_index, sum_y / count as f32))
-        })
+        .map(|(line_index, (top, bottom))| (line_index, top, bottom))
         .collect()
 }
 
-fn fit_line_centers(samples: &[(usize, f32)]) -> Option<(f32, f32)> {
+fn median(values: &mut [f32]) -> Option<f32> {
+    if values.is_empty() {
+        return None;
+    }
+
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    Some(values[values.len().saturating_sub(1) / 2])
+}
+
+fn default_line_step(samples: &[(usize, f32)], fallback_height: f32) -> f32 {
+    let mut steps = samples
+        .windows(2)
+        .filter_map(|window| {
+            let left = window[0];
+            let right = window[1];
+            let index_delta = right.0.saturating_sub(left.0);
+            if index_delta == 0 {
+                return None;
+            }
+
+            let step = (right.1 - left.1) / index_delta as f32;
+            (step.is_finite() && step.abs() > 0.1).then_some(step)
+        })
+        .collect::<Vec<_>>();
+
+    median(&mut steps).unwrap_or(fallback_height.max(1.0))
+}
+
+fn interpolate_line_value(samples: &[(usize, f32)], line_index: usize, step: f32) -> Option<f32> {
     if samples.is_empty() {
         return None;
     }
 
-    if samples.len() == 1 {
-        let x = samples[0].0 as f32;
-        let y = samples[0].1;
-        return Some((y - x * LINE_HEIGHT, LINE_HEIGHT));
+    match samples.binary_search_by_key(&line_index, |(index, _)| *index) {
+        Ok(position) => Some(samples[position].1),
+        Err(insert) if insert > 0 && insert < samples.len() => {
+            let (left_index, left_value) = samples[insert - 1];
+            let (right_index, right_value) = samples[insert];
+            let index_span = right_index.saturating_sub(left_index).max(1);
+            let t = line_index.saturating_sub(left_index) as f32 / index_span as f32;
+            Some(left_value + (right_value - left_value) * t)
+        }
+        Err(0) => {
+            let (first_index, first_value) = samples[0];
+            Some(first_value - step * first_index.saturating_sub(line_index) as f32)
+        }
+        Err(_) => {
+            let (last_index, last_value) = samples[samples.len().saturating_sub(1)];
+            Some(last_value + step * line_index.saturating_sub(last_index) as f32)
+        }
     }
-
-    let n = samples.len() as f32;
-    let mean_x = samples.iter().map(|(x, _)| *x as f32).sum::<f32>() / n;
-    let mean_y = samples.iter().map(|(_, y)| *y).sum::<f32>() / n;
-
-    let (numerator, denominator) = samples.iter().fold((0.0_f32, 0.0_f32), |acc, (x, y)| {
-        let dx = *x as f32 - mean_x;
-        let dy = *y - mean_y;
-        (acc.0 + dx * dy, acc.1 + dx * dx)
-    });
-
-    let mut slope = if denominator > f32::EPSILON {
-        numerator / denominator
-    } else {
-        LINE_HEIGHT
-    };
-
-    if !slope.is_finite() || slope < 0.1 {
-        slope = LINE_HEIGHT;
-    }
-
-    let intercept = mean_y - slope * mean_x;
-    Some((intercept, slope))
-}
-
-fn line_center_from_layout(
-    layout: &TextLayoutInfo,
-    line_index: usize,
-    inverse_scale: f32,
-) -> Option<f32> {
-    let samples = layout_line_centers(layout, inverse_scale);
-    let (intercept, slope) = fit_line_centers(&samples)?;
-    Some(intercept + slope * line_index as f32)
 }
 
 fn line_top_from_layout(
@@ -1820,8 +1846,19 @@ fn line_top_from_layout(
     line_index: usize,
     inverse_scale: f32,
 ) -> Option<f32> {
-    line_center_from_layout(layout, line_index, inverse_scale)
-        .map(|center| center - LINE_HEIGHT * 0.5)
+    let bounds = layout_line_bounds(layout, inverse_scale);
+    let mut heights = bounds
+        .iter()
+        .map(|(_, top, bottom)| (bottom - top).max(1.0))
+        .collect::<Vec<_>>();
+    let fallback_height = median(&mut heights).unwrap_or(LINE_HEIGHT);
+    let top_samples = bounds
+        .iter()
+        .map(|(index, top, _)| (*index, *top))
+        .collect::<Vec<_>>();
+    let step = default_line_step(&top_samples, fallback_height);
+
+    interpolate_line_value(&top_samples, line_index, step)
 }
 
 fn line_index_from_layout_y(
@@ -1830,14 +1867,30 @@ fn line_index_from_layout_y(
     visible_lines: usize,
     inverse_scale: f32,
 ) -> Option<usize> {
-    let samples = layout_line_centers(layout, inverse_scale);
-    let (intercept, slope) = fit_line_centers(&samples)?;
+    let bounds = layout_line_bounds(layout, inverse_scale);
+    if bounds.is_empty() {
+        return None;
+    }
+
+    let mut heights = bounds
+        .iter()
+        .map(|(_, top, bottom)| (bottom - top).max(1.0))
+        .collect::<Vec<_>>();
+    let fallback_height = median(&mut heights).unwrap_or(LINE_HEIGHT);
+
+    let center_samples = bounds
+        .iter()
+        .map(|(index, top, bottom)| (*index, (*top + *bottom) * 0.5))
+        .collect::<Vec<_>>();
+    let center_step = default_line_step(&center_samples, fallback_height);
 
     let mut best_line = 0usize;
     let mut best_distance = f32::MAX;
-
     for line in 0..visible_lines.max(1) {
-        let center_y = intercept + slope * line as f32;
+        let Some(center_y) = interpolate_line_value(&center_samples, line, center_step) else {
+            continue;
+        };
+
         let distance = (center_y - y).abs();
         if distance < best_distance {
             best_distance = distance;
@@ -1846,6 +1899,46 @@ fn line_index_from_layout_y(
     }
 
     Some(best_line)
+}
+
+fn caret_top_from_layout(
+    layout: &TextLayoutInfo,
+    line_index: usize,
+    byte_index: usize,
+    inverse_scale: f32,
+) -> Option<f32> {
+    let mut line_glyphs = layout
+        .glyphs
+        .iter()
+        .filter(|glyph| glyph.line_index == line_index)
+        .collect::<Vec<_>>();
+    if line_glyphs.is_empty() {
+        return None;
+    }
+
+    line_glyphs.sort_by_key(|glyph| (glyph.byte_index, glyph.byte_length));
+
+    line_glyphs
+        .iter()
+        .min_by(|left, right| {
+            byte_distance(byte_index, left.byte_index, left.byte_length).cmp(&byte_distance(
+                byte_index,
+                right.byte_index,
+                right.byte_length,
+            ))
+        })
+        .map(|glyph| glyph.position.y * inverse_scale)
+}
+
+fn byte_distance(target: usize, start: usize, len: usize) -> usize {
+    let end = start.saturating_add(len);
+    if target < start {
+        start.saturating_sub(target)
+    } else if target > end {
+        target.saturating_sub(end)
+    } else {
+        0
+    }
 }
 
 fn line_boundaries(
