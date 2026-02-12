@@ -1026,6 +1026,7 @@ fn line_boundaries(
     line_index: usize,
     line_text: &str,
 ) -> Vec<(usize, f32)> {
+    let line_len = line_text.len();
     let mut glyphs = layout
         .glyphs
         .iter()
@@ -1033,34 +1034,91 @@ fn line_boundaries(
         .collect::<Vec<_>>();
 
     if glyphs.is_empty() {
-        return vec![(0, 0.0)];
+        let mut boundaries = Vec::with_capacity(line_len.saturating_add(1));
+        for byte_index in 0..=line_len {
+            boundaries.push((byte_index, byte_index as f32 * DEFAULT_CHAR_WIDTH));
+        }
+        return boundaries;
     }
 
-    glyphs.sort_by_key(|glyph| glyph.byte_index);
+    glyphs.sort_by_key(|glyph| (glyph.byte_index, glyph.byte_length));
+    let mut anchors = BTreeMap::<usize, Vec<f32>>::new();
 
-    let first = glyphs[0];
-    let mut step_candidates = glyphs
+    for glyph in glyphs {
+        let start = glyph.byte_index.min(line_len);
+        let end = glyph
+            .byte_index
+            .saturating_add(glyph.byte_length)
+            .min(line_len);
+        let half_width = glyph.size.x * 0.5;
+        let left = glyph.position.x - half_width;
+        let right = glyph.position.x + half_width;
+
+        anchors.entry(start).or_default().push(left);
+        anchors.entry(end).or_default().push(right);
+    }
+
+    let mut known = anchors
+        .into_iter()
+        .map(|(byte_index, xs)| {
+            let sum = xs.iter().copied().sum::<f32>();
+            (byte_index, sum / xs.len() as f32)
+        })
+        .collect::<Vec<_>>();
+
+    if known.is_empty() {
+        let mut boundaries = Vec::with_capacity(line_len.saturating_add(1));
+        for byte_index in 0..=line_len {
+            boundaries.push((byte_index, byte_index as f32 * DEFAULT_CHAR_WIDTH));
+        }
+        return boundaries;
+    }
+
+    known.sort_by_key(|(byte_index, _)| *byte_index);
+    let mut step_candidates = known
         .windows(2)
         .filter_map(|window| {
             let left = window[0];
             let right = window[1];
-            let byte_gap = right.byte_index.saturating_sub(left.byte_index).max(1);
-            let delta_x = right.position.x - left.position.x;
+            let byte_gap = right.0.saturating_sub(left.0);
+            if byte_gap == 0 {
+                return None;
+            }
+            let delta_x = right.1 - left.1;
             let step = delta_x / byte_gap as f32;
-            (step > 0.5).then_some(step)
+            (step.is_finite() && step.abs() > 0.1).then_some(step)
         })
         .collect::<Vec<_>>();
 
     step_candidates.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let char_step = step_candidates
+    let byte_step = step_candidates
         .get(step_candidates.len().saturating_sub(1) / 2)
         .copied()
         .unwrap_or(DEFAULT_CHAR_WIDTH);
 
-    let origin_x = first.position.x - (first.byte_index as f32 + 0.5) * char_step;
-    let mut boundaries = Vec::with_capacity(line_text.len().saturating_add(1));
-    for byte_index in 0..=line_text.len() {
-        boundaries.push((byte_index, origin_x + byte_index as f32 * char_step));
+    let first = known[0];
+    let last = known[known.len().saturating_sub(1)];
+    let mut boundaries = Vec::with_capacity(line_len.saturating_add(1));
+    let mut segment = 0usize;
+
+    for byte_index in 0..=line_len {
+        while segment + 1 < known.len() && known[segment + 1].0 <= byte_index {
+            segment += 1;
+        }
+
+        let x = if byte_index <= first.0 {
+            first.1 - (first.0 - byte_index) as f32 * byte_step
+        } else if byte_index >= last.0 {
+            last.1 + (byte_index - last.0) as f32 * byte_step
+        } else {
+            let (left_byte, left_x) = known[segment];
+            let (right_byte, right_x) = known[segment + 1];
+            let gap = right_byte.saturating_sub(left_byte).max(1);
+            let t = byte_index.saturating_sub(left_byte) as f32 / gap as f32;
+            left_x + (right_x - left_x) * t
+        };
+
+        boundaries.push((byte_index, x));
     }
 
     boundaries
