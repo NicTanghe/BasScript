@@ -726,7 +726,8 @@ fn handle_mouse_click(
             break;
         }
 
-        let size = computed.size();
+        let inverse_scale = computed.inverse_scale_factor();
+        let size = computed.size() * inverse_scale;
         let local_x = (normalized.x * size.x - TEXT_PADDING_X).max(0.0);
         let local_y = (normalized.y * size.y - TEXT_PADDING_Y).max(0.0);
 
@@ -736,7 +737,9 @@ fn handle_mouse_click(
         };
 
         let line_offset = panel_layout
-            .and_then(|layout| line_index_from_layout_y(layout, local_y, visible_lines))
+            .and_then(|layout| {
+                line_index_from_layout_y(layout, local_y, visible_lines, inverse_scale)
+            })
             .unwrap_or_else(|| {
                 ((local_y / LINE_HEIGHT).floor().max(0.0) as usize)
                     .min(visible_lines.saturating_sub(1))
@@ -759,12 +762,24 @@ fn handle_mouse_click(
         let display_column = match panel.kind {
             PanelKind::Plain => plain_layout
                 .and_then(|layout| {
-                    column_from_layout_x(layout, visible_offset, local_x, display_line)
+                    column_from_layout_x(
+                        layout,
+                        visible_offset,
+                        local_x,
+                        display_line,
+                        inverse_scale,
+                    )
                 })
                 .unwrap_or_else(|| (local_x / DEFAULT_CHAR_WIDTH).round().max(0.0) as usize),
             PanelKind::Processed => processed_layout
                 .and_then(|layout| {
-                    column_from_layout_x(layout, visible_offset, local_x, display_line)
+                    column_from_layout_x(
+                        layout,
+                        visible_offset,
+                        local_x,
+                        display_line,
+                        inverse_scale,
+                    )
                 })
                 .unwrap_or_else(|| (local_x / DEFAULT_CHAR_WIDTH).round().max(0.0) as usize),
         };
@@ -803,6 +818,11 @@ fn render_editor(
     mut state: ResMut<EditorState>,
 ) {
     let visible_lines = viewport_lines(&body_query);
+    let inverse_scale = body_query
+        .iter()
+        .next()
+        .map(ComputedNode::inverse_scale_factor)
+        .unwrap_or(1.0);
     state.clamp_scroll(visible_lines);
 
     let plain_lines = visible_plain_lines(&state, visible_lines);
@@ -861,10 +881,12 @@ fn render_editor(
             PanelKind::Processed => processed_layout,
         };
         let caret_x = panel_layout
-            .and_then(|layout| caret_x_from_layout(layout, line_offset, line_text, byte_index))
+            .and_then(|layout| {
+                caret_x_from_layout(layout, line_offset, line_text, byte_index, inverse_scale)
+            })
             .unwrap_or(clamped_display_column as f32 * DEFAULT_CHAR_WIDTH);
         let caret_top = panel_layout
-            .and_then(|layout| line_top_from_layout(layout, line_offset))
+            .and_then(|layout| line_top_from_layout(layout, line_offset, inverse_scale))
             .unwrap_or(line_offset as f32 * LINE_HEIGHT);
 
         node.left = px(TEXT_PADDING_X + (caret_x + CARET_X_OFFSET).max(0.0));
@@ -880,7 +902,8 @@ fn viewport_lines(body_query: &Query<&ComputedNode, With<PanelBody>>) -> usize {
         return 24;
     };
 
-    let usable_height = (computed.size().y - (TEXT_PADDING_Y * 2.0)).max(LINE_HEIGHT);
+    let logical_height = computed.size().y * computed.inverse_scale_factor();
+    let usable_height = (logical_height - (TEXT_PADDING_Y * 2.0)).max(LINE_HEIGHT);
     (usable_height / LINE_HEIGHT).floor().max(1.0) as usize
 }
 
@@ -891,7 +914,8 @@ fn viewport_lines_from_panels(
         return 24;
     };
 
-    let usable_height = (computed.size().y - (TEXT_PADDING_Y * 2.0)).max(LINE_HEIGHT);
+    let logical_height = computed.size().y * computed.inverse_scale_factor();
+    let usable_height = (logical_height - (TEXT_PADDING_Y * 2.0)).max(LINE_HEIGHT);
     (usable_height / LINE_HEIGHT).floor().max(1.0) as usize
 }
 
@@ -936,12 +960,12 @@ fn panel_layout_info<'a>(
         .map(|(_, layout)| layout)
 }
 
-fn layout_line_centers(layout: &TextLayoutInfo) -> Vec<(usize, f32)> {
+fn layout_line_centers(layout: &TextLayoutInfo, inverse_scale: f32) -> Vec<(usize, f32)> {
     let mut per_line = BTreeMap::<usize, (f32, usize)>::new();
 
     for glyph in &layout.glyphs {
         let entry = per_line.entry(glyph.line_index).or_insert((0.0, 0));
-        entry.0 += glyph.position.y;
+        entry.0 += glyph.position.y * inverse_scale;
         entry.1 += 1;
     }
 
@@ -988,22 +1012,32 @@ fn fit_line_centers(samples: &[(usize, f32)]) -> Option<(f32, f32)> {
     Some((intercept, slope))
 }
 
-fn line_center_from_layout(layout: &TextLayoutInfo, line_index: usize) -> Option<f32> {
-    let samples = layout_line_centers(layout);
+fn line_center_from_layout(
+    layout: &TextLayoutInfo,
+    line_index: usize,
+    inverse_scale: f32,
+) -> Option<f32> {
+    let samples = layout_line_centers(layout, inverse_scale);
     let (intercept, slope) = fit_line_centers(&samples)?;
     Some(intercept + slope * line_index as f32)
 }
 
-fn line_top_from_layout(layout: &TextLayoutInfo, line_index: usize) -> Option<f32> {
-    line_center_from_layout(layout, line_index).map(|center| center - LINE_HEIGHT * 0.5)
+fn line_top_from_layout(
+    layout: &TextLayoutInfo,
+    line_index: usize,
+    inverse_scale: f32,
+) -> Option<f32> {
+    line_center_from_layout(layout, line_index, inverse_scale)
+        .map(|center| center - LINE_HEIGHT * 0.5)
 }
 
 fn line_index_from_layout_y(
     layout: &TextLayoutInfo,
     y: f32,
     visible_lines: usize,
+    inverse_scale: f32,
 ) -> Option<usize> {
-    let samples = layout_line_centers(layout);
+    let samples = layout_line_centers(layout, inverse_scale);
     let (intercept, slope) = fit_line_centers(&samples)?;
 
     let mut best_line = 0usize;
@@ -1025,6 +1059,7 @@ fn line_boundaries(
     layout: &TextLayoutInfo,
     line_index: usize,
     line_text: &str,
+    inverse_scale: f32,
 ) -> Vec<(usize, f32)> {
     let line_len = line_text.len();
     let mut glyphs = layout
@@ -1051,7 +1086,7 @@ fn line_boundaries(
             if byte_gap == 0 {
                 return None;
             }
-            let step = (right.position.x - left.position.x) / byte_gap as f32;
+            let step = (right.position.x - left.position.x) * inverse_scale / byte_gap as f32;
             (step.is_finite() && step.abs() > 0.1).then_some(step)
         })
         .collect::<Vec<_>>();
@@ -1072,8 +1107,9 @@ fn line_boundaries(
             .min(line_len);
         let span_bytes = end.saturating_sub(start).max(1);
         let half_width = byte_step * span_bytes as f32 * 0.5;
-        let left = glyph.position.x - half_width;
-        let right = glyph.position.x + half_width;
+        let center_x = glyph.position.x * inverse_scale;
+        let left = center_x - half_width;
+        let right = center_x + half_width;
 
         anchors.entry(start).or_default().push(left);
         anchors.entry(end).or_default().push(right);
@@ -1130,8 +1166,9 @@ fn caret_x_from_layout(
     line_index: usize,
     line_text: &str,
     byte_index: usize,
+    inverse_scale: f32,
 ) -> Option<f32> {
-    let boundaries = line_boundaries(layout, line_index, line_text);
+    let boundaries = line_boundaries(layout, line_index, line_text, inverse_scale);
     boundaries
         .iter()
         .find(|(byte, _)| *byte >= byte_index)
@@ -1144,8 +1181,9 @@ fn column_from_layout_x(
     line_index: usize,
     x: f32,
     line_text: &str,
+    inverse_scale: f32,
 ) -> Option<usize> {
-    let boundaries = line_boundaries(layout, line_index, line_text);
+    let boundaries = line_boundaries(layout, line_index, line_text, inverse_scale);
     let (best_byte, _) = boundaries.iter().min_by(|(_, ax), (_, bx)| {
         (*ax - x)
             .abs()
