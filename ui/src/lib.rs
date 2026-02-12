@@ -38,6 +38,7 @@ const TEXT_PADDING_X: f32 = 14.0;
 const TEXT_PADDING_Y: f32 = 10.0;
 const CARET_WIDTH: f32 = 2.0;
 const CARET_X_OFFSET: f32 = -1.0;
+const CARET_Y_OFFSET_FACTOR: f32 = -0.12;
 const BUTTON_NORMAL: Color = Color::srgb(0.20, 0.24, 0.29);
 const BUTTON_HOVER: Color = Color::srgb(0.28, 0.33, 0.39);
 const BUTTON_PRESSED: Color = Color::srgb(0.35, 0.43, 0.50);
@@ -1496,7 +1497,8 @@ fn render_editor(
             .unwrap_or(line_offset as f32 * LINE_HEIGHT);
 
         node.left = px(TEXT_PADDING_X + (caret_x + CARET_X_OFFSET).max(0.0));
-        node.top = px(TEXT_PADDING_Y + caret_top.max(0.0));
+        let caret_y_offset = CARET_Y_OFFSET_FACTOR * LINE_HEIGHT;
+        node.top = px(TEXT_PADDING_Y + (caret_top + caret_y_offset).max(0.0));
         node.width = px(CARET_WIDTH);
         node.height = px(LINE_HEIGHT);
         *visibility = Visibility::Visible;
