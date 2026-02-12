@@ -1,0 +1,3 @@
+# BasScript settings
+# true: typing a second consecutive space on dialogue lines inserts a newline
+dialogue_double_space_newline = true

@@ -1,16 +1,19 @@
 use std::{
     collections::BTreeMap,
+    fs, io,
     path::PathBuf,
     time::{Duration, Instant},
 };
 
-use basscript_core::{Cursor, Document, DocumentPath, ParsedLine, Position, parse_document};
+use basscript_core::{
+    Cursor, Document, DocumentPath, LineKind, ParsedLine, Position, parse_document,
+};
 use bevy::{
-    log::{info, warn},
     input::{
         keyboard::{Key, KeyboardInput},
         mouse::{MouseScrollUnit, MouseWheel},
     },
+    log::{info, warn},
     prelude::*,
     tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
     text::{LineHeight, TextLayoutInfo},
@@ -20,8 +23,13 @@ use bevy::{
 use rfd::AsyncFileDialog;
 
 const FONT_PATH: &str = "fonts/Courier Prime/Courier Prime.ttf";
+const FONT_BOLD_PATH: &str = "fonts/Courier Prime/Courier Prime Bold.ttf";
+const FONT_ITALIC_PATH: &str = "fonts/Courier Prime/Courier Prime Italic.ttf";
+const FONT_BOLD_ITALIC_PATH: &str = "fonts/Courier Prime/Courier Prime Bold Italic.ttf";
 const DEFAULT_LOAD_PATH: &str = "docs/humanDOC.md";
 const DEFAULT_SAVE_PATH: &str = "scripts/session.fountain";
+const SETTINGS_PATH: &str = "scripts/settings.toml";
+const PROCESSED_SPAN_CAPACITY: usize = 256;
 
 const FONT_SIZE: f32 = 20.0;
 const LINE_HEIGHT: f32 = 24.0;
@@ -33,6 +41,12 @@ const CARET_X_OFFSET: f32 = -1.0;
 const BUTTON_NORMAL: Color = Color::srgb(0.20, 0.24, 0.29);
 const BUTTON_HOVER: Color = Color::srgb(0.28, 0.33, 0.39);
 const BUTTON_PRESSED: Color = Color::srgb(0.35, 0.43, 0.50);
+const COLOR_ACTION: Color = Color::srgb(0.93, 0.93, 0.93);
+const COLOR_SCENE: Color = Color::srgb(0.98, 0.97, 0.90);
+const COLOR_CHARACTER: Color = Color::srgb(0.95, 0.92, 0.78);
+const COLOR_DIALOGUE: Color = Color::srgb(0.94, 0.94, 0.94);
+const COLOR_PARENTHETICAL: Color = Color::srgb(0.72, 0.78, 0.84);
+const COLOR_TRANSITION: Color = Color::srgb(0.82, 0.90, 0.98);
 
 pub struct UiPlugin;
 
@@ -41,14 +55,16 @@ impl Plugin for UiPlugin {
         app.init_resource::<EditorState>()
             .init_resource::<DialogState>()
             .insert_non_send_resource(DialogMainThreadMarker)
-            .add_systems(Startup, setup)
+            .add_systems(Startup, (setup, setup_processed_spans.after(setup)))
             .add_systems(
                 Update,
                 (
                     handle_toolbar_buttons,
                     style_toolbar_buttons,
+                    handle_settings_buttons,
                     handle_file_shortcuts,
                     resolve_dialog_results,
+                    sync_settings_ui,
                     handle_text_input,
                     handle_navigation_input,
                     handle_mouse_scroll,
@@ -82,12 +98,31 @@ struct PanelCaret {
 }
 
 #[derive(Component)]
+struct ProcessedLineSpan {
+    line_offset: usize,
+}
+
+#[derive(Component)]
 struct StatusText;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 enum ToolbarAction {
     Load,
     SaveAs,
+    Settings,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+enum SettingsAction {
+    DialogueDoubleSpaceNewline,
+}
+
+#[derive(Component)]
+struct SettingsPanel;
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct SettingToggleLabel {
+    action: SettingsAction,
 }
 
 #[derive(Resource)]
@@ -100,6 +135,8 @@ struct EditorState {
     status_message: String,
     caret_blink: Timer,
     caret_visible: bool,
+    settings_open: bool,
+    dialogue_double_space_newline: bool,
 }
 
 #[derive(Resource, Default)]
@@ -116,6 +153,27 @@ enum PendingDialog {
 }
 
 struct DialogMainThreadMarker;
+
+#[derive(Clone, Copy, Debug, Default)]
+struct PersistentSettings {
+    dialogue_double_space_newline: bool,
+}
+
+#[derive(Resource, Clone)]
+struct EditorFonts {
+    regular: Handle<Font>,
+    bold: Handle<Font>,
+    italic: Handle<Font>,
+    bold_italic: Handle<Font>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FontVariant {
+    Regular,
+    Bold,
+    Italic,
+    BoldItalic,
+}
 
 impl DialogState {
     fn begin_pending(&mut self, pending: PendingDialog) {
@@ -146,6 +204,7 @@ impl PendingDialog {
 impl FromWorld for EditorState {
     fn from_world(_world: &mut World) -> Self {
         let paths = DocumentPath::new(DEFAULT_LOAD_PATH, DEFAULT_SAVE_PATH);
+        let settings = load_persistent_settings();
 
         let (document, status_message) = match Document::load(&paths.load_path) {
             Ok(doc) => (doc, format!("Loaded {}", paths.load_path.display())),
@@ -169,6 +228,8 @@ impl FromWorld for EditorState {
             status_message,
             caret_blink: Timer::from_seconds(0.5, TimerMode::Repeating),
             caret_visible: true,
+            settings_open: false,
+            dialogue_double_space_newline: settings.dialogue_double_space_newline,
         }
     }
 }
@@ -275,7 +336,14 @@ impl EditorState {
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((Camera2d, IsDefaultUiCamera));
 
-    let font = asset_server.load(FONT_PATH);
+    let fonts = EditorFonts {
+        regular: asset_server.load(FONT_PATH),
+        bold: asset_server.load(FONT_BOLD_PATH),
+        italic: asset_server.load(FONT_ITALIC_PATH),
+        bold_italic: asset_server.load(FONT_BOLD_ITALIC_PATH),
+    };
+    let font = fonts.regular.clone();
+    commands.insert_resource(fonts);
 
     commands
         .spawn((
@@ -318,6 +386,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                         children![
                             toolbar_button(font.clone(), "Load", ToolbarAction::Load),
                             toolbar_button(font.clone(), "Save As", ToolbarAction::SaveAs),
+                            toolbar_button(font.clone(), "Settings", ToolbarAction::Settings),
                         ],
                     )
                 ],
@@ -336,6 +405,35 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     ..default()
                 },
                 TextColor(Color::srgb(0.62, 0.67, 0.73)),
+            ));
+
+            root.spawn((
+                Node {
+                    width: percent(100.0),
+                    display: Display::None,
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    column_gap: px(10.0),
+                    padding: UiRect::axes(px(12.0), px(6.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.10, 0.11, 0.13)),
+                SettingsPanel,
+                children![
+                    (
+                        Text::new("Settings"),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.90, 0.90, 0.92)),
+                    ),
+                    settings_toggle_button(
+                        font.clone(),
+                        SettingsAction::DialogueDoubleSpaceNewline,
+                    ),
+                ],
             ));
 
             root.spawn((
@@ -371,6 +469,40 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         });
 }
 
+fn setup_processed_spans(
+    mut commands: Commands,
+    fonts: Res<EditorFonts>,
+    text_query: Query<(Entity, &PanelText, Option<&Children>)>,
+) {
+    for (entity, panel_text, children) in text_query.iter() {
+        if panel_text.kind != PanelKind::Processed {
+            continue;
+        }
+
+        if children.is_some_and(|children| !children.is_empty()) {
+            continue;
+        }
+
+        let regular_font = fonts.regular.clone();
+
+        commands.entity(entity).with_children(|parent| {
+            for line_offset in 0..PROCESSED_SPAN_CAPACITY {
+                parent.spawn((
+                    TextSpan::new(""),
+                    TextFont {
+                        font: regular_font.clone(),
+                        font_size: FONT_SIZE,
+                        ..default()
+                    },
+                    LineHeight::Px(LINE_HEIGHT),
+                    TextColor(COLOR_ACTION),
+                    ProcessedLineSpan { line_offset },
+                ));
+            }
+        });
+    }
+}
+
 fn toolbar_button(font: Handle<Font>, label: &str, action: ToolbarAction) -> impl Bundle {
     (
         Button,
@@ -388,6 +520,28 @@ fn toolbar_button(font: Handle<Font>, label: &str, action: ToolbarAction) -> imp
                 ..default()
             },
             TextColor(Color::srgb(0.96, 0.96, 0.96)),
+        )],
+    )
+}
+
+fn settings_toggle_button(font: Handle<Font>, action: SettingsAction) -> impl Bundle {
+    (
+        Button,
+        action,
+        Node {
+            padding: UiRect::axes(px(12.0), px(6.0)),
+            ..default()
+        },
+        BackgroundColor(BUTTON_NORMAL),
+        children![(
+            Text::new(""),
+            TextFont {
+                font,
+                font_size: 13.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.96, 0.96, 0.96)),
+            SettingToggleLabel { action },
         )],
     )
 }
@@ -491,6 +645,14 @@ fn handle_toolbar_buttons(
         match action {
             ToolbarAction::Load => open_load_dialog(&mut state, &mut dialogs, parent_handle),
             ToolbarAction::SaveAs => open_save_dialog(&mut state, &mut dialogs, parent_handle),
+            ToolbarAction::Settings => {
+                state.settings_open = !state.settings_open;
+                state.status_message = if state.settings_open {
+                    "Opened settings.".to_string()
+                } else {
+                    "Closed settings.".to_string()
+                };
+            }
         }
     }
 }
@@ -498,7 +660,11 @@ fn handle_toolbar_buttons(
 fn style_toolbar_buttons(
     mut button_query: Query<
         (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<Button>, With<ToolbarAction>),
+        (
+            Changed<Interaction>,
+            With<Button>,
+            Or<(With<ToolbarAction>, With<SettingsAction>)>,
+        ),
     >,
 ) {
     for (interaction, mut color) in button_query.iter_mut() {
@@ -508,6 +674,160 @@ fn style_toolbar_buttons(
             Interaction::None => BUTTON_NORMAL,
         };
     }
+}
+
+fn handle_settings_buttons(
+    interaction_query: Query<(&Interaction, &SettingsAction), (Changed<Interaction>, With<Button>)>,
+    mut state: ResMut<EditorState>,
+) {
+    for (interaction, action) in interaction_query.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        match action {
+            SettingsAction::DialogueDoubleSpaceNewline => {
+                state.dialogue_double_space_newline = !state.dialogue_double_space_newline;
+                let persistent = PersistentSettings {
+                    dialogue_double_space_newline: state.dialogue_double_space_newline,
+                };
+
+                state.status_message = match save_persistent_settings(&persistent) {
+                    Ok(()) => format!(
+                        "Dialogue double-space newline in processed pane: {} (saved)",
+                        if state.dialogue_double_space_newline {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }
+                    ),
+                    Err(error) => format!(
+                        "Dialogue double-space newline in processed pane: {} (save failed: {error})",
+                        if state.dialogue_double_space_newline {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }
+                    ),
+                };
+            }
+        }
+    }
+}
+
+fn sync_settings_ui(
+    state: Res<EditorState>,
+    mut panel_query: Query<&mut Node, With<SettingsPanel>>,
+    mut toggle_label_query: Query<(&SettingToggleLabel, &mut Text)>,
+) {
+    if let Ok(mut panel_node) = panel_query.single_mut() {
+        panel_node.display = if state.settings_open {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
+    for (label, mut text) in toggle_label_query.iter_mut() {
+        **text = match label.action {
+            SettingsAction::DialogueDoubleSpaceNewline => format!(
+                "Double space as newline in dialogue (processed pane): {}",
+                if state.dialogue_double_space_newline {
+                    "ON"
+                } else {
+                    "OFF"
+                }
+            ),
+        };
+    }
+}
+
+fn load_persistent_settings() -> PersistentSettings {
+    let path = PathBuf::from(SETTINGS_PATH);
+    let contents = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            info!(
+                "[settings] No settings file found at {}; using defaults",
+                path.display()
+            );
+            return PersistentSettings::default();
+        }
+        Err(error) => {
+            warn!(
+                "[settings] Failed reading {}: {}; using defaults",
+                path.display(),
+                error
+            );
+            return PersistentSettings::default();
+        }
+    };
+
+    let value = if let Some(value) = parse_toml_bool(&contents, "dialogue_double_space_newline") {
+        value
+    } else if let Some(value) = parse_toml_bool(&contents, "parenthetical_double_space_newline") {
+        // Backward-compatibility for the short-lived parenthetical key.
+        info!(
+            "[settings] Loaded legacy parenthetical_double_space_newline key from {}",
+            path.display()
+        );
+        value
+    } else {
+        warn!(
+            "[settings] Could not parse dialogue_double_space_newline in {}; using defaults",
+            path.display()
+        );
+        return PersistentSettings::default();
+    };
+
+    info!("[settings] Loaded settings from {}", path.display());
+    PersistentSettings {
+        dialogue_double_space_newline: value,
+    }
+}
+
+fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
+    let path = PathBuf::from(SETTINGS_PATH);
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let contents = format!(
+        "# BasScript settings\n\
+         # true: processed pane renders dialogue double spaces as new lines\n\
+         dialogue_double_space_newline = {}\n",
+        settings.dialogue_double_space_newline
+    );
+
+    fs::write(&path, contents)?;
+    info!("[settings] Saved settings to {}", path.display());
+    Ok(())
+}
+
+fn parse_toml_bool(contents: &str, key: &str) -> Option<bool> {
+    for line in contents.lines() {
+        let line = line.trim();
+
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let Some((lhs, rhs)) = line.split_once('=') else {
+            continue;
+        };
+        if lhs.trim() != key {
+            continue;
+        }
+
+        return match rhs.trim() {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        };
+    }
+
+    None
 }
 
 fn handle_file_shortcuts(
@@ -575,7 +895,10 @@ fn open_load_dialog(
         .add_filter("Script files", &["fountain", "txt", "md"]);
 
     if let Some(directory) = preferred_dialog_directory(state) {
-        info!("[dialog] Load dialog preferred directory: {}", directory.display());
+        info!(
+            "[dialog] Load dialog preferred directory: {}",
+            directory.display()
+        );
         dialog = dialog.set_directory(directory);
     } else {
         warn!("[dialog] No preferred directory found for load dialog");
@@ -589,7 +912,9 @@ fn open_load_dialog(
 
     let task = AsyncComputeTaskPool::get().spawn(async move {
         info!("[dialog] Load task awaiting picker result...");
-        let result = request.await.map(|file_handle| file_handle.path().to_path_buf());
+        let result = request
+            .await
+            .map(|file_handle| file_handle.path().to_path_buf());
         match &result {
             Some(path) => info!("[dialog] Load task received path: {}", path.display()),
             None => info!("[dialog] Load task returned: canceled"),
@@ -630,7 +955,10 @@ fn open_save_dialog(
         .add_filter("Script files", &["fountain", "txt", "md"]);
 
     if let Some(directory) = preferred_dialog_directory(state) {
-        info!("[dialog] Save dialog preferred directory: {}", directory.display());
+        info!(
+            "[dialog] Save dialog preferred directory: {}",
+            directory.display()
+        );
         dialog = dialog.set_directory(directory);
     } else {
         warn!("[dialog] No preferred directory found for save dialog");
@@ -654,7 +982,9 @@ fn open_save_dialog(
 
     let task = AsyncComputeTaskPool::get().spawn(async move {
         info!("[dialog] Save task awaiting picker result...");
-        let result = request.await.map(|file_handle| file_handle.path().to_path_buf());
+        let result = request
+            .await
+            .map(|file_handle| file_handle.path().to_path_buf());
         match &result {
             Some(path) => info!("[dialog] Save task received path: {}", path.display()),
             None => info!("[dialog] Save task returned: canceled"),
@@ -705,17 +1035,15 @@ fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<Di
     dialogs.poll_count = dialogs.poll_count.saturating_add(1);
 
     let now = Instant::now();
-    let should_log_watchdog = dialogs
-        .last_watchdog_log_at
-        .map_or(true, |last| now.duration_since(last) >= Duration::from_secs(2));
+    let should_log_watchdog = dialogs.last_watchdog_log_at.map_or(true, |last| {
+        now.duration_since(last) >= Duration::from_secs(2)
+    });
     if should_log_watchdog {
         if let Some(opened_at) = dialogs.opened_at {
             let elapsed_ms = opened_at.elapsed().as_millis();
             info!(
                 "[dialog] {} dialog pending for {}ms (poll_count={})",
-                pending_kind,
-                elapsed_ms,
-                dialogs.poll_count
+                pending_kind, elapsed_ms, dialogs.poll_count
             );
         }
         dialogs.last_watchdog_log_at = Some(now);
@@ -730,9 +1058,7 @@ fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<Di
         .map_or(0_u128, |opened_at| opened_at.elapsed().as_millis());
     info!(
         "[dialog] {} dialog future resolved after {}ms (poll_count={})",
-        pending_kind,
-        elapsed_ms,
-        dialogs.poll_count
+        pending_kind, elapsed_ms, dialogs.poll_count
     );
 
     dialogs.clear_pending();
@@ -1074,9 +1400,16 @@ fn blink_caret(time: Res<Time>, mut state: ResMut<EditorState>) {
 fn render_editor(
     body_query: Query<&ComputedNode, With<PanelBody>>,
     mut text_query: Query<(&PanelText, &mut Text), (Without<StatusText>, Without<PanelCaret>)>,
+    mut processed_span_query: Query<(
+        &ProcessedLineSpan,
+        &mut TextSpan,
+        &mut TextFont,
+        &mut TextColor,
+    )>,
     text_layout_query: Query<(&PanelText, &TextLayoutInfo)>,
     mut caret_query: Query<(&PanelCaret, &mut Node, &mut Visibility)>,
     mut status_query: Query<&mut Text, (With<StatusText>, Without<PanelText>, Without<PanelCaret>)>,
+    fonts: Res<EditorFonts>,
     mut state: ResMut<EditorState>,
 ) {
     let visible_lines = viewport_lines(&body_query);
@@ -1090,14 +1423,15 @@ fn render_editor(
     let plain_lines = visible_plain_lines(&state, visible_lines);
     let processed_lines = visible_processed_lines(&state, visible_lines);
     let plain_view = plain_lines.join("\n");
-    let processed_view = processed_lines.join("\n");
 
     for (panel_text, mut text) in text_query.iter_mut() {
         **text = match panel_text.kind {
             PanelKind::Plain => plain_view.clone(),
-            PanelKind::Processed => processed_view.clone(),
+            PanelKind::Processed => String::new(),
         };
     }
+
+    apply_processed_styles(&mut processed_span_query, &state, visible_lines, &fonts);
 
     if let Ok(mut status) = status_query.single_mut() {
         **status = state.visible_status();
@@ -1197,19 +1531,216 @@ fn visible_plain_lines(state: &EditorState, visible_lines: usize) -> Vec<String>
         .collect()
 }
 
-fn visible_processed_lines(state: &EditorState, visible_lines: usize) -> Vec<String> {
-    let last = state
-        .top_line
-        .saturating_add(visible_lines)
-        .min(state.parsed.len());
+#[derive(Clone, Debug)]
+struct ProcessedVisualLine {
+    source_line: usize,
+    text: String,
+    raw_start_column: usize,
+    raw_end_column: usize,
+}
 
-    state
+#[derive(Clone, Debug, Default)]
+struct ProcessedView {
+    lines: Vec<ProcessedVisualLine>,
+}
+
+fn build_processed_view(state: &EditorState, visible_lines: usize) -> ProcessedView {
+    let max_lines = visible_lines.min(PROCESSED_SPAN_CAPACITY);
+    let mut lines = Vec::<ProcessedVisualLine>::with_capacity(max_lines);
+    let mut source_line = state.top_line;
+
+    while source_line < state.parsed.len() && lines.len() < max_lines {
+        let Some(parsed_line) = state.parsed.get(source_line) else {
+            break;
+        };
+
+        if state.dialogue_double_space_newline && parsed_line.kind == LineKind::Dialogue {
+            let indent = " ".repeat(parsed_line.indent_width());
+            for (raw_start_column, segment) in dialogue_segments(&parsed_line.raw) {
+                if lines.len() >= max_lines {
+                    break;
+                }
+
+                let segment_len = segment.chars().count();
+                lines.push(ProcessedVisualLine {
+                    source_line,
+                    text: format!("{indent}{segment}"),
+                    raw_start_column,
+                    raw_end_column: raw_start_column.saturating_add(segment_len),
+                });
+            }
+        } else {
+            let raw_len = parsed_line.raw.chars().count();
+            lines.push(ProcessedVisualLine {
+                source_line,
+                text: parsed_line.processed_text(),
+                raw_start_column: 0,
+                raw_end_column: raw_len,
+            });
+        }
+
+        source_line += 1;
+    }
+
+    ProcessedView { lines }
+}
+
+fn dialogue_segments(input: &str) -> Vec<(usize, String)> {
+    let chars = input.chars().collect::<Vec<_>>();
+    if chars.is_empty() {
+        return vec![(0, String::new())];
+    }
+
+    let mut segments = Vec::<(usize, String)>::new();
+    let mut start = 0usize;
+    let mut index = 0usize;
+
+    while index + 1 < chars.len() {
+        if chars[index] == ' ' && chars[index + 1] == ' ' {
+            let segment = chars[start..index].iter().collect::<String>();
+            segments.push((start, segment));
+            index += 2;
+            start = index;
+            continue;
+        }
+
+        index += 1;
+    }
+
+    let tail = chars[start..].iter().collect::<String>();
+    segments.push((start, tail));
+
+    segments
+}
+
+fn processed_raw_column_from_display(
+    state: &EditorState,
+    visual_line: &ProcessedVisualLine,
+    display_column: usize,
+) -> usize {
+    let indent = state
         .parsed
+        .get(visual_line.source_line)
+        .map_or(0, ParsedLine::indent_width);
+
+    let segment_len = visual_line
+        .raw_end_column
+        .saturating_sub(visual_line.raw_start_column);
+    let local_column = display_column.saturating_sub(indent).min(segment_len);
+    visual_line.raw_start_column.saturating_add(local_column)
+}
+
+fn processed_caret_visual<'a>(
+    state: &EditorState,
+    processed_view: &'a ProcessedView,
+) -> Option<(usize, usize, &'a str)> {
+    let source_line = state.cursor.position.line;
+    let raw_column = state.cursor.position.column;
+    let indent = state
+        .parsed
+        .get(source_line)
+        .map_or(0, ParsedLine::indent_width);
+
+    let relevant = processed_view
+        .lines
         .iter()
-        .skip(state.top_line)
-        .take(last.saturating_sub(state.top_line))
-        .map(ParsedLine::processed_text)
-        .collect()
+        .enumerate()
+        .filter(|(_, line)| line.source_line == source_line)
+        .collect::<Vec<_>>();
+
+    let (default_index, default_line) = *relevant.last()?;
+
+    for (entry_index, (visual_index, visual_line)) in relevant.iter().enumerate() {
+        let next_start = relevant
+            .get(entry_index + 1)
+            .map(|(_, next_line)| next_line.raw_start_column);
+        let segment_len = visual_line
+            .raw_end_column
+            .saturating_sub(visual_line.raw_start_column);
+        let local_column = raw_column
+            .saturating_sub(visual_line.raw_start_column)
+            .min(segment_len);
+
+        if raw_column <= visual_line.raw_end_column
+            || next_start.is_some_and(|start| raw_column < start)
+            || entry_index + 1 == relevant.len()
+        {
+            return Some((*visual_index, indent.saturating_add(local_column), &visual_line.text));
+        }
+    }
+
+    let default_len = default_line
+        .raw_end_column
+        .saturating_sub(default_line.raw_start_column);
+    Some((default_index, indent.saturating_add(default_len), &default_line.text))
+}
+
+fn apply_processed_styles(
+    processed_span_query: &mut Query<(
+        &ProcessedLineSpan,
+        &mut TextSpan,
+        &mut TextFont,
+        &mut TextColor,
+    )>,
+    state: &EditorState,
+    processed_view: &ProcessedView,
+    fonts: &EditorFonts,
+) {
+    let visible_count = processed_view.lines.len().min(PROCESSED_SPAN_CAPACITY);
+
+    for (processed_span, mut text_span, mut text_font, mut text_color) in
+        processed_span_query.iter_mut()
+    {
+        let line_offset = processed_span.line_offset;
+
+        if line_offset >= visible_count {
+            **text_span = String::new();
+            continue;
+        }
+
+        let Some(visual_line) = processed_view.lines.get(line_offset) else {
+            **text_span = String::new();
+            continue;
+        };
+
+        let Some(parsed_line) = state.parsed.get(visual_line.source_line) else {
+            **text_span = String::new();
+            continue;
+        };
+
+        let mut line_text = visual_line.text.clone();
+        if line_offset + 1 < visible_count {
+            line_text.push('\n');
+        }
+
+        **text_span = line_text;
+
+        let (font_variant, color) = style_for_line_kind(&parsed_line.kind);
+        text_font.font = font_for_variant(fonts, font_variant);
+        text_font.font_size = FONT_SIZE;
+        text_color.0 = color;
+    }
+}
+
+fn style_for_line_kind(kind: &LineKind) -> (FontVariant, Color) {
+    match kind {
+        LineKind::SceneHeading => (FontVariant::Bold, COLOR_SCENE),
+        LineKind::Action => (FontVariant::Regular, COLOR_ACTION),
+        LineKind::Character => (FontVariant::Bold, COLOR_CHARACTER),
+        LineKind::Dialogue => (FontVariant::Regular, COLOR_DIALOGUE),
+        LineKind::Parenthetical => (FontVariant::Italic, COLOR_PARENTHETICAL),
+        LineKind::Transition => (FontVariant::BoldItalic, COLOR_TRANSITION),
+        LineKind::Empty => (FontVariant::Regular, COLOR_ACTION),
+    }
+}
+
+fn font_for_variant(fonts: &EditorFonts, variant: FontVariant) -> Handle<Font> {
+    match variant {
+        FontVariant::Regular => fonts.regular.clone(),
+        FontVariant::Bold => fonts.bold.clone(),
+        FontVariant::Italic => fonts.italic.clone(),
+        FontVariant::BoldItalic => fonts.bold_italic.clone(),
+    }
 }
 
 fn panel_layout_info<'a>(
