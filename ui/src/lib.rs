@@ -1042,6 +1042,26 @@ fn line_boundaries(
     }
 
     glyphs.sort_by_key(|glyph| (glyph.byte_index, glyph.byte_length));
+    let mut step_candidates = glyphs
+        .windows(2)
+        .filter_map(|window| {
+            let left = window[0];
+            let right = window[1];
+            let byte_gap = right.byte_index.saturating_sub(left.byte_index);
+            if byte_gap == 0 {
+                return None;
+            }
+            let step = (right.position.x - left.position.x) / byte_gap as f32;
+            (step.is_finite() && step.abs() > 0.1).then_some(step)
+        })
+        .collect::<Vec<_>>();
+
+    step_candidates.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let byte_step = step_candidates
+        .get(step_candidates.len().saturating_sub(1) / 2)
+        .copied()
+        .unwrap_or(DEFAULT_CHAR_WIDTH);
+
     let mut anchors = BTreeMap::<usize, Vec<f32>>::new();
 
     for glyph in glyphs {
@@ -1050,7 +1070,8 @@ fn line_boundaries(
             .byte_index
             .saturating_add(glyph.byte_length)
             .min(line_len);
-        let half_width = glyph.size.x * 0.5;
+        let span_bytes = end.saturating_sub(start).max(1);
+        let half_width = byte_step * span_bytes as f32 * 0.5;
         let left = glyph.position.x - half_width;
         let right = glyph.position.x + half_width;
 
@@ -1075,26 +1096,6 @@ fn line_boundaries(
     }
 
     known.sort_by_key(|(byte_index, _)| *byte_index);
-    let mut step_candidates = known
-        .windows(2)
-        .filter_map(|window| {
-            let left = window[0];
-            let right = window[1];
-            let byte_gap = right.0.saturating_sub(left.0);
-            if byte_gap == 0 {
-                return None;
-            }
-            let delta_x = right.1 - left.1;
-            let step = delta_x / byte_gap as f32;
-            (step.is_finite() && step.abs() > 0.1).then_some(step)
-        })
-        .collect::<Vec<_>>();
-
-    step_candidates.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let byte_step = step_candidates
-        .get(step_candidates.len().saturating_sub(1) / 2)
-        .copied()
-        .unwrap_or(DEFAULT_CHAR_WIDTH);
 
     let first = known[0];
     let last = known[known.len().saturating_sub(1)];
