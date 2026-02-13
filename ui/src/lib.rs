@@ -138,6 +138,7 @@ struct EditorState {
     caret_visible: bool,
     settings_open: bool,
     dialogue_double_space_newline: bool,
+    measured_line_step: f32,
 }
 
 #[derive(Resource, Default)]
@@ -231,6 +232,7 @@ impl FromWorld for EditorState {
             caret_visible: true,
             settings_open: false,
             dialogue_double_space_newline: settings.dialogue_double_space_newline,
+            measured_line_step: LINE_HEIGHT,
         }
     }
 }
@@ -285,6 +287,34 @@ impl EditorState {
         }
 
         self.clamp_scroll(visible_lines);
+    }
+
+    fn clamp_cursor_to_visible_range(&mut self, visible_lines: usize) {
+        if self.document.is_empty() {
+            self.set_cursor(Position::default(), true);
+            return;
+        }
+
+        let min_line = self.top_line;
+        let max_line = self
+            .top_line
+            .saturating_add(visible_lines.saturating_sub(1))
+            .min(self.document.line_count().saturating_sub(1));
+        let clamped_line = self.cursor.position.line.clamp(min_line, max_line);
+
+        if clamped_line != self.cursor.position.line {
+            let column = self
+                .cursor
+                .preferred_column
+                .min(self.document.line_len_chars(clamped_line));
+            self.set_cursor(
+                Position {
+                    line: clamped_line,
+                    column,
+                },
+                false,
+            );
+        }
     }
 
     fn set_cursor(&mut self, position: Position, update_preferred: bool) {
@@ -1114,7 +1144,7 @@ fn handle_text_input(
         return;
     }
 
-    let visible_lines = viewport_lines(&body_query);
+    let visible_lines = viewport_lines(&body_query, state.measured_line_step);
     let mut edited = false;
 
     for input in keyboard_inputs.read() {
@@ -1171,7 +1201,7 @@ fn handle_navigation_input(
     body_query: Query<&ComputedNode, With<PanelBody>>,
     mut state: ResMut<EditorState>,
 ) {
-    let visible_lines = viewport_lines(&body_query);
+    let visible_lines = viewport_lines(&body_query, state.measured_line_step);
     let mut moved = false;
 
     if keys.just_pressed(KeyCode::ArrowLeft) {
@@ -1267,7 +1297,7 @@ fn handle_mouse_scroll(
     body_query: Query<&ComputedNode, With<PanelBody>>,
     mut state: ResMut<EditorState>,
 ) {
-    let visible_lines = viewport_lines(&body_query);
+    let visible_lines = viewport_lines(&body_query, state.measured_line_step);
     let mut delta_lines: isize = 0;
 
     for wheel in mouse_wheels.read() {
@@ -1282,6 +1312,7 @@ fn handle_mouse_scroll(
 
     if delta_lines != 0 {
         state.scroll_by(delta_lines, visible_lines);
+        state.clamp_cursor_to_visible_range(visible_lines);
         state.reset_blink();
     }
 }
@@ -1295,7 +1326,7 @@ fn handle_mouse_click(
     if !mouse_buttons.just_pressed(MouseButton::Left) {
         return;
     }
-    let visible_lines = viewport_lines_from_panels(&panel_query);
+    let visible_lines = viewport_lines_from_panels(&panel_query, state.measured_line_step);
     let plain_lines = visible_plain_lines(&state, visible_lines);
     let processed_view = build_processed_view(&state, visible_lines);
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
@@ -1391,6 +1422,7 @@ fn handle_mouse_click(
         let column = raw_column.min(max_col);
 
         state.set_cursor(Position { line, column }, true);
+        state.ensure_cursor_visible(visible_lines);
         break;
     }
 }
@@ -1416,7 +1448,7 @@ fn render_editor(
     fonts: Res<EditorFonts>,
     mut state: ResMut<EditorState>,
 ) {
-    let visible_lines = viewport_lines(&body_query);
+    let visible_lines = viewport_lines(&body_query, state.measured_line_step);
     let inverse_scale = body_query
         .iter()
         .next()
@@ -1443,6 +1475,15 @@ fn render_editor(
 
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
     let processed_layout = panel_layout_info(&text_layout_query, PanelKind::Processed);
+    if let Some(measured_step) = plain_layout
+        .and_then(|layout| measured_line_step_from_layout(layout, inverse_scale))
+        .or_else(|| {
+            processed_layout
+                .and_then(|layout| measured_line_step_from_layout(layout, inverse_scale))
+        })
+    {
+        state.measured_line_step = measured_step;
+    }
 
     for (panel_caret, mut node, mut visibility) in caret_query.iter_mut() {
         if !state.caret_visible {
@@ -1505,26 +1546,30 @@ fn render_editor(
     }
 }
 
-fn viewport_lines(body_query: &Query<&ComputedNode, With<PanelBody>>) -> usize {
+fn viewport_lines(body_query: &Query<&ComputedNode, With<PanelBody>>, line_step: f32) -> usize {
     let Some(computed) = body_query.iter().next() else {
         return 24;
     };
 
     let logical_height = computed.size().y * computed.inverse_scale_factor();
-    let usable_height = (logical_height - (TEXT_PADDING_Y * 2.0)).max(LINE_HEIGHT);
-    (usable_height / LINE_HEIGHT).floor().max(1.0) as usize
+    // Text starts at TEXT_PADDING_Y from the top; don't reserve extra bottom padding.
+    let step = line_step.max(1.0);
+    let usable_height = (logical_height - TEXT_PADDING_Y).max(step);
+    (usable_height / step).floor().max(1.0) as usize
 }
 
 fn viewport_lines_from_panels(
     panel_query: &Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
+    line_step: f32,
 ) -> usize {
     let Some((_, _, computed)) = panel_query.iter().next() else {
         return 24;
     };
 
     let logical_height = computed.size().y * computed.inverse_scale_factor();
-    let usable_height = (logical_height - (TEXT_PADDING_Y * 2.0)).max(LINE_HEIGHT);
-    (usable_height / LINE_HEIGHT).floor().max(1.0) as usize
+    let step = line_step.max(1.0);
+    let usable_height = (logical_height - TEXT_PADDING_Y).max(step);
+    (usable_height / step).floor().max(1.0) as usize
 }
 
 fn visible_plain_lines(state: &EditorState, visible_lines: usize) -> Vec<String> {
@@ -1901,6 +1946,26 @@ fn line_index_from_layout_y(
     }
 
     Some(best_line)
+}
+
+fn measured_line_step_from_layout(layout: &TextLayoutInfo, inverse_scale: f32) -> Option<f32> {
+    let bounds = layout_line_bounds(layout, inverse_scale);
+    if bounds.is_empty() {
+        return None;
+    }
+
+    let mut heights = bounds
+        .iter()
+        .map(|(_, top, bottom)| (bottom - top).max(1.0))
+        .collect::<Vec<_>>();
+    let fallback_height = median(&mut heights).unwrap_or(LINE_HEIGHT);
+    let top_samples = bounds
+        .iter()
+        .map(|(index, top, _)| (*index, *top))
+        .collect::<Vec<_>>();
+
+    let step = default_line_step(&top_samples, fallback_height).abs();
+    Some(step.max(1.0))
 }
 
 fn caret_top_from_layout(
