@@ -1602,22 +1602,42 @@ struct ProcessedView {
 }
 
 fn build_processed_view(state: &EditorState, visible_lines: usize) -> ProcessedView {
-    let max_lines = visible_lines.min(PROCESSED_SPAN_CAPACITY);
-    let mut lines = Vec::<ProcessedVisualLine>::with_capacity(max_lines);
-    let mut source_line = state.top_line;
+    let max_visible = visible_lines.min(PROCESSED_SPAN_CAPACITY).max(1);
+    let all_lines = build_all_processed_visual_lines(state);
+    if all_lines.is_empty() {
+        return ProcessedView::default();
+    }
 
-    while source_line < state.parsed.len() && lines.len() < max_lines {
-        let Some(parsed_line) = state.parsed.get(source_line) else {
-            break;
-        };
+    let default_start = first_visual_index_for_source_line(&all_lines, state.top_line).unwrap_or(0);
+    let cursor_in_plain_view = state.cursor.position.line >= state.top_line
+        && state.cursor.position.line < state.top_line + visible_lines;
+    let cursor_line_offset = state.cursor.position.line.saturating_sub(state.top_line);
 
+    let mut start_index = default_start;
+    if cursor_in_plain_view {
+        if let Some((cursor_visual_index, _, _)) =
+            processed_cursor_visual_from_lines(state, &all_lines)
+        {
+            start_index = cursor_visual_index.saturating_sub(cursor_line_offset);
+        }
+    }
+
+    let max_start = all_lines.len().saturating_sub(max_visible);
+    start_index = start_index.min(max_start);
+    let end_index = start_index.saturating_add(max_visible).min(all_lines.len());
+
+    ProcessedView {
+        lines: all_lines[start_index..end_index].to_vec(),
+    }
+}
+
+fn build_all_processed_visual_lines(state: &EditorState) -> Vec<ProcessedVisualLine> {
+    let mut lines = Vec::<ProcessedVisualLine>::new();
+
+    for (source_line, parsed_line) in state.parsed.iter().enumerate() {
         if state.dialogue_double_space_newline && parsed_line.kind == LineKind::Dialogue {
             let indent = " ".repeat(parsed_line.indent_width());
             for (raw_start_column, segment) in dialogue_segments(&parsed_line.raw) {
-                if lines.len() >= max_lines {
-                    break;
-                }
-
                 let segment_len = segment.chars().count();
                 lines.push(ProcessedVisualLine {
                     source_line,
@@ -1635,11 +1655,18 @@ fn build_processed_view(state: &EditorState, visible_lines: usize) -> ProcessedV
                 raw_end_column: raw_len,
             });
         }
-
-        source_line += 1;
     }
 
-    ProcessedView { lines }
+    lines
+}
+
+fn first_visual_index_for_source_line(
+    lines: &[ProcessedVisualLine],
+    source_line: usize,
+) -> Option<usize> {
+    lines
+        .iter()
+        .position(|line| line.source_line >= source_line)
 }
 
 fn dialogue_segments(input: &str) -> Vec<(usize, String)> {
@@ -1691,6 +1718,13 @@ fn processed_caret_visual<'a>(
     state: &EditorState,
     processed_view: &'a ProcessedView,
 ) -> Option<(usize, usize, &'a str)> {
+    processed_cursor_visual_from_lines(state, &processed_view.lines)
+}
+
+fn processed_cursor_visual_from_lines<'a>(
+    state: &EditorState,
+    lines: &'a [ProcessedVisualLine],
+) -> Option<(usize, usize, &'a str)> {
     let source_line = state.cursor.position.line;
     let raw_column = state.cursor.position.column;
     let indent = state
@@ -1698,8 +1732,7 @@ fn processed_caret_visual<'a>(
         .get(source_line)
         .map_or(0, ParsedLine::indent_width);
 
-    let relevant = processed_view
-        .lines
+    let relevant = lines
         .iter()
         .enumerate()
         .filter(|(_, line)| line.source_line == source_line)
