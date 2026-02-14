@@ -1,3 +1,5 @@
 # BasScript settings
 # true: processed pane renders dialogue double spaces as new lines
 dialogue_double_space_newline = true
+# true: processed pane renders non-dialogue double spaces as new lines
+non_dialogue_double_space_newline = true

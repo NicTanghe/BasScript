@@ -116,6 +116,7 @@ enum ToolbarAction {
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 enum SettingsAction {
     DialogueDoubleSpaceNewline,
+    NonDialogueDoubleSpaceNewline,
 }
 
 #[derive(Component)]
@@ -138,6 +139,7 @@ struct EditorState {
     caret_visible: bool,
     settings_open: bool,
     dialogue_double_space_newline: bool,
+    non_dialogue_double_space_newline: bool,
     measured_line_step: f32,
 }
 
@@ -159,6 +161,7 @@ struct DialogMainThreadMarker;
 #[derive(Clone, Copy, Debug, Default)]
 struct PersistentSettings {
     dialogue_double_space_newline: bool,
+    non_dialogue_double_space_newline: bool,
 }
 
 #[derive(Resource, Clone)]
@@ -232,6 +235,7 @@ impl FromWorld for EditorState {
             caret_visible: true,
             settings_open: false,
             dialogue_double_space_newline: settings.dialogue_double_space_newline,
+            non_dialogue_double_space_newline: settings.non_dialogue_double_space_newline,
             measured_line_step: LINE_HEIGHT,
         }
     }
@@ -463,6 +467,10 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     settings_toggle_button(
                         font.clone(),
                         SettingsAction::DialogueDoubleSpaceNewline,
+                    ),
+                    settings_toggle_button(
+                        font.clone(),
+                        SettingsAction::NonDialogueDoubleSpaceNewline,
                     ),
                 ],
             ));
@@ -721,6 +729,7 @@ fn handle_settings_buttons(
                 state.dialogue_double_space_newline = !state.dialogue_double_space_newline;
                 let persistent = PersistentSettings {
                     dialogue_double_space_newline: state.dialogue_double_space_newline,
+                    non_dialogue_double_space_newline: state.non_dialogue_double_space_newline,
                 };
 
                 state.status_message = match save_persistent_settings(&persistent) {
@@ -735,6 +744,32 @@ fn handle_settings_buttons(
                     Err(error) => format!(
                         "Dialogue double-space newline in processed pane: {} (save failed: {error})",
                         if state.dialogue_double_space_newline {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }
+                    ),
+                };
+            }
+            SettingsAction::NonDialogueDoubleSpaceNewline => {
+                state.non_dialogue_double_space_newline = !state.non_dialogue_double_space_newline;
+                let persistent = PersistentSettings {
+                    dialogue_double_space_newline: state.dialogue_double_space_newline,
+                    non_dialogue_double_space_newline: state.non_dialogue_double_space_newline,
+                };
+
+                state.status_message = match save_persistent_settings(&persistent) {
+                    Ok(()) => format!(
+                        "Non-dialogue double-space newline in processed pane: {} (saved)",
+                        if state.non_dialogue_double_space_newline {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }
+                    ),
+                    Err(error) => format!(
+                        "Non-dialogue double-space newline in processed pane: {} (save failed: {error})",
+                        if state.non_dialogue_double_space_newline {
                             "ON"
                         } else {
                             "OFF"
@@ -769,6 +804,14 @@ fn sync_settings_ui(
                     "OFF"
                 }
             ),
+            SettingsAction::NonDialogueDoubleSpaceNewline => format!(
+                "Double space as newline in non-dialogue (processed pane): {}",
+                if state.non_dialogue_double_space_newline {
+                    "ON"
+                } else {
+                    "OFF"
+                }
+            ),
         };
     }
 }
@@ -794,7 +837,9 @@ fn load_persistent_settings() -> PersistentSettings {
         }
     };
 
-    let value = if let Some(value) = parse_toml_bool(&contents, "dialogue_double_space_newline") {
+    let dialogue_value = if let Some(value) =
+        parse_toml_bool(&contents, "dialogue_double_space_newline")
+    {
         value
     } else if let Some(value) = parse_toml_bool(&contents, "parenthetical_double_space_newline") {
         // Backward-compatibility for the short-lived parenthetical key.
@@ -810,10 +855,13 @@ fn load_persistent_settings() -> PersistentSettings {
         );
         return PersistentSettings::default();
     };
+    let non_dialogue_value =
+        parse_toml_bool(&contents, "non_dialogue_double_space_newline").unwrap_or(false);
 
     info!("[settings] Loaded settings from {}", path.display());
     PersistentSettings {
-        dialogue_double_space_newline: value,
+        dialogue_double_space_newline: dialogue_value,
+        non_dialogue_double_space_newline: non_dialogue_value,
     }
 }
 
@@ -827,8 +875,10 @@ fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
     let contents = format!(
         "# BasScript settings\n\
          # true: processed pane renders dialogue double spaces as new lines\n\
-         dialogue_double_space_newline = {}\n",
-        settings.dialogue_double_space_newline
+         dialogue_double_space_newline = {}\n\
+         # true: processed pane renders non-dialogue double spaces as new lines\n\
+         non_dialogue_double_space_newline = {}\n",
+        settings.dialogue_double_space_newline, settings.non_dialogue_double_space_newline
     );
 
     fs::write(&path, contents)?;
@@ -1635,13 +1685,22 @@ fn build_all_processed_visual_lines(state: &EditorState) -> Vec<ProcessedVisualL
     let mut lines = Vec::<ProcessedVisualLine>::new();
 
     for (source_line, parsed_line) in state.parsed.iter().enumerate() {
-        if state.dialogue_double_space_newline && parsed_line.kind == LineKind::Dialogue {
+        if should_split_on_double_space(state, &parsed_line.kind) {
             let indent = " ".repeat(parsed_line.indent_width());
-            for (raw_start_column, segment) in dialogue_segments(&parsed_line.raw) {
-                let segment_len = segment.chars().count();
+            let uppercase = matches!(
+                parsed_line.kind,
+                LineKind::SceneHeading | LineKind::Transition | LineKind::Character
+            );
+            for (raw_start_column, raw_segment) in double_space_segments(&parsed_line.raw) {
+                let segment_len = raw_segment.chars().count();
+                let display_segment = if uppercase {
+                    raw_segment.to_uppercase()
+                } else {
+                    raw_segment
+                };
                 lines.push(ProcessedVisualLine {
                     source_line,
-                    text: format!("{indent}{segment}"),
+                    text: format!("{indent}{display_segment}"),
                     raw_start_column,
                     raw_end_column: raw_start_column.saturating_add(segment_len),
                 });
@@ -1660,6 +1719,13 @@ fn build_all_processed_visual_lines(state: &EditorState) -> Vec<ProcessedVisualL
     lines
 }
 
+fn should_split_on_double_space(state: &EditorState, kind: &LineKind) -> bool {
+    match kind {
+        LineKind::Dialogue => state.dialogue_double_space_newline,
+        _ => state.non_dialogue_double_space_newline,
+    }
+}
+
 fn first_visual_index_for_source_line(
     lines: &[ProcessedVisualLine],
     source_line: usize,
@@ -1669,7 +1735,7 @@ fn first_visual_index_for_source_line(
         .position(|line| line.source_line >= source_line)
 }
 
-fn dialogue_segments(input: &str) -> Vec<(usize, String)> {
+fn double_space_segments(input: &str) -> Vec<(usize, String)> {
     let chars = input.chars().collect::<Vec<_>>();
     if chars.is_empty() {
         return vec![(0, String::new())];
