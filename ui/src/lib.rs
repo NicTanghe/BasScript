@@ -43,14 +43,21 @@ const CARET_Y_OFFSET_FACTOR: f32 = -0.12;
 const ZOOM_MIN: f32 = 0.6;
 const ZOOM_MAX: f32 = 1.8;
 const ZOOM_STEP: f32 = 0.1;
-const A4_WIDTH_POINTS: f32 = 595.0;
-const A4_HEIGHT_POINTS: f32 = 842.0;
+const MM_PER_INCH: f32 = 25.4;
+const POINTS_PER_INCH: f32 = 72.0;
+const A4_WIDTH_MM: f32 = 210.0;
+const A4_HEIGHT_MM: f32 = 297.0;
+const A4_WIDTH_POINTS: f32 = A4_WIDTH_MM / MM_PER_INCH * POINTS_PER_INCH;
+const A4_HEIGHT_POINTS: f32 = A4_HEIGHT_MM / MM_PER_INCH * POINTS_PER_INCH;
 const PAGE_OUTER_MARGIN: f32 = 14.0;
 const PAGE_TEXT_MARGIN_LEFT: f32 = 42.0;
 const PAGE_TEXT_MARGIN_RIGHT: f32 = 34.0;
 const PAGE_TEXT_MARGIN_TOP: f32 = 30.0;
 const PAGE_TEXT_MARGIN_BOTTOM: f32 = 30.0;
 const PAGE_GAP: f32 = 24.0;
+const PAGE_MARGIN_STEP: f32 = 8.0;
+const MIN_TEXT_BOX_WIDTH: f32 = 120.0;
+const MIN_TEXT_BOX_HEIGHT: f32 = 120.0;
 
 const BUTTON_NORMAL: Color = Color::srgb(0.80, 0.82, 0.84);
 const BUTTON_HOVER: Color = Color::srgb(0.74, 0.77, 0.80);
@@ -71,10 +78,18 @@ const COLOR_TEXT_MUTED: Color = Color::srgb(0.34, 0.36, 0.39);
 
 pub struct UiPlugin;
 
+#[derive(States, Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+enum UiScreenState {
+    #[default]
+    Editor,
+    Settings,
+}
+
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EditorState>()
             .init_resource::<DialogState>()
+            .init_state::<UiScreenState>()
             .insert_non_send_resource(DialogMainThreadMarker)
             .add_systems(
                 Startup,
@@ -84,22 +99,28 @@ impl Plugin for UiPlugin {
                     setup_processed_papers.after(setup),
                 ),
             )
+            .add_systems(Update, (style_toolbar_buttons, sync_settings_ui))
+            .add_systems(
+                Update,
+                handle_toolbar_buttons.run_if(in_state(UiScreenState::Editor)),
+            )
+            .add_systems(
+                Update,
+                handle_settings_buttons.run_if(in_state(UiScreenState::Settings)),
+            )
             .add_systems(
                 Update,
                 (
-                    handle_toolbar_buttons,
-                    style_toolbar_buttons,
-                    handle_settings_buttons,
                     handle_file_shortcuts,
                     resolve_dialog_results,
-                    sync_settings_ui,
                     handle_text_input,
                     handle_navigation_input,
                     handle_mouse_scroll,
                     handle_mouse_click,
                     blink_caret,
                     render_editor,
-                ),
+                )
+                    .run_if(in_state(UiScreenState::Editor)),
             );
     }
 }
@@ -152,14 +173,39 @@ enum ToolbarAction {
 enum SettingsAction {
     DialogueDoubleSpaceNewline,
     NonDialogueDoubleSpaceNewline,
+    MarginLeftDecrease,
+    MarginLeftIncrease,
+    MarginRightDecrease,
+    MarginRightIncrease,
+    MarginTopDecrease,
+    MarginTopIncrease,
+    MarginBottomDecrease,
+    MarginBottomIncrease,
+    BackToEditor,
 }
 
 #[derive(Component)]
-struct SettingsPanel;
+struct EditorScreenRoot;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 struct SettingToggleLabel {
     action: SettingsAction,
+}
+
+#[derive(Component)]
+struct SettingsScreenRoot;
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+enum MarginEdge {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct SettingMarginLabel {
+    edge: MarginEdge,
 }
 
 #[derive(Resource)]
@@ -172,9 +218,12 @@ struct EditorState {
     status_message: String,
     caret_blink: Timer,
     caret_visible: bool,
-    settings_open: bool,
     dialogue_double_space_newline: bool,
     non_dialogue_double_space_newline: bool,
+    page_margin_left: f32,
+    page_margin_right: f32,
+    page_margin_top: f32,
+    page_margin_bottom: f32,
     zoom: f32,
     measured_line_step: f32,
 }
@@ -194,10 +243,27 @@ enum PendingDialog {
 
 struct DialogMainThreadMarker;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 struct PersistentSettings {
     dialogue_double_space_newline: bool,
     non_dialogue_double_space_newline: bool,
+    page_margin_left: f32,
+    page_margin_right: f32,
+    page_margin_top: f32,
+    page_margin_bottom: f32,
+}
+
+impl Default for PersistentSettings {
+    fn default() -> Self {
+        Self {
+            dialogue_double_space_newline: false,
+            non_dialogue_double_space_newline: false,
+            page_margin_left: PAGE_TEXT_MARGIN_LEFT,
+            page_margin_right: PAGE_TEXT_MARGIN_RIGHT,
+            page_margin_top: PAGE_TEXT_MARGIN_TOP,
+            page_margin_bottom: PAGE_TEXT_MARGIN_BOTTOM,
+        }
+    }
 }
 
 #[derive(Resource, Clone)]
@@ -260,7 +326,7 @@ impl FromWorld for EditorState {
 
         let parsed = parse_document(&document);
 
-        Self {
+        let mut next = Self {
             document,
             parsed,
             cursor: Cursor::default(),
@@ -269,12 +335,17 @@ impl FromWorld for EditorState {
             status_message,
             caret_blink: Timer::from_seconds(0.5, TimerMode::Repeating),
             caret_visible: true,
-            settings_open: false,
             dialogue_double_space_newline: settings.dialogue_double_space_newline,
             non_dialogue_double_space_newline: settings.non_dialogue_double_space_newline,
+            page_margin_left: settings.page_margin_left,
+            page_margin_right: settings.page_margin_right,
+            page_margin_top: settings.page_margin_top,
+            page_margin_bottom: settings.page_margin_bottom,
             zoom: 1.0,
             measured_line_step: LINE_HEIGHT,
-        }
+        };
+        normalize_page_margins(&mut next);
+        next
     }
 }
 
@@ -445,10 +516,10 @@ fn processed_page_geometry(panel_size: Vec2, state: &EditorState) -> ProcessedPa
     let paper_left = PAGE_OUTER_MARGIN;
     let paper_top = PAGE_OUTER_MARGIN;
 
-    let margin_left = PAGE_TEXT_MARGIN_LEFT * zoom;
-    let margin_right = PAGE_TEXT_MARGIN_RIGHT * zoom;
-    let margin_top = PAGE_TEXT_MARGIN_TOP * zoom;
-    let margin_bottom = PAGE_TEXT_MARGIN_BOTTOM * zoom;
+    let margin_left = state.page_margin_left * zoom;
+    let margin_right = state.page_margin_right * zoom;
+    let margin_top = state.page_margin_top * zoom;
+    let margin_bottom = state.page_margin_bottom * zoom;
     let text_left = paper_left + margin_left;
     let text_top = paper_top + margin_top;
     let text_width = (paper_width - margin_left - margin_right).max(1.0);
@@ -466,22 +537,24 @@ fn processed_page_geometry(panel_size: Vec2, state: &EditorState) -> ProcessedPa
     }
 }
 
-fn processed_wrap_columns(panel_size: Vec2) -> usize {
-    let _ = panel_size;
-    let base_text_width =
-        (A4_WIDTH_POINTS - PAGE_TEXT_MARGIN_LEFT - PAGE_TEXT_MARGIN_RIGHT).max(1.0);
-    (base_text_width / DEFAULT_CHAR_WIDTH).floor().max(1.0) as usize
-}
-
 fn processed_page_layout(panel_size: Vec2, state: &EditorState) -> ProcessedPageLayout {
     let geometry = processed_page_geometry(panel_size, state);
-    let wrap_columns = processed_wrap_columns(panel_size);
-    let line_height = scaled_line_height(state).max(1.0);
-    let lines_per_page = (geometry.text_height / line_height).floor().max(1.0) as usize;
+    let wrap_columns = ((A4_WIDTH_POINTS - state.page_margin_left - state.page_margin_right)
+        .max(1.0)
+        / DEFAULT_CHAR_WIDTH)
+        .floor()
+        .max(1.0) as usize;
 
-    let page_step_px = geometry.paper_height + PAGE_GAP * state.zoom;
-    let content_height_px = lines_per_page as f32 * line_height;
-    let spacer_lines = ((page_step_px - content_height_px).max(0.0) / line_height)
+    // Keep page line metrics independent of zoom so text stays coupled to page on zoom.
+    let lines_per_page = ((A4_HEIGHT_POINTS - state.page_margin_top - state.page_margin_bottom)
+        .max(1.0)
+        / LINE_HEIGHT)
+        .floor()
+        .max(1.0) as usize;
+
+    let spacer_lines = (((A4_HEIGHT_POINTS + PAGE_GAP) - lines_per_page as f32 * LINE_HEIGHT)
+        .max(0.0)
+        / LINE_HEIGHT)
         .round()
         .max(0.0) as usize;
     let page_step_lines = lines_per_page.saturating_add(spacer_lines);
@@ -512,7 +585,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             Node {
                 width: percent(100.0),
                 height: percent(100.0),
-                flex_direction: FlexDirection::Column,
                 ..default()
             },
             BackgroundColor(COLOR_APP_BG),
@@ -521,37 +593,91 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             root.spawn((
                 Node {
                     width: percent(100.0),
-                    flex_direction: FlexDirection::Row,
-                    justify_content: JustifyContent::SpaceBetween,
-                    align_items: AlignItems::Center,
-                    padding: UiRect::axes(px(12.0), px(8.0)),
+                    height: percent(100.0),
+                    flex_direction: FlexDirection::Column,
                     ..default()
                 },
+                EditorScreenRoot,
                 children![
                     (
-                        Text::new(
-                            "Cmd/Ctrl+O load | Cmd/Ctrl+S save | Cmd/Ctrl +/- or Ctrl+scroll zoom | arrows/home/end/page move cursor | mouse wheel scroll | click to place cursor",
-                        ),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: 14.0,
-                            ..default()
-                        },
-                        TextColor(COLOR_TEXT_MAIN),
-                    ),
-                    (
                         Node {
+                            width: percent(100.0),
                             flex_direction: FlexDirection::Row,
-                            column_gap: px(8.0),
+                            justify_content: JustifyContent::SpaceBetween,
+                            align_items: AlignItems::Center,
+                            padding: UiRect::axes(px(12.0), px(8.0)),
                             ..default()
                         },
                         children![
-                            toolbar_button(font.clone(), "Load", ToolbarAction::Load),
-                            toolbar_button(font.clone(), "Save As", ToolbarAction::SaveAs),
-                            toolbar_button(font.clone(), "Zoom -", ToolbarAction::ZoomOut),
-                            toolbar_button(font.clone(), "Zoom +", ToolbarAction::ZoomIn),
-                            toolbar_button(font.clone(), "Settings", ToolbarAction::Settings),
+                            (
+                                Text::new(
+                                    "Cmd/Ctrl+O load | Cmd/Ctrl+S save | Cmd/Ctrl +/- or Ctrl+scroll zoom | arrows/home/end/page move cursor | mouse wheel scroll | click to place cursor",
+                                ),
+                                TextFont {
+                                    font: font.clone(),
+                                    font_size: 14.0,
+                                    ..default()
+                                },
+                                TextColor(COLOR_TEXT_MAIN),
+                            ),
+                            (
+                                Node {
+                                    flex_direction: FlexDirection::Row,
+                                    column_gap: px(8.0),
+                                    ..default()
+                                },
+                                children![
+                                    toolbar_button(font.clone(), "Load", ToolbarAction::Load),
+                                    toolbar_button(font.clone(), "Save As", ToolbarAction::SaveAs),
+                                    toolbar_button(font.clone(), "Zoom -", ToolbarAction::ZoomOut),
+                                    toolbar_button(font.clone(), "Zoom +", ToolbarAction::ZoomIn),
+                                    toolbar_button(font.clone(), "Settings", ToolbarAction::Settings),
+                                ],
+                            )
                         ],
+                    ),
+                    (
+                        Node {
+                            width: percent(100.0),
+                            padding: UiRect::axes(px(12.0), px(0.0)),
+                            ..default()
+                        },
+                        Text::new("Load opens a native file picker. Save As opens a native save dialog."),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 12.0,
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MUTED),
+                    ),
+                    (
+                        Node {
+                            width: percent(100.0),
+                            flex_grow: 1.0,
+                            flex_direction: FlexDirection::Row,
+                            column_gap: px(10.0),
+                            padding: UiRect::axes(px(10.0), px(8.0)),
+                            ..default()
+                        },
+                        children![
+                            panel_bundle(font.clone(), PanelKind::Plain, "Plain"),
+                            panel_bundle(font.clone(), PanelKind::Processed, "Processed"),
+                        ],
+                    ),
+                    (
+                        Node {
+                            width: percent(100.0),
+                            padding: UiRect::axes(px(12.0), px(8.0)),
+                            ..default()
+                        },
+                        Text::new(""),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MAIN),
+                        StatusText,
                     )
                 ],
             ));
@@ -559,39 +685,33 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             root.spawn((
                 Node {
                     width: percent(100.0),
-                    padding: UiRect::axes(px(12.0), px(0.0)),
-                    ..default()
-                },
-                Text::new("Load opens a native file picker. Save As opens a native save dialog."),
-                TextFont {
-                    font: font.clone(),
-                    font_size: 12.0,
-                    ..default()
-                },
-                TextColor(COLOR_TEXT_MUTED),
-            ));
-
-            root.spawn((
-                Node {
-                    width: percent(100.0),
+                    height: percent(100.0),
                     display: Display::None,
-                    flex_direction: FlexDirection::Row,
-                    align_items: AlignItems::Center,
-                    column_gap: px(10.0),
-                    padding: UiRect::axes(px(12.0), px(6.0)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(12.0),
+                    padding: UiRect::axes(px(18.0), px(16.0)),
                     ..default()
                 },
                 BackgroundColor(Color::srgb(0.86, 0.88, 0.90)),
-                SettingsPanel,
+                SettingsScreenRoot,
                 children![
                     (
                         Text::new("Settings"),
                         TextFont {
                             font: font.clone(),
-                            font_size: 13.0,
+                            font_size: 22.0,
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MAIN),
+                    ),
+                    (
+                        Text::new("Processed page margins and formatting options."),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MUTED),
                     ),
                     settings_toggle_button(
                         font.clone(),
@@ -601,38 +721,36 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                         font.clone(),
                         SettingsAction::NonDialogueDoubleSpaceNewline,
                     ),
+                    margin_setting_row(
+                        font.clone(),
+                        "Left margin (pt)",
+                        MarginEdge::Left,
+                        SettingsAction::MarginLeftDecrease,
+                        SettingsAction::MarginLeftIncrease,
+                    ),
+                    margin_setting_row(
+                        font.clone(),
+                        "Right margin (pt)",
+                        MarginEdge::Right,
+                        SettingsAction::MarginRightDecrease,
+                        SettingsAction::MarginRightIncrease,
+                    ),
+                    margin_setting_row(
+                        font.clone(),
+                        "Top margin (pt)",
+                        MarginEdge::Top,
+                        SettingsAction::MarginTopDecrease,
+                        SettingsAction::MarginTopIncrease,
+                    ),
+                    margin_setting_row(
+                        font.clone(),
+                        "Bottom margin (pt)",
+                        MarginEdge::Bottom,
+                        SettingsAction::MarginBottomDecrease,
+                        SettingsAction::MarginBottomIncrease,
+                    ),
+                    settings_action_button(font, "Back to editor", SettingsAction::BackToEditor),
                 ],
-            ));
-
-            root.spawn((
-                Node {
-                    width: percent(100.0),
-                    flex_grow: 1.0,
-                    flex_direction: FlexDirection::Row,
-                    column_gap: px(10.0),
-                    padding: UiRect::axes(px(10.0), px(8.0)),
-                    ..default()
-                },
-                children![
-                    panel_bundle(font.clone(), PanelKind::Plain, "Plain"),
-                    panel_bundle(font.clone(), PanelKind::Processed, "Processed"),
-                ],
-            ));
-
-            root.spawn((
-                Node {
-                    width: percent(100.0),
-                    padding: UiRect::axes(px(12.0), px(8.0)),
-                    ..default()
-                },
-                Text::new(""),
-                TextFont {
-                    font,
-                    font_size: 13.0,
-                    ..default()
-                },
-                TextColor(COLOR_TEXT_MAIN),
-                StatusText,
             ));
         });
 }
@@ -740,6 +858,67 @@ fn settings_toggle_button(font: Handle<Font>, action: SettingsAction) -> impl Bu
     )
 }
 
+fn settings_action_button(font: Handle<Font>, label: &str, action: SettingsAction) -> impl Bundle {
+    (
+        Button,
+        action,
+        Node {
+            padding: UiRect::axes(px(12.0), px(6.0)),
+            ..default()
+        },
+        BackgroundColor(BUTTON_NORMAL),
+        children![(
+            Text::new(label),
+            TextFont {
+                font,
+                font_size: 13.0,
+                ..default()
+            },
+            TextColor(COLOR_TEXT_MAIN),
+        )],
+    )
+}
+
+fn margin_setting_row(
+    font: Handle<Font>,
+    label: &str,
+    edge: MarginEdge,
+    decrease_action: SettingsAction,
+    increase_action: SettingsAction,
+) -> impl Bundle {
+    (
+        Node {
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            column_gap: px(8.0),
+            ..default()
+        },
+        children![
+            (
+                Text::new(label),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MAIN),
+            ),
+            settings_action_button(font.clone(), "-", decrease_action),
+            (
+                Text::new(""),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MAIN),
+                SettingMarginLabel { edge },
+            ),
+            settings_action_button(font, "+", increase_action),
+        ],
+    )
+}
+
 fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle {
     let body_color = match kind {
         PanelKind::Plain => COLOR_PANEL_BODY_PLAIN,
@@ -836,6 +1015,7 @@ fn handle_toolbar_buttons(
     primary_window_query: Query<&RawHandleWrapper, With<PrimaryWindow>>,
     mut state: ResMut<EditorState>,
     mut dialogs: ResMut<DialogState>,
+    mut next_screen_state: ResMut<NextState<UiScreenState>>,
 ) {
     let parent_handle = primary_window_query.iter().next();
 
@@ -865,12 +1045,8 @@ fn handle_toolbar_buttons(
                 state.status_message = format!("Zoom: {}%", state.zoom_percent());
             }
             ToolbarAction::Settings => {
-                state.settings_open = !state.settings_open;
-                state.status_message = if state.settings_open {
-                    "Opened settings.".to_string()
-                } else {
-                    "Closed settings.".to_string()
-                };
+                next_screen_state.set(UiScreenState::Settings);
+                state.status_message = "Opened settings.".to_string();
             }
         }
     }
@@ -898,64 +1074,81 @@ fn style_toolbar_buttons(
 fn handle_settings_buttons(
     interaction_query: Query<(&Interaction, &SettingsAction), (Changed<Interaction>, With<Button>)>,
     mut state: ResMut<EditorState>,
+    mut next_screen_state: ResMut<NextState<UiScreenState>>,
 ) {
     for (interaction, action) in interaction_query.iter() {
         if *interaction != Interaction::Pressed {
             continue;
         }
 
+        let mut settings_changed = false;
         match action {
             SettingsAction::DialogueDoubleSpaceNewline => {
                 state.dialogue_double_space_newline = !state.dialogue_double_space_newline;
-                let persistent = PersistentSettings {
-                    dialogue_double_space_newline: state.dialogue_double_space_newline,
-                    non_dialogue_double_space_newline: state.non_dialogue_double_space_newline,
-                };
-
-                state.status_message = match save_persistent_settings(&persistent) {
-                    Ok(()) => format!(
-                        "Dialogue double-space newline in processed pane: {} (saved)",
-                        if state.dialogue_double_space_newline {
-                            "ON"
-                        } else {
-                            "OFF"
-                        }
-                    ),
-                    Err(error) => format!(
-                        "Dialogue double-space newline in processed pane: {} (save failed: {error})",
-                        if state.dialogue_double_space_newline {
-                            "ON"
-                        } else {
-                            "OFF"
-                        }
-                    ),
-                };
+                settings_changed = true;
+                state.status_message = format!(
+                    "Dialogue double-space newline in processed pane: {}",
+                    if state.dialogue_double_space_newline {
+                        "ON"
+                    } else {
+                        "OFF"
+                    }
+                );
             }
             SettingsAction::NonDialogueDoubleSpaceNewline => {
                 state.non_dialogue_double_space_newline = !state.non_dialogue_double_space_newline;
-                let persistent = PersistentSettings {
-                    dialogue_double_space_newline: state.dialogue_double_space_newline,
-                    non_dialogue_double_space_newline: state.non_dialogue_double_space_newline,
-                };
+                settings_changed = true;
+                state.status_message = format!(
+                    "Non-dialogue double-space newline in processed pane: {}",
+                    if state.non_dialogue_double_space_newline {
+                        "ON"
+                    } else {
+                        "OFF"
+                    }
+                );
+            }
+            SettingsAction::MarginLeftDecrease => {
+                adjust_page_margin(&mut state, MarginEdge::Left, -PAGE_MARGIN_STEP);
+                settings_changed = true;
+            }
+            SettingsAction::MarginLeftIncrease => {
+                adjust_page_margin(&mut state, MarginEdge::Left, PAGE_MARGIN_STEP);
+                settings_changed = true;
+            }
+            SettingsAction::MarginRightDecrease => {
+                adjust_page_margin(&mut state, MarginEdge::Right, -PAGE_MARGIN_STEP);
+                settings_changed = true;
+            }
+            SettingsAction::MarginRightIncrease => {
+                adjust_page_margin(&mut state, MarginEdge::Right, PAGE_MARGIN_STEP);
+                settings_changed = true;
+            }
+            SettingsAction::MarginTopDecrease => {
+                adjust_page_margin(&mut state, MarginEdge::Top, -PAGE_MARGIN_STEP);
+                settings_changed = true;
+            }
+            SettingsAction::MarginTopIncrease => {
+                adjust_page_margin(&mut state, MarginEdge::Top, PAGE_MARGIN_STEP);
+                settings_changed = true;
+            }
+            SettingsAction::MarginBottomDecrease => {
+                adjust_page_margin(&mut state, MarginEdge::Bottom, -PAGE_MARGIN_STEP);
+                settings_changed = true;
+            }
+            SettingsAction::MarginBottomIncrease => {
+                adjust_page_margin(&mut state, MarginEdge::Bottom, PAGE_MARGIN_STEP);
+                settings_changed = true;
+            }
+            SettingsAction::BackToEditor => {
+                next_screen_state.set(UiScreenState::Editor);
+                state.status_message = "Closed settings.".to_string();
+            }
+        }
 
-                state.status_message = match save_persistent_settings(&persistent) {
-                    Ok(()) => format!(
-                        "Non-dialogue double-space newline in processed pane: {} (saved)",
-                        if state.non_dialogue_double_space_newline {
-                            "ON"
-                        } else {
-                            "OFF"
-                        }
-                    ),
-                    Err(error) => format!(
-                        "Non-dialogue double-space newline in processed pane: {} (save failed: {error})",
-                        if state.non_dialogue_double_space_newline {
-                            "ON"
-                        } else {
-                            "OFF"
-                        }
-                    ),
-                };
+        if settings_changed {
+            let persistent = persistent_settings_from_state(&state);
+            if let Err(error) = save_persistent_settings(&persistent) {
+                state.status_message = format!("Settings save failed: {error}");
             }
         }
     }
@@ -963,11 +1156,25 @@ fn handle_settings_buttons(
 
 fn sync_settings_ui(
     state: Res<EditorState>,
-    mut panel_query: Query<&mut Node, With<SettingsPanel>>,
-    mut toggle_label_query: Query<(&SettingToggleLabel, &mut Text)>,
+    screen_state: Res<State<UiScreenState>>,
+    mut editor_root_query: Query<&mut Node, (With<EditorScreenRoot>, Without<SettingsScreenRoot>)>,
+    mut settings_root_query: Query<
+        &mut Node,
+        (With<SettingsScreenRoot>, Without<EditorScreenRoot>),
+    >,
+    mut toggle_label_query: Query<(&SettingToggleLabel, &mut Text), Without<SettingMarginLabel>>,
+    mut margin_label_query: Query<(&SettingMarginLabel, &mut Text), Without<SettingToggleLabel>>,
 ) {
-    if let Ok(mut panel_node) = panel_query.single_mut() {
-        panel_node.display = if state.settings_open {
+    if let Ok(mut editor_root) = editor_root_query.single_mut() {
+        editor_root.display = if *screen_state.get() == UiScreenState::Editor {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
+    if let Ok(mut settings_root) = settings_root_query.single_mut() {
+        settings_root.display = if *screen_state.get() == UiScreenState::Settings {
             Display::Flex
         } else {
             Display::None
@@ -992,12 +1199,24 @@ fn sync_settings_ui(
                     "OFF"
                 }
             ),
+            _ => String::new(),
         };
+    }
+
+    for (label, mut text) in margin_label_query.iter_mut() {
+        let value = match label.edge {
+            MarginEdge::Left => state.page_margin_left,
+            MarginEdge::Right => state.page_margin_right,
+            MarginEdge::Top => state.page_margin_top,
+            MarginEdge::Bottom => state.page_margin_bottom,
+        };
+        **text = format!("{value:.1} pt");
     }
 }
 
 fn load_persistent_settings() -> PersistentSettings {
     let path = PathBuf::from(SETTINGS_PATH);
+    let defaults = PersistentSettings::default();
     let contents = match fs::read_to_string(&path) {
         Ok(contents) => contents,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -1017,31 +1236,28 @@ fn load_persistent_settings() -> PersistentSettings {
         }
     };
 
-    let dialogue_value = if let Some(value) =
-        parse_toml_bool(&contents, "dialogue_double_space_newline")
-    {
-        value
-    } else if let Some(value) = parse_toml_bool(&contents, "parenthetical_double_space_newline") {
-        // Backward-compatibility for the short-lived parenthetical key.
-        info!(
-            "[settings] Loaded legacy parenthetical_double_space_newline key from {}",
-            path.display()
-        );
-        value
-    } else {
-        warn!(
-            "[settings] Could not parse dialogue_double_space_newline in {}; using defaults",
-            path.display()
-        );
-        return PersistentSettings::default();
-    };
-    let non_dialogue_value =
-        parse_toml_bool(&contents, "non_dialogue_double_space_newline").unwrap_or(false);
+    let dialogue_value = parse_toml_bool(&contents, "dialogue_double_space_newline")
+        .or_else(|| parse_toml_bool(&contents, "parenthetical_double_space_newline"))
+        .unwrap_or(defaults.dialogue_double_space_newline);
+    let non_dialogue_value = parse_toml_bool(&contents, "non_dialogue_double_space_newline")
+        .unwrap_or(defaults.non_dialogue_double_space_newline);
+    let page_margin_left =
+        parse_toml_f32(&contents, "page_margin_left").unwrap_or(defaults.page_margin_left);
+    let page_margin_right =
+        parse_toml_f32(&contents, "page_margin_right").unwrap_or(defaults.page_margin_right);
+    let page_margin_top =
+        parse_toml_f32(&contents, "page_margin_top").unwrap_or(defaults.page_margin_top);
+    let page_margin_bottom =
+        parse_toml_f32(&contents, "page_margin_bottom").unwrap_or(defaults.page_margin_bottom);
 
     info!("[settings] Loaded settings from {}", path.display());
     PersistentSettings {
         dialogue_double_space_newline: dialogue_value,
         non_dialogue_double_space_newline: non_dialogue_value,
+        page_margin_left,
+        page_margin_right,
+        page_margin_top,
+        page_margin_bottom,
     }
 }
 
@@ -1057,8 +1273,18 @@ fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
          # true: processed pane renders dialogue double spaces as new lines\n\
          dialogue_double_space_newline = {}\n\
          # true: processed pane renders non-dialogue double spaces as new lines\n\
-         non_dialogue_double_space_newline = {}\n",
-        settings.dialogue_double_space_newline, settings.non_dialogue_double_space_newline
+         non_dialogue_double_space_newline = {}\n\
+         # processed page margins in typographic points\n\
+         page_margin_left = {}\n\
+         page_margin_right = {}\n\
+         page_margin_top = {}\n\
+         page_margin_bottom = {}\n",
+        settings.dialogue_double_space_newline,
+        settings.non_dialogue_double_space_newline,
+        settings.page_margin_left,
+        settings.page_margin_right,
+        settings.page_margin_top,
+        settings.page_margin_bottom,
     );
 
     fs::write(&path, contents)?;
@@ -1089,6 +1315,84 @@ fn parse_toml_bool(contents: &str, key: &str) -> Option<bool> {
     }
 
     None
+}
+
+fn parse_toml_f32(contents: &str, key: &str) -> Option<f32> {
+    for line in contents.lines() {
+        let line = line.trim();
+
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let Some((lhs, rhs)) = line.split_once('=') else {
+            continue;
+        };
+        if lhs.trim() != key {
+            continue;
+        }
+
+        return rhs.trim().parse::<f32>().ok();
+    }
+
+    None
+}
+
+fn persistent_settings_from_state(state: &EditorState) -> PersistentSettings {
+    PersistentSettings {
+        dialogue_double_space_newline: state.dialogue_double_space_newline,
+        non_dialogue_double_space_newline: state.non_dialogue_double_space_newline,
+        page_margin_left: state.page_margin_left,
+        page_margin_right: state.page_margin_right,
+        page_margin_top: state.page_margin_top,
+        page_margin_bottom: state.page_margin_bottom,
+    }
+}
+
+fn normalize_page_margins(state: &mut EditorState) {
+    state.page_margin_left = state.page_margin_left.max(0.0);
+    state.page_margin_right = state.page_margin_right.max(0.0);
+    state.page_margin_top = state.page_margin_top.max(0.0);
+    state.page_margin_bottom = state.page_margin_bottom.max(0.0);
+
+    let max_horizontal = (A4_WIDTH_POINTS - MIN_TEXT_BOX_WIDTH).max(0.0);
+    if state.page_margin_left + state.page_margin_right > max_horizontal {
+        let overflow = state.page_margin_left + state.page_margin_right - max_horizontal;
+        state.page_margin_right = (state.page_margin_right - overflow).max(0.0);
+    }
+
+    let max_vertical = (A4_HEIGHT_POINTS - MIN_TEXT_BOX_HEIGHT).max(0.0);
+    if state.page_margin_top + state.page_margin_bottom > max_vertical {
+        let overflow = state.page_margin_top + state.page_margin_bottom - max_vertical;
+        state.page_margin_bottom = (state.page_margin_bottom - overflow).max(0.0);
+    }
+}
+
+fn adjust_page_margin(state: &mut EditorState, edge: MarginEdge, delta: f32) {
+    match edge {
+        MarginEdge::Left => {
+            let max_left =
+                (A4_WIDTH_POINTS - MIN_TEXT_BOX_WIDTH - state.page_margin_right).max(0.0);
+            state.page_margin_left = (state.page_margin_left + delta).clamp(0.0, max_left);
+        }
+        MarginEdge::Right => {
+            let max_right =
+                (A4_WIDTH_POINTS - MIN_TEXT_BOX_WIDTH - state.page_margin_left).max(0.0);
+            state.page_margin_right = (state.page_margin_right + delta).clamp(0.0, max_right);
+        }
+        MarginEdge::Top => {
+            let max_top =
+                (A4_HEIGHT_POINTS - MIN_TEXT_BOX_HEIGHT - state.page_margin_bottom).max(0.0);
+            state.page_margin_top = (state.page_margin_top + delta).clamp(0.0, max_top);
+        }
+        MarginEdge::Bottom => {
+            let max_bottom =
+                (A4_HEIGHT_POINTS - MIN_TEXT_BOX_HEIGHT - state.page_margin_top).max(0.0);
+            state.page_margin_bottom = (state.page_margin_bottom + delta).clamp(0.0, max_bottom);
+        }
+    }
+
+    normalize_page_margins(state);
 }
 
 fn scaled_font_size(state: &EditorState) -> f32 {
@@ -1639,7 +1943,6 @@ fn handle_mouse_click(
     let plain_lines = visible_plain_lines(&state, visible_lines);
     let processed_view = build_processed_view(
         &state,
-        visible_lines,
         processed_wrap_columns,
         processed_lines_per_page,
         processed_spacer_lines,
@@ -1652,6 +1955,10 @@ fn handle_mouse_click(
     let processed_char_width = scaled_char_width(&state).max(1.0);
     let plain_origin_x = scaled_text_padding_x(&state);
     let plain_origin_y = scaled_text_padding_y(&state);
+    let processed_origin_x =
+        processed_layout_info.map_or(plain_origin_x, |layout| layout.geometry.text_left);
+    let processed_origin_y =
+        processed_layout_info.map_or(plain_origin_y, |layout| layout.geometry.text_top);
 
     for (panel, relative_cursor, computed) in panel_query.iter() {
         if !relative_cursor.cursor_over() {
@@ -1669,10 +1976,16 @@ fn handle_mouse_click(
 
         let inverse_scale = computed.inverse_scale_factor();
         let size = computed.size() * inverse_scale;
-        let processed_geometry = (panel.kind == PanelKind::Processed)
-            .then(|| processed_page_layout(size, &state).geometry);
-        let origin_x = processed_geometry.map_or(plain_origin_x, |geometry| geometry.text_left);
-        let origin_y = processed_geometry.map_or(plain_origin_y, |geometry| geometry.text_top);
+        let origin_x = if panel.kind == PanelKind::Processed {
+            processed_origin_x
+        } else {
+            plain_origin_x
+        };
+        let origin_y = if panel.kind == PanelKind::Processed {
+            processed_origin_y
+        } else {
+            plain_origin_y
+        };
         let local_x = (normalized.x * size.x - origin_x).max(0.0);
         let local_y = (normalized.y * size.y - origin_y).max(0.0);
 
@@ -1853,11 +2166,13 @@ fn render_editor(
     let plain_lines = visible_plain_lines(&state, visible_lines);
     let processed_view = build_processed_view(
         &state,
-        visible_lines,
         processed_wrap_columns,
         processed_lines_per_page,
         processed_spacer_lines,
     );
+    let first_visible_page = processed_view.start_index / processed_page_step_lines;
+    let processed_text_origin_y =
+        processed_geometry.map_or(plain_origin_y, |geometry| geometry.text_top);
     for (panel_paper, mut node, mut visibility, mut color) in paper_query.iter_mut() {
         if panel_paper.kind != PanelKind::Processed {
             *visibility = Visibility::Hidden;
@@ -1869,11 +2184,10 @@ fn render_editor(
             continue;
         };
 
-        let first_visible_page = processed_view.start_index / processed_page_step_lines;
         let page_index = first_visible_page.saturating_add(panel_paper.slot);
-        let page_top = geometry.paper_top
-            + page_index.saturating_sub(first_visible_page) as f32
-                * (geometry.paper_height + PAGE_GAP * state.zoom);
+        let page_start_line = page_index.saturating_mul(processed_page_step_lines);
+        let line_delta = page_start_line as isize - processed_view.start_index as isize;
+        let page_top = geometry.paper_top + line_delta as f32 * processed_line_height;
 
         if page_top > panel_size.y || page_top + geometry.paper_height < 0.0 {
             *visibility = Visibility::Hidden;
@@ -1912,7 +2226,7 @@ fn render_editor(
                     |geometry| {
                         (
                             geometry.text_left,
-                            geometry.text_top,
+                            processed_text_origin_y,
                             geometry.text_width,
                             geometry.text_height,
                         )
@@ -1921,7 +2235,8 @@ fn render_editor(
                 node.left = px(text_left);
                 node.top = px(text_top);
                 node.width = px(text_width);
-                node.height = px(text_height);
+                let _ = text_height;
+                node.height = Val::Auto;
             }
         }
     }
@@ -1998,7 +2313,7 @@ fn render_editor(
 
                 let (processed_origin_x, processed_origin_y) = processed_geometry
                     .map_or((plain_origin_x, plain_origin_y), |geometry| {
-                        (geometry.text_left, geometry.text_top)
+                        (geometry.text_left, processed_text_origin_y)
                     });
                 (
                     visual_index,
@@ -2117,21 +2432,19 @@ struct ProcessedView {
 
 fn build_processed_view(
     state: &EditorState,
-    visible_lines: usize,
     wrap_columns: usize,
     lines_per_page: usize,
     spacer_lines: usize,
 ) -> ProcessedView {
-    let max_visible = visible_lines.min(PROCESSED_SPAN_CAPACITY).max(1);
+    let max_visible = PROCESSED_SPAN_CAPACITY.max(1);
     let all_lines =
         build_all_processed_visual_lines(state, wrap_columns, lines_per_page, spacer_lines);
     if all_lines.is_empty() {
         return ProcessedView::default();
     }
 
-    let anchor_index = first_visual_index_for_source_line(&all_lines, state.top_line).unwrap_or(0);
-    let page_step_lines = lines_per_page.saturating_add(spacer_lines).max(1);
-    let mut start_index = (anchor_index / page_step_lines) * page_step_lines;
+    let mut start_index =
+        first_visual_index_for_source_line(&all_lines, state.top_line).unwrap_or(0);
 
     let max_start = all_lines.len().saturating_sub(max_visible);
     start_index = start_index.min(max_start);
@@ -2149,19 +2462,32 @@ fn build_all_processed_visual_lines(
     lines_per_page: usize,
     spacer_lines: usize,
 ) -> Vec<ProcessedVisualLine> {
-    let mut content_lines = Vec::<ProcessedVisualLine>::new();
+    let lines_per_page = lines_per_page.max(1);
+    let mut paged_lines = Vec::<ProcessedVisualLine>::new();
+    let mut lines_in_page = 0usize;
 
     for (source_line, parsed_line) in state.parsed.iter().enumerate() {
+        if is_fountain_page_break_marker(&parsed_line.raw) {
+            if lines_in_page > 0 {
+                let remaining_content = lines_per_page.saturating_sub(lines_in_page);
+                let spacer_total = remaining_content.saturating_add(spacer_lines);
+                push_page_spacers(&mut paged_lines, source_line, spacer_total);
+                lines_in_page = 0;
+            }
+            continue;
+        }
+
         let indent_width = parsed_line.indent_width();
         let uppercase = matches!(
             parsed_line.kind,
             LineKind::SceneHeading | LineKind::Transition | LineKind::Character
         );
+        let mut wrapped = Vec::<ProcessedVisualLine>::new();
 
         if should_split_on_double_space(state, &parsed_line.kind) {
             for (raw_start_column, raw_segment) in double_space_segments(&parsed_line.raw) {
                 push_wrapped_visual_lines(
-                    &mut content_lines,
+                    &mut wrapped,
                     source_line,
                     indent_width,
                     uppercase,
@@ -2172,7 +2498,7 @@ fn build_all_processed_visual_lines(
             }
         } else {
             push_wrapped_visual_lines(
-                &mut content_lines,
+                &mut wrapped,
                 source_line,
                 indent_width,
                 uppercase,
@@ -2181,32 +2507,15 @@ fn build_all_processed_visual_lines(
                 wrap_columns,
             );
         }
-    }
 
-    if lines_per_page == 0 || spacer_lines == 0 || content_lines.is_empty() {
-        return content_lines;
-    }
-
-    let total_content = content_lines.len();
-    let mut paged_lines = Vec::<ProcessedVisualLine>::with_capacity(
-        total_content.saturating_add((total_content / lines_per_page).saturating_mul(spacer_lines)),
-    );
-
-    for (index, line) in content_lines.into_iter().enumerate() {
-        let source_line = line.source_line;
-        paged_lines.push(line);
-
-        let at_page_end = (index + 1) % lines_per_page == 0;
-        if at_page_end && index + 1 < total_content {
-            for _ in 0..spacer_lines {
-                paged_lines.push(ProcessedVisualLine {
-                    source_line,
-                    text: String::new(),
-                    raw_start_column: 0,
-                    raw_end_column: 0,
-                    is_spacer: true,
-                });
+        for visual_line in wrapped {
+            if lines_in_page >= lines_per_page {
+                push_page_spacers(&mut paged_lines, source_line, spacer_lines);
+                lines_in_page = 0;
             }
+
+            paged_lines.push(visual_line);
+            lines_in_page = lines_in_page.saturating_add(1);
         }
     }
 
@@ -2273,6 +2582,23 @@ fn push_wrapped_visual_lines(
     }
 }
 
+fn push_page_spacers(out: &mut Vec<ProcessedVisualLine>, source_line: usize, count: usize) {
+    for _ in 0..count {
+        out.push(ProcessedVisualLine {
+            source_line,
+            text: String::new(),
+            raw_start_column: 0,
+            raw_end_column: 0,
+            is_spacer: true,
+        });
+    }
+}
+
+fn is_fountain_page_break_marker(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    trimmed.chars().count() >= 3 && trimmed.chars().all(|ch| ch == '=')
+}
+
 fn should_split_on_double_space(state: &EditorState, kind: &LineKind) -> bool {
     match kind {
         LineKind::Dialogue => state.dialogue_double_space_newline,
@@ -2287,6 +2613,11 @@ fn first_visual_index_for_source_line(
     lines
         .iter()
         .position(|line| !line.is_spacer && line.source_line >= source_line)
+        .or_else(|| {
+            lines
+                .iter()
+                .rposition(|line| !line.is_spacer && line.source_line <= source_line)
+        })
 }
 
 fn double_space_segments(input: &str) -> Vec<(usize, String)> {
