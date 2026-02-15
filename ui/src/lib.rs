@@ -30,24 +30,44 @@ const DEFAULT_LOAD_PATH: &str = "docs/humanDOC.md";
 const DEFAULT_SAVE_PATH: &str = "scripts/session.fountain";
 const SETTINGS_PATH: &str = "scripts/settings.toml";
 const PROCESSED_SPAN_CAPACITY: usize = 256;
+const PROCESSED_PAPER_CAPACITY: usize = 16;
 
-const FONT_SIZE: f32 = 20.0;
-const LINE_HEIGHT: f32 = 24.0;
-const DEFAULT_CHAR_WIDTH: f32 = 12.0;
+const FONT_SIZE: f32 = 12.0;
+const LINE_HEIGHT: f32 = 12.0;
+const DEFAULT_CHAR_WIDTH: f32 = 7.2;
 const TEXT_PADDING_X: f32 = 14.0;
 const TEXT_PADDING_Y: f32 = 10.0;
 const CARET_WIDTH: f32 = 2.0;
 const CARET_X_OFFSET: f32 = -1.0;
 const CARET_Y_OFFSET_FACTOR: f32 = -0.12;
-const BUTTON_NORMAL: Color = Color::srgb(0.20, 0.24, 0.29);
-const BUTTON_HOVER: Color = Color::srgb(0.28, 0.33, 0.39);
-const BUTTON_PRESSED: Color = Color::srgb(0.35, 0.43, 0.50);
-const COLOR_ACTION: Color = Color::srgb(0.93, 0.93, 0.93);
-const COLOR_SCENE: Color = Color::srgb(0.98, 0.97, 0.90);
-const COLOR_CHARACTER: Color = Color::srgb(0.95, 0.92, 0.78);
-const COLOR_DIALOGUE: Color = Color::srgb(0.94, 0.94, 0.94);
-const COLOR_PARENTHETICAL: Color = Color::srgb(0.72, 0.78, 0.84);
-const COLOR_TRANSITION: Color = Color::srgb(0.82, 0.90, 0.98);
+const ZOOM_MIN: f32 = 0.6;
+const ZOOM_MAX: f32 = 1.8;
+const ZOOM_STEP: f32 = 0.1;
+const A4_WIDTH_POINTS: f32 = 595.0;
+const A4_HEIGHT_POINTS: f32 = 842.0;
+const PAGE_OUTER_MARGIN: f32 = 14.0;
+const PAGE_TEXT_MARGIN_LEFT: f32 = 42.0;
+const PAGE_TEXT_MARGIN_RIGHT: f32 = 34.0;
+const PAGE_TEXT_MARGIN_TOP: f32 = 30.0;
+const PAGE_TEXT_MARGIN_BOTTOM: f32 = 30.0;
+const PAGE_GAP: f32 = 24.0;
+
+const BUTTON_NORMAL: Color = Color::srgb(0.80, 0.82, 0.84);
+const BUTTON_HOVER: Color = Color::srgb(0.74, 0.77, 0.80);
+const BUTTON_PRESSED: Color = Color::srgb(0.68, 0.72, 0.76);
+const COLOR_ACTION: Color = Color::srgb(0.12, 0.13, 0.15);
+const COLOR_SCENE: Color = Color::srgb(0.10, 0.10, 0.12);
+const COLOR_CHARACTER: Color = Color::srgb(0.20, 0.16, 0.12);
+const COLOR_DIALOGUE: Color = Color::srgb(0.11, 0.12, 0.13);
+const COLOR_PARENTHETICAL: Color = Color::srgb(0.24, 0.28, 0.32);
+const COLOR_TRANSITION: Color = Color::srgb(0.15, 0.23, 0.31);
+const COLOR_APP_BG: Color = Color::srgb(0.79, 0.80, 0.82);
+const COLOR_PANEL_BG: Color = Color::srgb(0.89, 0.90, 0.91);
+const COLOR_PANEL_BODY_PLAIN: Color = Color::srgb(0.96, 0.96, 0.97);
+const COLOR_PANEL_BODY_PROCESSED: Color = Color::srgb(0.82, 0.83, 0.84);
+const COLOR_PAPER: Color = Color::srgb(0.99, 0.99, 0.985);
+const COLOR_TEXT_MAIN: Color = Color::srgb(0.18, 0.19, 0.20);
+const COLOR_TEXT_MUTED: Color = Color::srgb(0.34, 0.36, 0.39);
 
 pub struct UiPlugin;
 
@@ -56,7 +76,14 @@ impl Plugin for UiPlugin {
         app.init_resource::<EditorState>()
             .init_resource::<DialogState>()
             .insert_non_send_resource(DialogMainThreadMarker)
-            .add_systems(Startup, (setup, setup_processed_spans.after(setup)))
+            .add_systems(
+                Startup,
+                (
+                    setup,
+                    setup_processed_spans.after(setup),
+                    setup_processed_papers.after(setup),
+                ),
+            )
             .add_systems(
                 Update,
                 (
@@ -99,6 +126,12 @@ struct PanelCaret {
 }
 
 #[derive(Component)]
+struct PanelPaper {
+    kind: PanelKind,
+    slot: usize,
+}
+
+#[derive(Component)]
 struct ProcessedLineSpan {
     line_offset: usize,
 }
@@ -110,6 +143,8 @@ struct StatusText;
 enum ToolbarAction {
     Load,
     SaveAs,
+    ZoomOut,
+    ZoomIn,
     Settings,
 }
 
@@ -140,6 +175,7 @@ struct EditorState {
     settings_open: bool,
     dialogue_double_space_newline: bool,
     non_dialogue_double_space_newline: bool,
+    zoom: f32,
     measured_line_step: f32,
 }
 
@@ -236,12 +272,23 @@ impl FromWorld for EditorState {
             settings_open: false,
             dialogue_double_space_newline: settings.dialogue_double_space_newline,
             non_dialogue_double_space_newline: settings.non_dialogue_double_space_newline,
+            zoom: 1.0,
             measured_line_step: LINE_HEIGHT,
         }
     }
 }
 
 impl EditorState {
+    fn set_zoom(&mut self, zoom: f32) {
+        self.zoom = zoom.clamp(ZOOM_MIN, ZOOM_MAX);
+        self.measured_line_step = scaled_line_height(self);
+        self.reset_blink();
+    }
+
+    fn zoom_percent(&self) -> u32 {
+        (self.zoom * 100.0).round() as u32
+    }
+
     fn reparse(&mut self) {
         self.parsed = parse_document(&self.document);
     }
@@ -368,6 +415,86 @@ impl EditorState {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct ProcessedPageGeometry {
+    paper_left: f32,
+    paper_top: f32,
+    paper_width: f32,
+    paper_height: f32,
+    text_left: f32,
+    text_top: f32,
+    text_width: f32,
+    text_height: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ProcessedPageLayout {
+    geometry: ProcessedPageGeometry,
+    wrap_columns: usize,
+    lines_per_page: usize,
+    spacer_lines: usize,
+    page_step_lines: usize,
+}
+
+fn processed_page_geometry(panel_size: Vec2, state: &EditorState) -> ProcessedPageGeometry {
+    let _ = panel_size;
+    // Zoom scales a fixed A4 page model (in typographic points).
+    let zoom = state.zoom;
+    let paper_width = A4_WIDTH_POINTS * zoom;
+    let paper_height = A4_HEIGHT_POINTS * zoom;
+    let paper_left = PAGE_OUTER_MARGIN;
+    let paper_top = PAGE_OUTER_MARGIN;
+
+    let margin_left = PAGE_TEXT_MARGIN_LEFT * zoom;
+    let margin_right = PAGE_TEXT_MARGIN_RIGHT * zoom;
+    let margin_top = PAGE_TEXT_MARGIN_TOP * zoom;
+    let margin_bottom = PAGE_TEXT_MARGIN_BOTTOM * zoom;
+    let text_left = paper_left + margin_left;
+    let text_top = paper_top + margin_top;
+    let text_width = (paper_width - margin_left - margin_right).max(1.0);
+    let text_height = (paper_height - margin_top - margin_bottom).max(1.0);
+
+    ProcessedPageGeometry {
+        paper_left,
+        paper_top,
+        paper_width,
+        paper_height,
+        text_left,
+        text_top,
+        text_width,
+        text_height,
+    }
+}
+
+fn processed_wrap_columns(panel_size: Vec2) -> usize {
+    let _ = panel_size;
+    let base_text_width =
+        (A4_WIDTH_POINTS - PAGE_TEXT_MARGIN_LEFT - PAGE_TEXT_MARGIN_RIGHT).max(1.0);
+    (base_text_width / DEFAULT_CHAR_WIDTH).floor().max(1.0) as usize
+}
+
+fn processed_page_layout(panel_size: Vec2, state: &EditorState) -> ProcessedPageLayout {
+    let geometry = processed_page_geometry(panel_size, state);
+    let wrap_columns = processed_wrap_columns(panel_size);
+    let line_height = scaled_line_height(state).max(1.0);
+    let lines_per_page = (geometry.text_height / line_height).floor().max(1.0) as usize;
+
+    let page_step_px = geometry.paper_height + PAGE_GAP * state.zoom;
+    let content_height_px = lines_per_page as f32 * line_height;
+    let spacer_lines = ((page_step_px - content_height_px).max(0.0) / line_height)
+        .round()
+        .max(0.0) as usize;
+    let page_step_lines = lines_per_page.saturating_add(spacer_lines);
+
+    ProcessedPageLayout {
+        geometry,
+        wrap_columns,
+        lines_per_page,
+        spacer_lines,
+        page_step_lines,
+    }
+}
+
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((Camera2d, IsDefaultUiCamera));
 
@@ -388,7 +515,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 flex_direction: FlexDirection::Column,
                 ..default()
             },
-            BackgroundColor(Color::srgb(0.07, 0.08, 0.09)),
+            BackgroundColor(COLOR_APP_BG),
         ))
         .with_children(|root| {
             root.spawn((
@@ -403,14 +530,14 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 children![
                     (
                         Text::new(
-                            "Cmd/Ctrl+O load | Cmd/Ctrl+S save | arrows/home/end/page keys move cursor | mouse wheel scroll | click to place cursor",
+                            "Cmd/Ctrl+O load | Cmd/Ctrl+S save | Cmd/Ctrl +/- or Ctrl+scroll zoom | arrows/home/end/page move cursor | mouse wheel scroll | click to place cursor",
                         ),
                         TextFont {
                             font: font.clone(),
                             font_size: 14.0,
                             ..default()
                         },
-                        TextColor(Color::srgb(0.78, 0.80, 0.84)),
+                        TextColor(COLOR_TEXT_MAIN),
                     ),
                     (
                         Node {
@@ -421,6 +548,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                         children![
                             toolbar_button(font.clone(), "Load", ToolbarAction::Load),
                             toolbar_button(font.clone(), "Save As", ToolbarAction::SaveAs),
+                            toolbar_button(font.clone(), "Zoom -", ToolbarAction::ZoomOut),
+                            toolbar_button(font.clone(), "Zoom +", ToolbarAction::ZoomIn),
                             toolbar_button(font.clone(), "Settings", ToolbarAction::Settings),
                         ],
                     )
@@ -439,7 +568,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     font_size: 12.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.62, 0.67, 0.73)),
+                TextColor(COLOR_TEXT_MUTED),
             ));
 
             root.spawn((
@@ -452,7 +581,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     padding: UiRect::axes(px(12.0), px(6.0)),
                     ..default()
                 },
-                BackgroundColor(Color::srgb(0.10, 0.11, 0.13)),
+                BackgroundColor(Color::srgb(0.86, 0.88, 0.90)),
                 SettingsPanel,
                 children![
                     (
@@ -462,7 +591,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                             font_size: 13.0,
                             ..default()
                         },
-                        TextColor(Color::srgb(0.90, 0.90, 0.92)),
+                        TextColor(COLOR_TEXT_MAIN),
                     ),
                     settings_toggle_button(
                         font.clone(),
@@ -502,7 +631,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     font_size: 13.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.92, 0.92, 0.92)),
+                TextColor(COLOR_TEXT_MAIN),
                 StatusText,
             ));
         });
@@ -542,6 +671,32 @@ fn setup_processed_spans(
     }
 }
 
+fn setup_processed_papers(mut commands: Commands, body_query: Query<(Entity, &PanelBody)>) {
+    for (entity, panel_body) in body_query.iter() {
+        if panel_body.kind != PanelKind::Processed {
+            continue;
+        }
+
+        commands.entity(entity).with_children(|parent| {
+            for slot in 1..PROCESSED_PAPER_CAPACITY {
+                parent.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        ..default()
+                    },
+                    BackgroundColor(COLOR_PAPER),
+                    Visibility::Hidden,
+                    ZIndex(0),
+                    PanelPaper {
+                        kind: PanelKind::Processed,
+                        slot,
+                    },
+                ));
+            }
+        });
+    }
+}
+
 fn toolbar_button(font: Handle<Font>, label: &str, action: ToolbarAction) -> impl Bundle {
     (
         Button,
@@ -558,7 +713,7 @@ fn toolbar_button(font: Handle<Font>, label: &str, action: ToolbarAction) -> imp
                 font_size: 13.0,
                 ..default()
             },
-            TextColor(Color::srgb(0.96, 0.96, 0.96)),
+            TextColor(COLOR_TEXT_MAIN),
         )],
     )
 }
@@ -579,13 +734,18 @@ fn settings_toggle_button(font: Handle<Font>, action: SettingsAction) -> impl Bu
                 font_size: 13.0,
                 ..default()
             },
-            TextColor(Color::srgb(0.96, 0.96, 0.96)),
+            TextColor(COLOR_TEXT_MAIN),
             SettingToggleLabel { action },
         )],
     )
 }
 
 fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle {
+    let body_color = match kind {
+        PanelKind::Plain => COLOR_PANEL_BODY_PLAIN,
+        PanelKind::Processed => COLOR_PANEL_BODY_PROCESSED,
+    };
+
     (
         Node {
             flex_grow: 1.0,
@@ -593,7 +753,7 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle
             flex_direction: FlexDirection::Column,
             ..default()
         },
-        BackgroundColor(Color::srgb(0.11, 0.12, 0.14)),
+        BackgroundColor(COLOR_PANEL_BG),
         children![
             (
                 Node {
@@ -607,7 +767,7 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle
                     font_size: 16.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.95, 0.95, 0.95)),
+                TextColor(COLOR_TEXT_MAIN),
             ),
             (
                 Node {
@@ -617,10 +777,20 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle
                     overflow: Overflow::clip(),
                     ..default()
                 },
-                BackgroundColor(Color::srgb(0.09, 0.10, 0.11)),
+                BackgroundColor(body_color),
                 RelativeCursorPosition::default(),
                 PanelBody { kind },
                 children![
+                    (
+                        Node {
+                            position_type: PositionType::Absolute,
+                            ..default()
+                        },
+                        BackgroundColor(COLOR_PAPER),
+                        Visibility::Hidden,
+                        ZIndex(0),
+                        PanelPaper { kind, slot: 0 },
+                    ),
                     (
                         Node {
                             position_type: PositionType::Absolute,
@@ -630,9 +800,9 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle
                             height: px(LINE_HEIGHT),
                             ..default()
                         },
-                        BackgroundColor(Color::srgba(0.95, 0.95, 1.0, 0.32)),
+                        BackgroundColor(Color::srgba(0.12, 0.12, 0.13, 0.35)),
                         Visibility::Hidden,
-                        ZIndex(0),
+                        ZIndex(1),
                         PanelCaret { kind },
                     ),
                     (
@@ -644,14 +814,14 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle
                             ..default()
                         },
                         LineHeight::Px(LINE_HEIGHT),
-                        TextColor(Color::srgb(0.93, 0.93, 0.93)),
+                        TextColor(COLOR_ACTION),
                         Node {
                             position_type: PositionType::Absolute,
                             left: px(TEXT_PADDING_X),
                             top: px(TEXT_PADDING_Y),
                             ..default()
                         },
-                        ZIndex(1),
+                        ZIndex(2),
                         PanelText { kind },
                     )
                 ],
@@ -684,6 +854,16 @@ fn handle_toolbar_buttons(
         match action {
             ToolbarAction::Load => open_load_dialog(&mut state, &mut dialogs, parent_handle),
             ToolbarAction::SaveAs => open_save_dialog(&mut state, &mut dialogs, parent_handle),
+            ToolbarAction::ZoomOut => {
+                let next_zoom = state.zoom - ZOOM_STEP;
+                state.set_zoom(next_zoom);
+                state.status_message = format!("Zoom: {}%", state.zoom_percent());
+            }
+            ToolbarAction::ZoomIn => {
+                let next_zoom = state.zoom + ZOOM_STEP;
+                state.set_zoom(next_zoom);
+                state.status_message = format!("Zoom: {}%", state.zoom_percent());
+            }
             ToolbarAction::Settings => {
                 state.settings_open = !state.settings_open;
                 state.status_message = if state.settings_open {
@@ -911,6 +1091,35 @@ fn parse_toml_bool(contents: &str, key: &str) -> Option<bool> {
     None
 }
 
+fn scaled_font_size(state: &EditorState) -> f32 {
+    FONT_SIZE * state.zoom
+}
+
+fn scaled_line_height(state: &EditorState) -> f32 {
+    LINE_HEIGHT * state.zoom
+}
+
+fn scaled_char_width(state: &EditorState) -> f32 {
+    DEFAULT_CHAR_WIDTH * state.zoom
+}
+
+fn scaled_text_padding_x(state: &EditorState) -> f32 {
+    TEXT_PADDING_X * state.zoom
+}
+
+fn scaled_text_padding_y(state: &EditorState) -> f32 {
+    TEXT_PADDING_Y * state.zoom
+}
+
+fn shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+    keys.any_pressed([
+        KeyCode::ControlLeft,
+        KeyCode::ControlRight,
+        KeyCode::SuperLeft,
+        KeyCode::SuperRight,
+    ])
+}
+
 fn handle_file_shortcuts(
     _dialog_main_thread: NonSend<DialogMainThreadMarker>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -919,12 +1128,7 @@ fn handle_file_shortcuts(
     mut dialogs: ResMut<DialogState>,
 ) {
     let parent_handle = primary_window_query.iter().next();
-    let shortcut_down = keys.any_pressed([
-        KeyCode::ControlLeft,
-        KeyCode::ControlRight,
-        KeyCode::SuperLeft,
-        KeyCode::SuperRight,
-    ]);
+    let shortcut_down = shortcut_modifier_pressed(&keys);
     if !shortcut_down {
         return;
     }
@@ -1182,19 +1386,18 @@ fn preferred_dialog_directory(state: &EditorState) -> Option<PathBuf> {
 fn handle_text_input(
     mut keyboard_inputs: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
-    body_query: Query<&ComputedNode, With<PanelBody>>,
+    body_query: Query<(&PanelBody, &ComputedNode)>,
     mut state: ResMut<EditorState>,
 ) {
-    if keys.any_pressed([
-        KeyCode::ControlLeft,
-        KeyCode::ControlRight,
-        KeyCode::SuperLeft,
-        KeyCode::SuperRight,
-    ]) {
+    if shortcut_modifier_pressed(&keys) {
         return;
     }
 
-    let visible_lines = viewport_lines(&body_query, state.measured_line_step);
+    let visible_lines = viewport_lines(
+        &body_query,
+        state.measured_line_step,
+        scaled_text_padding_y(&state),
+    );
     let mut edited = false;
 
     for input in keyboard_inputs.read() {
@@ -1248,11 +1451,31 @@ fn handle_text_input(
 
 fn handle_navigation_input(
     keys: Res<ButtonInput<KeyCode>>,
-    body_query: Query<&ComputedNode, With<PanelBody>>,
+    body_query: Query<(&PanelBody, &ComputedNode)>,
     mut state: ResMut<EditorState>,
 ) {
-    let visible_lines = viewport_lines(&body_query, state.measured_line_step);
+    let visible_lines = viewport_lines(
+        &body_query,
+        state.measured_line_step,
+        scaled_text_padding_y(&state),
+    );
     let mut moved = false;
+
+    if shortcut_modifier_pressed(&keys) {
+        if keys.just_pressed(KeyCode::Equal) {
+            let next_zoom = state.zoom + ZOOM_STEP;
+            state.set_zoom(next_zoom);
+            state.status_message = format!("Zoom: {}%", state.zoom_percent());
+            return;
+        }
+
+        if keys.just_pressed(KeyCode::Minus) {
+            let next_zoom = state.zoom - ZOOM_STEP;
+            state.set_zoom(next_zoom);
+            state.status_message = format!("Zoom: {}%", state.zoom_percent());
+            return;
+        }
+    }
 
     if keys.just_pressed(KeyCode::ArrowLeft) {
         let next = state.document.move_left(state.cursor.position);
@@ -1344,17 +1567,40 @@ fn handle_navigation_input(
 
 fn handle_mouse_scroll(
     mut mouse_wheels: MessageReader<MouseWheel>,
-    body_query: Query<&ComputedNode, With<PanelBody>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    body_query: Query<(&PanelBody, &ComputedNode)>,
     mut state: ResMut<EditorState>,
 ) {
-    let visible_lines = viewport_lines(&body_query, state.measured_line_step);
+    if shortcut_modifier_pressed(&keys) {
+        let mut zoom_steps = 0.0_f32;
+
+        for wheel in mouse_wheels.read() {
+            zoom_steps += match wheel.unit {
+                MouseScrollUnit::Line => wheel.y,
+                MouseScrollUnit::Pixel => wheel.y / 120.0,
+            };
+        }
+
+        if zoom_steps.abs() > f32::EPSILON {
+            let next_zoom = state.zoom + zoom_steps * ZOOM_STEP;
+            state.set_zoom(next_zoom);
+            state.status_message = format!("Zoom: {}%", state.zoom_percent());
+        }
+        return;
+    }
+
+    let visible_lines = viewport_lines(
+        &body_query,
+        state.measured_line_step,
+        scaled_text_padding_y(&state),
+    );
     let mut delta_lines: isize = 0;
 
     for wheel in mouse_wheels.read() {
         let mut delta = -wheel.y;
 
         if wheel.unit == MouseScrollUnit::Pixel {
-            delta /= LINE_HEIGHT;
+            delta /= state.measured_line_step.max(1.0);
         }
 
         delta_lines += delta.round() as isize;
@@ -1376,11 +1622,36 @@ fn handle_mouse_click(
     if !mouse_buttons.just_pressed(MouseButton::Left) {
         return;
     }
-    let visible_lines = viewport_lines_from_panels(&panel_query, state.measured_line_step);
+    let visible_lines = viewport_lines_from_panels(
+        &panel_query,
+        state.measured_line_step,
+        scaled_text_padding_y(&state),
+    );
+    let processed_panel_size = panel_query
+        .iter()
+        .find(|(panel, _, _)| panel.kind == PanelKind::Processed)
+        .map(|(_, _, computed)| computed.size() * computed.inverse_scale_factor());
+    let processed_layout_info =
+        processed_panel_size.map(|size| processed_page_layout(size, &state));
+    let processed_wrap_columns = processed_layout_info.map_or(64, |layout| layout.wrap_columns);
+    let processed_lines_per_page = processed_layout_info.map_or(40, |layout| layout.lines_per_page);
+    let processed_spacer_lines = processed_layout_info.map_or(2, |layout| layout.spacer_lines);
     let plain_lines = visible_plain_lines(&state, visible_lines);
-    let processed_view = build_processed_view(&state, visible_lines);
+    let processed_view = build_processed_view(
+        &state,
+        visible_lines,
+        processed_wrap_columns,
+        processed_lines_per_page,
+        processed_spacer_lines,
+    );
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
     let processed_layout = panel_layout_info(&text_layout_query, PanelKind::Processed);
+    let plain_line_height = state.measured_line_step.max(1.0);
+    let processed_line_height = scaled_line_height(&state).max(1.0);
+    let plain_char_width = scaled_char_width(&state).max(1.0);
+    let processed_char_width = scaled_char_width(&state).max(1.0);
+    let plain_origin_x = scaled_text_padding_x(&state);
+    let plain_origin_y = scaled_text_padding_y(&state);
 
     for (panel, relative_cursor, computed) in panel_query.iter() {
         if !relative_cursor.cursor_over() {
@@ -1398,8 +1669,12 @@ fn handle_mouse_click(
 
         let inverse_scale = computed.inverse_scale_factor();
         let size = computed.size() * inverse_scale;
-        let local_x = (normalized.x * size.x - TEXT_PADDING_X).max(0.0);
-        let local_y = (normalized.y * size.y - TEXT_PADDING_Y).max(0.0);
+        let processed_geometry = (panel.kind == PanelKind::Processed)
+            .then(|| processed_page_layout(size, &state).geometry);
+        let origin_x = processed_geometry.map_or(plain_origin_x, |geometry| geometry.text_left);
+        let origin_y = processed_geometry.map_or(plain_origin_y, |geometry| geometry.text_top);
+        let local_x = (normalized.x * size.x - origin_x).max(0.0);
+        let local_y = (normalized.y * size.y - origin_y).max(0.0);
 
         let panel_layout = match panel.kind {
             PanelKind::Plain => plain_layout,
@@ -1409,6 +1684,10 @@ fn handle_mouse_click(
             PanelKind::Plain => plain_lines.len().max(1),
             PanelKind::Processed => processed_view.lines.len().max(1),
         };
+        let fallback_line_height = match panel.kind {
+            PanelKind::Plain => plain_line_height,
+            PanelKind::Processed => processed_line_height,
+        };
 
         // Anchor Y mapping to measured layout origin while keeping fixed line-height steps.
         let line_offset = panel_layout
@@ -1416,7 +1695,7 @@ fn handle_mouse_click(
                 line_index_from_layout_y(layout, local_y, panel_line_count, inverse_scale)
             })
             .unwrap_or_else(|| {
-                ((local_y / LINE_HEIGHT).floor().max(0.0) as usize)
+                ((local_y / fallback_line_height).floor().max(0.0) as usize)
                     .min(panel_line_count.saturating_sub(1))
             });
 
@@ -1438,13 +1717,19 @@ fn handle_mouse_click(
                             local_x,
                             display_line,
                             inverse_scale,
+                            plain_char_width,
                         )
                     })
-                    .unwrap_or_else(|| (local_x / DEFAULT_CHAR_WIDTH).round().max(0.0) as usize);
+                    .unwrap_or_else(|| (local_x / plain_char_width).round().max(0.0) as usize);
                 (line, display_column)
             }
             PanelKind::Processed => {
                 let visual_index = line_offset.min(processed_view.lines.len().saturating_sub(1));
+                let Some(visual_index) =
+                    nearest_non_spacer_visual_index(&processed_view.lines, visual_index)
+                else {
+                    continue;
+                };
                 let Some(visual_line) = processed_view.lines.get(visual_index) else {
                     continue;
                 };
@@ -1458,9 +1743,10 @@ fn handle_mouse_click(
                             local_x,
                             display_line,
                             inverse_scale,
+                            processed_char_width,
                         )
                     })
-                    .unwrap_or_else(|| (local_x / DEFAULT_CHAR_WIDTH).round().max(0.0) as usize);
+                    .unwrap_or_else(|| (local_x / processed_char_width).round().max(0.0) as usize);
 
                 let raw_column =
                     processed_raw_column_from_display(&state, visual_line, display_column);
@@ -1484,40 +1770,170 @@ fn blink_caret(time: Res<Time>, mut state: ResMut<EditorState>) {
 }
 
 fn render_editor(
-    body_query: Query<&ComputedNode, With<PanelBody>>,
-    mut text_query: Query<(&PanelText, &mut Text), (Without<StatusText>, Without<PanelCaret>)>,
-    mut processed_span_query: Query<(
-        &ProcessedLineSpan,
-        &mut TextSpan,
-        &mut TextFont,
-        &mut TextColor,
-    )>,
+    body_query: Query<(&PanelBody, &ComputedNode)>,
+    mut text_query: Query<
+        (
+            &PanelText,
+            &mut Text,
+            &mut TextFont,
+            &mut LineHeight,
+            &mut Node,
+        ),
+        (
+            Without<StatusText>,
+            Without<PanelCaret>,
+            Without<PanelPaper>,
+            Without<ProcessedLineSpan>,
+        ),
+    >,
+    mut processed_span_query: Query<
+        (
+            &ProcessedLineSpan,
+            &mut TextSpan,
+            &mut TextFont,
+            &mut LineHeight,
+            &mut TextColor,
+        ),
+        Without<PanelText>,
+    >,
     text_layout_query: Query<(&PanelText, &TextLayoutInfo)>,
-    mut caret_query: Query<(&PanelCaret, &mut Node, &mut Visibility)>,
+    mut caret_query: Query<
+        (&PanelCaret, &mut Node, &mut Visibility),
+        (Without<PanelText>, Without<PanelPaper>),
+    >,
+    mut paper_query: Query<
+        (
+            &PanelPaper,
+            &mut Node,
+            &mut Visibility,
+            &mut BackgroundColor,
+        ),
+        (Without<PanelText>, Without<PanelCaret>),
+    >,
     mut status_query: Query<&mut Text, (With<StatusText>, Without<PanelText>, Without<PanelCaret>)>,
     fonts: Res<EditorFonts>,
     mut state: ResMut<EditorState>,
 ) {
-    let visible_lines = viewport_lines(&body_query, state.measured_line_step);
-    let inverse_scale = body_query
-        .iter()
-        .next()
-        .map(ComputedNode::inverse_scale_factor)
-        .unwrap_or(1.0);
+    let plain_font_size = scaled_font_size(&state);
+    let plain_line_height = state.measured_line_step.max(1.0);
+    let plain_char_width = scaled_char_width(&state).max(1.0);
+    let plain_origin_x = scaled_text_padding_x(&state);
+    let plain_origin_y = scaled_text_padding_y(&state);
+    let processed_font_size = scaled_font_size(&state);
+    let processed_line_height = scaled_line_height(&state).max(1.0);
+    let processed_char_width = scaled_char_width(&state).max(1.0);
+
+    let mut plain_inverse_scale = 1.0;
+    let mut processed_inverse_scale = 1.0;
+    let mut processed_panel_size = None;
+
+    for (panel, computed) in body_query.iter() {
+        let inverse_scale = computed.inverse_scale_factor();
+        let logical_size = computed.size() * inverse_scale;
+        match panel.kind {
+            PanelKind::Plain => plain_inverse_scale = inverse_scale,
+            PanelKind::Processed => {
+                processed_inverse_scale = inverse_scale;
+                processed_panel_size = Some(logical_size);
+            }
+        }
+    }
+
+    let processed_layout_info =
+        processed_panel_size.map(|size| processed_page_layout(size, &state));
+    let processed_geometry = processed_layout_info.map(|layout| layout.geometry);
+    let processed_wrap_columns = processed_layout_info.map_or(64, |layout| layout.wrap_columns);
+    let processed_lines_per_page = processed_layout_info.map_or(40, |layout| layout.lines_per_page);
+    let processed_spacer_lines = processed_layout_info.map_or(2, |layout| layout.spacer_lines);
+    let processed_page_step_lines =
+        processed_layout_info.map_or(42, |layout| layout.page_step_lines.max(1));
+    let visible_lines = viewport_lines(&body_query, state.measured_line_step, plain_origin_y);
     state.clamp_scroll(visible_lines);
 
     let plain_lines = visible_plain_lines(&state, visible_lines);
-    let processed_view = build_processed_view(&state, visible_lines);
-    let plain_view = plain_lines.join("\n");
+    let processed_view = build_processed_view(
+        &state,
+        visible_lines,
+        processed_wrap_columns,
+        processed_lines_per_page,
+        processed_spacer_lines,
+    );
+    for (panel_paper, mut node, mut visibility, mut color) in paper_query.iter_mut() {
+        if panel_paper.kind != PanelKind::Processed {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
 
-    for (panel_text, mut text) in text_query.iter_mut() {
-        **text = match panel_text.kind {
-            PanelKind::Plain => plain_view.clone(),
-            PanelKind::Processed => String::new(),
+        let (Some(geometry), Some(panel_size)) = (processed_geometry, processed_panel_size) else {
+            *visibility = Visibility::Hidden;
+            continue;
         };
+
+        let first_visible_page = processed_view.start_index / processed_page_step_lines;
+        let page_index = first_visible_page.saturating_add(panel_paper.slot);
+        let page_top = geometry.paper_top
+            + page_index.saturating_sub(first_visible_page) as f32
+                * (geometry.paper_height + PAGE_GAP * state.zoom);
+
+        if page_top > panel_size.y || page_top + geometry.paper_height < 0.0 {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+
+        node.left = px(geometry.paper_left);
+        node.top = px(page_top);
+        node.width = px(geometry.paper_width);
+        node.height = px(geometry.paper_height);
+        color.0 = COLOR_PAPER;
+        *visibility = Visibility::Visible;
     }
 
-    apply_processed_styles(&mut processed_span_query, &state, &processed_view, &fonts);
+    let plain_view = plain_lines.join("\n");
+
+    for (panel_text, mut text, mut text_font, mut line_height_comp, mut node) in
+        text_query.iter_mut()
+    {
+        match panel_text.kind {
+            PanelKind::Plain => {
+                text_font.font_size = plain_font_size;
+                *line_height_comp = LineHeight::Px(plain_line_height);
+                **text = plain_view.clone();
+                node.left = px(plain_origin_x);
+                node.top = px(plain_origin_y);
+                node.width = Val::Auto;
+                node.height = Val::Auto;
+            }
+            PanelKind::Processed => {
+                text_font.font_size = processed_font_size;
+                *line_height_comp = LineHeight::Px(processed_line_height);
+                **text = String::new();
+                let (text_left, text_top, text_width, text_height) = processed_geometry.map_or(
+                    (plain_origin_x, plain_origin_y, 1.0, 1.0),
+                    |geometry| {
+                        (
+                            geometry.text_left,
+                            geometry.text_top,
+                            geometry.text_width,
+                            geometry.text_height,
+                        )
+                    },
+                );
+                node.left = px(text_left);
+                node.top = px(text_top);
+                node.width = px(text_width);
+                node.height = px(text_height);
+            }
+        }
+    }
+
+    apply_processed_styles(
+        &mut processed_span_query,
+        &state,
+        &processed_view,
+        &fonts,
+        processed_font_size,
+        processed_line_height,
+    );
 
     if let Ok(mut status) = status_query.single_mut() {
         **status = state.visible_status();
@@ -1525,15 +1941,7 @@ fn render_editor(
 
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
     let processed_layout = panel_layout_info(&text_layout_query, PanelKind::Processed);
-    if let Some(measured_step) = plain_layout
-        .and_then(|layout| measured_line_step_from_layout(layout, inverse_scale))
-        .or_else(|| {
-            processed_layout
-                .and_then(|layout| measured_line_step_from_layout(layout, inverse_scale))
-        })
-    {
-        state.measured_line_step = measured_step;
-    }
+    state.measured_line_step = scaled_line_height(&state);
 
     for (panel_caret, mut node, mut visibility) in caret_query.iter_mut() {
         if !state.caret_visible {
@@ -1541,7 +1949,19 @@ fn render_editor(
             continue;
         }
 
-        let (line_offset, display_column, line_text, panel_layout) = match panel_caret.kind {
+        let (
+            line_offset,
+            display_column,
+            line_text,
+            panel_layout,
+            panel_inverse_scale,
+            origin_x,
+            origin_y,
+            panel_char_width,
+            panel_line_height,
+            panel_caret_x_offset,
+            panel_caret_width,
+        ) = match panel_caret.kind {
             PanelKind::Plain => {
                 let in_view = state.cursor.position.line >= state.top_line
                     && state.cursor.position.line < state.top_line + visible_lines;
@@ -1559,6 +1979,13 @@ fn render_editor(
                     state.cursor.position.column,
                     line_text,
                     plain_layout,
+                    plain_inverse_scale,
+                    plain_origin_x,
+                    plain_origin_y,
+                    plain_char_width,
+                    plain_line_height,
+                    CARET_X_OFFSET,
+                    CARET_WIDTH.max(1.0),
                 )
             }
             PanelKind::Processed => {
@@ -1569,7 +1996,23 @@ fn render_editor(
                     continue;
                 };
 
-                (visual_index, display_column, line_text, processed_layout)
+                let (processed_origin_x, processed_origin_y) = processed_geometry
+                    .map_or((plain_origin_x, plain_origin_y), |geometry| {
+                        (geometry.text_left, geometry.text_top)
+                    });
+                (
+                    visual_index,
+                    display_column,
+                    line_text,
+                    processed_layout,
+                    processed_inverse_scale,
+                    processed_origin_x,
+                    processed_origin_y,
+                    processed_char_width,
+                    processed_line_height,
+                    CARET_X_OFFSET,
+                    CARET_WIDTH.max(1.0),
+                )
             }
         };
 
@@ -1577,48 +2020,67 @@ fn render_editor(
         let byte_index = char_to_byte_index(line_text, clamped_display_column);
         let caret_x = panel_layout
             .and_then(|layout| {
-                caret_x_from_layout(layout, line_offset, line_text, byte_index, inverse_scale)
+                caret_x_from_layout(
+                    layout,
+                    line_offset,
+                    line_text,
+                    byte_index,
+                    panel_inverse_scale,
+                    panel_char_width,
+                )
             })
-            .unwrap_or(clamped_display_column as f32 * DEFAULT_CHAR_WIDTH);
+            .unwrap_or(clamped_display_column as f32 * panel_char_width);
         let caret_top = panel_layout
             .and_then(|layout| {
-                caret_top_from_layout(layout, line_offset, byte_index, inverse_scale)
-                    .or_else(|| line_top_from_layout(layout, line_offset, inverse_scale))
+                caret_top_from_layout(layout, line_offset, byte_index, panel_inverse_scale)
+                    .or_else(|| line_top_from_layout(layout, line_offset, panel_inverse_scale))
             })
-            .unwrap_or(line_offset as f32 * LINE_HEIGHT);
+            .unwrap_or(line_offset as f32 * panel_line_height);
 
-        node.left = px(TEXT_PADDING_X + (caret_x + CARET_X_OFFSET).max(0.0));
-        let caret_y_offset = CARET_Y_OFFSET_FACTOR * LINE_HEIGHT;
-        node.top = px(TEXT_PADDING_Y + (caret_top + caret_y_offset).max(0.0));
-        node.width = px(CARET_WIDTH);
-        node.height = px(LINE_HEIGHT);
+        node.left = px(origin_x + (caret_x + panel_caret_x_offset).max(0.0));
+        let caret_y_offset = CARET_Y_OFFSET_FACTOR * panel_line_height;
+        node.top = px(origin_y + (caret_top + caret_y_offset).max(0.0));
+        node.width = px(panel_caret_width);
+        node.height = px(panel_line_height.max(1.0));
         *visibility = Visibility::Visible;
     }
 }
 
-fn viewport_lines(body_query: &Query<&ComputedNode, With<PanelBody>>, line_step: f32) -> usize {
-    let Some(computed) = body_query.iter().next() else {
+fn viewport_lines(
+    body_query: &Query<(&PanelBody, &ComputedNode)>,
+    line_step: f32,
+    top_padding: f32,
+) -> usize {
+    let Some((_, computed)) = body_query
+        .iter()
+        .find(|(panel, _)| panel.kind == PanelKind::Plain)
+        .or_else(|| body_query.iter().next())
+    else {
         return 24;
     };
 
     let logical_height = computed.size().y * computed.inverse_scale_factor();
-    // Text starts at TEXT_PADDING_Y from the top; don't reserve extra bottom padding.
     let step = line_step.max(1.0);
-    let usable_height = (logical_height - TEXT_PADDING_Y).max(step);
+    let usable_height = (logical_height - top_padding).max(step);
     (usable_height / step).floor().max(1.0) as usize
 }
 
 fn viewport_lines_from_panels(
     panel_query: &Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
     line_step: f32,
+    top_padding: f32,
 ) -> usize {
-    let Some((_, _, computed)) = panel_query.iter().next() else {
+    let Some((_, _, computed)) = panel_query
+        .iter()
+        .find(|(panel, _, _)| panel.kind == PanelKind::Plain)
+        .or_else(|| panel_query.iter().next())
+    else {
         return 24;
     };
 
     let logical_height = computed.size().y * computed.inverse_scale_factor();
     let step = line_step.max(1.0);
-    let usable_height = (logical_height - TEXT_PADDING_Y).max(step);
+    let usable_height = (logical_height - top_padding).max(step);
     (usable_height / step).floor().max(1.0) as usize
 }
 
@@ -1644,79 +2106,171 @@ struct ProcessedVisualLine {
     text: String,
     raw_start_column: usize,
     raw_end_column: usize,
+    is_spacer: bool,
 }
 
 #[derive(Clone, Debug, Default)]
 struct ProcessedView {
+    start_index: usize,
     lines: Vec<ProcessedVisualLine>,
 }
 
-fn build_processed_view(state: &EditorState, visible_lines: usize) -> ProcessedView {
+fn build_processed_view(
+    state: &EditorState,
+    visible_lines: usize,
+    wrap_columns: usize,
+    lines_per_page: usize,
+    spacer_lines: usize,
+) -> ProcessedView {
     let max_visible = visible_lines.min(PROCESSED_SPAN_CAPACITY).max(1);
-    let all_lines = build_all_processed_visual_lines(state);
+    let all_lines =
+        build_all_processed_visual_lines(state, wrap_columns, lines_per_page, spacer_lines);
     if all_lines.is_empty() {
         return ProcessedView::default();
     }
 
-    let default_start = first_visual_index_for_source_line(&all_lines, state.top_line).unwrap_or(0);
-    let cursor_in_plain_view = state.cursor.position.line >= state.top_line
-        && state.cursor.position.line < state.top_line + visible_lines;
-    let cursor_line_offset = state.cursor.position.line.saturating_sub(state.top_line);
-
-    let mut start_index = default_start;
-    if cursor_in_plain_view {
-        if let Some((cursor_visual_index, _, _)) =
-            processed_cursor_visual_from_lines(state, &all_lines)
-        {
-            start_index = cursor_visual_index.saturating_sub(cursor_line_offset);
-        }
-    }
+    let anchor_index = first_visual_index_for_source_line(&all_lines, state.top_line).unwrap_or(0);
+    let page_step_lines = lines_per_page.saturating_add(spacer_lines).max(1);
+    let mut start_index = (anchor_index / page_step_lines) * page_step_lines;
 
     let max_start = all_lines.len().saturating_sub(max_visible);
     start_index = start_index.min(max_start);
     let end_index = start_index.saturating_add(max_visible).min(all_lines.len());
 
     ProcessedView {
+        start_index,
         lines: all_lines[start_index..end_index].to_vec(),
     }
 }
 
-fn build_all_processed_visual_lines(state: &EditorState) -> Vec<ProcessedVisualLine> {
-    let mut lines = Vec::<ProcessedVisualLine>::new();
+fn build_all_processed_visual_lines(
+    state: &EditorState,
+    wrap_columns: usize,
+    lines_per_page: usize,
+    spacer_lines: usize,
+) -> Vec<ProcessedVisualLine> {
+    let mut content_lines = Vec::<ProcessedVisualLine>::new();
 
     for (source_line, parsed_line) in state.parsed.iter().enumerate() {
+        let indent_width = parsed_line.indent_width();
+        let uppercase = matches!(
+            parsed_line.kind,
+            LineKind::SceneHeading | LineKind::Transition | LineKind::Character
+        );
+
         if should_split_on_double_space(state, &parsed_line.kind) {
-            let indent = " ".repeat(parsed_line.indent_width());
-            let uppercase = matches!(
-                parsed_line.kind,
-                LineKind::SceneHeading | LineKind::Transition | LineKind::Character
-            );
             for (raw_start_column, raw_segment) in double_space_segments(&parsed_line.raw) {
-                let segment_len = raw_segment.chars().count();
-                let display_segment = if uppercase {
-                    raw_segment.to_uppercase()
-                } else {
-                    raw_segment
-                };
-                lines.push(ProcessedVisualLine {
+                push_wrapped_visual_lines(
+                    &mut content_lines,
                     source_line,
-                    text: format!("{indent}{display_segment}"),
+                    indent_width,
+                    uppercase,
                     raw_start_column,
-                    raw_end_column: raw_start_column.saturating_add(segment_len),
-                });
+                    &raw_segment,
+                    wrap_columns,
+                );
             }
         } else {
-            let raw_len = parsed_line.raw.chars().count();
-            lines.push(ProcessedVisualLine {
+            push_wrapped_visual_lines(
+                &mut content_lines,
                 source_line,
-                text: parsed_line.processed_text(),
-                raw_start_column: 0,
-                raw_end_column: raw_len,
-            });
+                indent_width,
+                uppercase,
+                0,
+                &parsed_line.raw,
+                wrap_columns,
+            );
         }
     }
 
-    lines
+    if lines_per_page == 0 || spacer_lines == 0 || content_lines.is_empty() {
+        return content_lines;
+    }
+
+    let total_content = content_lines.len();
+    let mut paged_lines = Vec::<ProcessedVisualLine>::with_capacity(
+        total_content.saturating_add((total_content / lines_per_page).saturating_mul(spacer_lines)),
+    );
+
+    for (index, line) in content_lines.into_iter().enumerate() {
+        let source_line = line.source_line;
+        paged_lines.push(line);
+
+        let at_page_end = (index + 1) % lines_per_page == 0;
+        if at_page_end && index + 1 < total_content {
+            for _ in 0..spacer_lines {
+                paged_lines.push(ProcessedVisualLine {
+                    source_line,
+                    text: String::new(),
+                    raw_start_column: 0,
+                    raw_end_column: 0,
+                    is_spacer: true,
+                });
+            }
+        }
+    }
+
+    paged_lines
+}
+
+fn push_wrapped_visual_lines(
+    out: &mut Vec<ProcessedVisualLine>,
+    source_line: usize,
+    indent_width: usize,
+    uppercase: bool,
+    raw_start_column: usize,
+    raw_segment: &str,
+    wrap_columns: usize,
+) {
+    let chars = raw_segment.chars().collect::<Vec<_>>();
+    let max_content_columns = wrap_columns.saturating_sub(indent_width).max(1);
+
+    if chars.is_empty() {
+        out.push(ProcessedVisualLine {
+            source_line,
+            text: " ".repeat(indent_width),
+            raw_start_column,
+            raw_end_column: raw_start_column,
+            is_spacer: false,
+        });
+        return;
+    }
+
+    let mut start = 0usize;
+    while start < chars.len() {
+        let max_end = (start + max_content_columns).min(chars.len());
+        let mut split = max_end;
+
+        if max_end < chars.len() {
+            if let Some(space_index) = (start + 1..max_end).rev().find(|&idx| chars[idx] == ' ') {
+                split = space_index;
+            }
+        }
+
+        if split <= start {
+            split = max_end;
+        }
+
+        let chunk = chars[start..split].iter().collect::<String>();
+        let display_chunk = if uppercase {
+            chunk.to_uppercase()
+        } else {
+            chunk
+        };
+        out.push(ProcessedVisualLine {
+            source_line,
+            text: format!("{}{}", " ".repeat(indent_width), display_chunk),
+            raw_start_column: raw_start_column.saturating_add(start),
+            raw_end_column: raw_start_column.saturating_add(split),
+            is_spacer: false,
+        });
+
+        // Skip one wrapping space at the split boundary for word-wrapped output.
+        start = split;
+        if start < chars.len() && chars[start] == ' ' {
+            start += 1;
+        }
+    }
 }
 
 fn should_split_on_double_space(state: &EditorState, kind: &LineKind) -> bool {
@@ -1732,7 +2286,7 @@ fn first_visual_index_for_source_line(
 ) -> Option<usize> {
     lines
         .iter()
-        .position(|line| line.source_line >= source_line)
+        .position(|line| !line.is_spacer && line.source_line >= source_line)
 }
 
 fn double_space_segments(input: &str) -> Vec<(usize, String)> {
@@ -1801,7 +2355,7 @@ fn processed_cursor_visual_from_lines<'a>(
     let relevant = lines
         .iter()
         .enumerate()
-        .filter(|(_, line)| line.source_line == source_line)
+        .filter(|(_, line)| !line.is_spacer && line.source_line == source_line)
         .collect::<Vec<_>>();
 
     let (default_index, default_line) = *relevant.last()?;
@@ -1839,20 +2393,49 @@ fn processed_cursor_visual_from_lines<'a>(
     ))
 }
 
+fn nearest_non_spacer_visual_index(lines: &[ProcessedVisualLine], index: usize) -> Option<usize> {
+    if lines.is_empty() {
+        return None;
+    }
+    if lines.get(index).is_some_and(|line| !line.is_spacer) {
+        return Some(index);
+    }
+
+    for distance in 1..lines.len() {
+        let forward = index.saturating_add(distance);
+        if lines.get(forward).is_some_and(|line| !line.is_spacer) {
+            return Some(forward);
+        }
+
+        let backward = index.saturating_sub(distance);
+        if lines.get(backward).is_some_and(|line| !line.is_spacer) {
+            return Some(backward);
+        }
+    }
+
+    None
+}
+
 fn apply_processed_styles(
-    processed_span_query: &mut Query<(
-        &ProcessedLineSpan,
-        &mut TextSpan,
-        &mut TextFont,
-        &mut TextColor,
-    )>,
+    processed_span_query: &mut Query<
+        (
+            &ProcessedLineSpan,
+            &mut TextSpan,
+            &mut TextFont,
+            &mut LineHeight,
+            &mut TextColor,
+        ),
+        Without<PanelText>,
+    >,
     state: &EditorState,
     processed_view: &ProcessedView,
     fonts: &EditorFonts,
+    font_size: f32,
+    line_height: f32,
 ) {
     let visible_count = processed_view.lines.len().min(PROCESSED_SPAN_CAPACITY);
 
-    for (processed_span, mut text_span, mut text_font, mut text_color) in
+    for (processed_span, mut text_span, mut text_font, mut text_line_height, mut text_color) in
         processed_span_query.iter_mut()
     {
         let line_offset = processed_span.line_offset;
@@ -1867,11 +2450,6 @@ fn apply_processed_styles(
             continue;
         };
 
-        let Some(parsed_line) = state.parsed.get(visual_line.source_line) else {
-            **text_span = String::new();
-            continue;
-        };
-
         let mut line_text = visual_line.text.clone();
         if line_offset + 1 < visible_count {
             line_text.push('\n');
@@ -1879,9 +2457,22 @@ fn apply_processed_styles(
 
         **text_span = line_text;
 
+        text_font.font_size = font_size;
+        *text_line_height = LineHeight::Px(line_height);
+        if visual_line.is_spacer {
+            text_font.font = fonts.regular.clone();
+            text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
+            continue;
+        }
+
+        let Some(parsed_line) = state.parsed.get(visual_line.source_line) else {
+            text_font.font = fonts.regular.clone();
+            text_color.0 = COLOR_ACTION;
+            continue;
+        };
+
         let (font_variant, color) = style_for_line_kind(&parsed_line.kind);
         text_font.font = font_for_variant(fonts, font_variant);
-        text_font.font_size = FONT_SIZE;
         text_color.0 = color;
     }
 }
@@ -2047,26 +2638,6 @@ fn line_index_from_layout_y(
     Some(best_line)
 }
 
-fn measured_line_step_from_layout(layout: &TextLayoutInfo, inverse_scale: f32) -> Option<f32> {
-    let bounds = layout_line_bounds(layout, inverse_scale);
-    if bounds.is_empty() {
-        return None;
-    }
-
-    let mut heights = bounds
-        .iter()
-        .map(|(_, top, bottom)| (bottom - top).max(1.0))
-        .collect::<Vec<_>>();
-    let fallback_height = median(&mut heights).unwrap_or(LINE_HEIGHT);
-    let top_samples = bounds
-        .iter()
-        .map(|(index, top, _)| (*index, *top))
-        .collect::<Vec<_>>();
-
-    let step = default_line_step(&top_samples, fallback_height).abs();
-    Some(step.max(1.0))
-}
-
 fn caret_top_from_layout(
     layout: &TextLayoutInfo,
     line_index: usize,
@@ -2112,6 +2683,7 @@ fn line_boundaries(
     line_index: usize,
     line_text: &str,
     inverse_scale: f32,
+    fallback_char_width: f32,
 ) -> Vec<(usize, f32)> {
     let line_len = line_text.len();
     let mut glyphs = layout
@@ -2123,7 +2695,7 @@ fn line_boundaries(
     if glyphs.is_empty() {
         let mut boundaries = Vec::with_capacity(line_len.saturating_add(1));
         for byte_index in 0..=line_len {
-            boundaries.push((byte_index, byte_index as f32 * DEFAULT_CHAR_WIDTH));
+            boundaries.push((byte_index, byte_index as f32 * fallback_char_width));
         }
         return boundaries;
     }
@@ -2147,7 +2719,7 @@ fn line_boundaries(
     let byte_step = step_candidates
         .get(step_candidates.len().saturating_sub(1) / 2)
         .copied()
-        .unwrap_or(DEFAULT_CHAR_WIDTH);
+        .unwrap_or(fallback_char_width);
 
     let mut anchors = BTreeMap::<usize, Vec<f32>>::new();
 
@@ -2178,7 +2750,7 @@ fn line_boundaries(
     if known.is_empty() {
         let mut boundaries = Vec::with_capacity(line_len.saturating_add(1));
         for byte_index in 0..=line_len {
-            boundaries.push((byte_index, byte_index as f32 * DEFAULT_CHAR_WIDTH));
+            boundaries.push((byte_index, byte_index as f32 * fallback_char_width));
         }
         return boundaries;
     }
@@ -2219,8 +2791,15 @@ fn caret_x_from_layout(
     line_text: &str,
     byte_index: usize,
     inverse_scale: f32,
+    fallback_char_width: f32,
 ) -> Option<f32> {
-    let boundaries = line_boundaries(layout, line_index, line_text, inverse_scale);
+    let boundaries = line_boundaries(
+        layout,
+        line_index,
+        line_text,
+        inverse_scale,
+        fallback_char_width,
+    );
     boundaries
         .iter()
         .find(|(byte, _)| *byte >= byte_index)
@@ -2234,8 +2813,15 @@ fn column_from_layout_x(
     x: f32,
     line_text: &str,
     inverse_scale: f32,
+    fallback_char_width: f32,
 ) -> Option<usize> {
-    let boundaries = line_boundaries(layout, line_index, line_text, inverse_scale);
+    let boundaries = line_boundaries(
+        layout,
+        line_index,
+        line_text,
+        inverse_scale,
+        fallback_char_width,
+    );
     let (best_byte, _) = boundaries.iter().min_by(|(_, ax), (_, bx)| {
         (*ax - x)
             .abs()
