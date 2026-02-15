@@ -2443,8 +2443,8 @@ fn build_processed_view(
         return ProcessedView::default();
     }
 
-    let mut start_index =
-        first_visual_index_for_source_line(&all_lines, state.top_line).unwrap_or(0);
+    let mut start_index = first_visual_index_for_source_line(&all_lines, state.top_line)
+        .unwrap_or_else(|| all_lines.len().saturating_sub(max_visible));
 
     let max_start = all_lines.len().saturating_sub(max_visible);
     start_index = start_index.min(max_start);
