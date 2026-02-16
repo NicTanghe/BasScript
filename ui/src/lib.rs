@@ -1779,12 +1779,12 @@ fn handle_navigation_input(
             let next_zoom = state.zoom + ZOOM_STEP;
             state.set_zoom(next_zoom);
             state.status_message = format!("Zoom: {}%", state.zoom_percent());
-            state.ensure_cursor_visible(visible_lines);
-            ensure_cursor_visible_in_processed_panel(
-                &mut state,
-                processed_panel_size,
-                visible_lines,
+            let zoom_visible_lines = viewport_lines(
+                &body_query,
+                state.measured_line_step,
+                scaled_text_padding_y(&state),
             );
+            state.ensure_cursor_visible(zoom_visible_lines);
             return;
         }
 
@@ -1792,12 +1792,12 @@ fn handle_navigation_input(
             let next_zoom = state.zoom - ZOOM_STEP;
             state.set_zoom(next_zoom);
             state.status_message = format!("Zoom: {}%", state.zoom_percent());
-            state.ensure_cursor_visible(visible_lines);
-            ensure_cursor_visible_in_processed_panel(
-                &mut state,
-                processed_panel_size,
-                visible_lines,
+            let zoom_visible_lines = viewport_lines(
+                &body_query,
+                state.measured_line_step,
+                scaled_text_padding_y(&state),
             );
+            state.ensure_cursor_visible(zoom_visible_lines);
             return;
         }
     }
@@ -1916,16 +1916,7 @@ fn handle_mouse_scroll(
                 state.measured_line_step,
                 scaled_text_padding_y(&state),
             );
-            let processed_panel_size = body_query
-                .iter()
-                .find(|(panel, _)| panel.kind == PanelKind::Processed)
-                .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
             state.ensure_cursor_visible(visible_lines);
-            ensure_cursor_visible_in_processed_panel(
-                &mut state,
-                processed_panel_size,
-                visible_lines,
-            );
         }
         return;
     }
@@ -1994,8 +1985,13 @@ fn handle_mouse_click(
     let plain_origin_y = scaled_text_padding_y(&state);
     let processed_origin_x =
         processed_layout_info.map_or(plain_origin_x, |layout| layout.geometry.text_left);
-    let processed_origin_y =
-        processed_layout_info.map_or(plain_origin_y, |layout| layout.geometry.text_top);
+    let anchor_line_offset_px = processed_view
+        .anchor_index
+        .saturating_sub(processed_view.start_index) as f32
+        * processed_line_height;
+    let processed_origin_y = processed_layout_info.map_or(plain_origin_y, |layout| {
+        layout.geometry.text_top - anchor_line_offset_px
+    });
 
     for (panel, relative_cursor, computed) in panel_query.iter() {
         if !relative_cursor.cursor_over() {
@@ -2209,8 +2205,13 @@ fn render_editor(
         processed_spacer_lines,
     );
     let first_visible_page = processed_view.start_index / processed_page_step_lines;
-    let processed_text_origin_y =
-        processed_geometry.map_or(plain_origin_y, |geometry| geometry.text_top);
+    let anchor_line_offset_px = processed_view
+        .anchor_index
+        .saturating_sub(processed_view.start_index) as f32
+        * processed_line_height;
+    let processed_text_origin_y = processed_geometry.map_or(plain_origin_y, |geometry| {
+        geometry.text_top - anchor_line_offset_px
+    });
     for (panel_paper, mut node, mut visibility, mut color) in paper_query.iter_mut() {
         if panel_paper.kind != PanelKind::Processed {
             *visibility = Visibility::Hidden;
@@ -2225,7 +2226,8 @@ fn render_editor(
         let page_index = first_visible_page.saturating_add(panel_paper.slot);
         let page_start_line = page_index.saturating_mul(processed_page_step_lines);
         let line_delta = page_start_line as isize - processed_view.start_index as isize;
-        let page_top = geometry.paper_top + line_delta as f32 * processed_line_height;
+        let page_top =
+            geometry.paper_top - anchor_line_offset_px + line_delta as f32 * processed_line_height;
 
         if page_top > panel_size.y || page_top + geometry.paper_height < 0.0 {
             *visibility = Visibility::Hidden;
@@ -2494,12 +2496,10 @@ fn ensure_cursor_visible_in_processed_panel(
     let mut best_distance = usize::MAX;
 
     for candidate_top in min_top_for_plain..=max_top_for_plain {
-        let start_index = first_visual_index_for_source_line(&all_lines, candidate_top)
-            .unwrap_or_else(|| {
-                all_lines
-                    .len()
-                    .saturating_sub(PROCESSED_SPAN_CAPACITY.max(1))
-            });
+        let anchor_index = first_visual_index_for_source_line(&all_lines, candidate_top)
+            .unwrap_or_else(|| all_lines.len().saturating_sub(1));
+        let page_step_lines = processed_layout.page_step_lines.max(1);
+        let start_index = (anchor_index / page_step_lines) * page_step_lines;
         let end_index_exclusive = start_index.saturating_add(max_window);
 
         if cursor_visual_index >= start_index && cursor_visual_index < end_index_exclusive {
@@ -2532,6 +2532,7 @@ struct ProcessedVisualLine {
 #[derive(Clone, Debug, Default)]
 struct ProcessedView {
     start_index: usize,
+    anchor_index: usize,
     lines: Vec<ProcessedVisualLine>,
 }
 
@@ -2542,14 +2543,27 @@ fn build_processed_view(
     spacer_lines: usize,
 ) -> ProcessedView {
     let max_visible = PROCESSED_SPAN_CAPACITY.max(1);
-    let all_lines =
+    let page_step_lines = lines_per_page.saturating_add(spacer_lines).max(1);
+    let mut all_lines =
         build_all_processed_visual_lines(state, wrap_columns, lines_per_page, spacer_lines);
     if all_lines.is_empty() {
         return ProcessedView::default();
     }
 
-    let mut start_index = first_visual_index_for_source_line(&all_lines, state.top_line)
-        .unwrap_or_else(|| all_lines.len().saturating_sub(max_visible));
+    let anchor_index = first_visual_index_for_source_line(&all_lines, state.top_line)
+        .unwrap_or_else(|| all_lines.len().saturating_sub(1));
+    let mut start_index = (anchor_index / page_step_lines) * page_step_lines;
+
+    // Keep page-start anchoring near EOF by padding the view window.
+    let required_len = start_index.saturating_add(max_visible);
+    if all_lines.len() < required_len {
+        let pad_source_line = all_lines
+            .iter()
+            .rfind(|line| !line.is_spacer)
+            .map_or(0, |line| line.source_line);
+        let missing = required_len.saturating_sub(all_lines.len());
+        push_page_spacers(&mut all_lines, pad_source_line, missing);
+    }
 
     let max_start = all_lines.len().saturating_sub(max_visible);
     start_index = start_index.min(max_start);
@@ -2557,6 +2571,7 @@ fn build_processed_view(
 
     ProcessedView {
         start_index,
+        anchor_index,
         lines: all_lines[start_index..end_index].to_vec(),
     }
 }
