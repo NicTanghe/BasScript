@@ -29,7 +29,6 @@ const FONT_BOLD_ITALIC_PATH: &str = "fonts/Courier Prime/Courier Prime Bold Ital
 const DEFAULT_LOAD_PATH: &str = "docs/humanDOC.md";
 const DEFAULT_SAVE_PATH: &str = "scripts/session.fountain";
 const SETTINGS_PATH: &str = "scripts/settings.toml";
-const PROCESSED_SPAN_CAPACITY: usize = 256;
 const PROCESSED_PAPER_CAPACITY: usize = 16;
 
 const FONT_SIZE: f32 = 12.0;
@@ -91,14 +90,7 @@ impl Plugin for UiPlugin {
             .init_resource::<DialogState>()
             .init_state::<UiScreenState>()
             .insert_non_send_resource(DialogMainThreadMarker)
-            .add_systems(
-                Startup,
-                (
-                    setup,
-                    setup_processed_spans.after(setup),
-                    setup_processed_papers.after(setup),
-                ),
-            )
+            .add_systems(Startup, (setup, setup_processed_papers.after(setup)))
             .add_systems(Update, (style_toolbar_buttons, sync_settings_ui))
             .add_systems(
                 Update,
@@ -158,7 +150,13 @@ struct PanelCanvas {
 }
 
 #[derive(Component)]
-struct ProcessedLineSpan {
+struct ProcessedPaperText {
+    slot: usize,
+}
+
+#[derive(Component)]
+struct ProcessedPaperLineSpan {
+    slot: usize,
     line_offset: usize,
 }
 
@@ -771,26 +769,104 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         });
 }
 
-fn setup_processed_spans(
+fn setup_processed_papers(
     mut commands: Commands,
+    canvas_query: Query<(Entity, &PanelCanvas)>,
+    paper_query: Query<(Entity, &PanelPaper)>,
+    text_query: Query<(Entity, &PanelText)>,
     fonts: Res<EditorFonts>,
-    text_query: Query<(Entity, &PanelText, Option<&Children>)>,
 ) {
-    for (entity, panel_text, children) in text_query.iter() {
-        if panel_text.kind != PanelKind::Processed {
+    let regular_font = fonts.regular.clone();
+    let span_capacity = processed_page_step_lines().max(1);
+
+    for (entity, panel_canvas) in canvas_query.iter() {
+        if panel_canvas.kind != PanelKind::Processed {
             continue;
         }
 
-        if children.is_some_and(|children| !children.is_empty()) {
-            continue;
-        }
-
-        let regular_font = fonts.regular.clone();
-
+        let regular_font = regular_font.clone();
         commands.entity(entity).with_children(|parent| {
-            for line_offset in 0..PROCESSED_SPAN_CAPACITY {
-                parent.spawn((
-                    TextSpan::new(""),
+            for slot in 1..PROCESSED_PAPER_CAPACITY {
+                let slot_font = regular_font.clone();
+                parent
+                    .spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            overflow: Overflow::clip(),
+                            ..default()
+                        },
+                        UiTransform::default(),
+                        BackgroundColor(COLOR_PAPER),
+                        Visibility::Hidden,
+                        ZIndex(0),
+                        PanelPaper {
+                            kind: PanelKind::Processed,
+                            slot,
+                        },
+                    ))
+                    .with_children(|paper| {
+                        paper
+                            .spawn((
+                                Text::new(""),
+                                TextLayout::new_with_no_wrap(),
+                                TextFont {
+                                    font: slot_font.clone(),
+                                    font_size: FONT_SIZE,
+                                    ..default()
+                                },
+                                LineHeight::Px(LINE_HEIGHT),
+                                TextColor(COLOR_ACTION),
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: px(PAGE_TEXT_MARGIN_LEFT),
+                                    top: px(PAGE_TEXT_MARGIN_TOP),
+                                    width: px((A4_WIDTH_POINTS
+                                        - PAGE_TEXT_MARGIN_LEFT
+                                        - PAGE_TEXT_MARGIN_RIGHT)
+                                        .max(1.0)),
+                                    height: px((A4_HEIGHT_POINTS
+                                        - PAGE_TEXT_MARGIN_TOP
+                                        - PAGE_TEXT_MARGIN_BOTTOM)
+                                        .max(1.0)),
+                                    overflow: Overflow::clip(),
+                                    ..default()
+                                },
+                                UiTransform::default(),
+                                ZIndex(1),
+                                ProcessedPaperText { slot },
+                            ))
+                            .with_children(|text_parent| {
+                                for line_offset in 0..span_capacity {
+                                    text_parent.spawn((
+                                        TextSpan::new(""),
+                                        TextFont {
+                                            font: slot_font.clone(),
+                                            font_size: FONT_SIZE,
+                                            ..default()
+                                        },
+                                        LineHeight::Px(LINE_HEIGHT),
+                                        TextColor(COLOR_ACTION),
+                                        ProcessedPaperLineSpan { slot, line_offset },
+                                    ));
+                                }
+                            });
+                    });
+            }
+        });
+    }
+
+    for (entity, panel_paper) in paper_query.iter() {
+        if panel_paper.kind != PanelKind::Processed || panel_paper.slot != 0 {
+            continue;
+        }
+
+        let slot = panel_paper.slot;
+        let regular_font = regular_font.clone();
+        commands.entity(entity).with_children(|paper| {
+            paper
+                .spawn((
+                    Text::new(""),
+                    TextLayout::new_with_no_wrap(),
                     TextFont {
                         font: regular_font.clone(),
                         font_size: FONT_SIZE,
@@ -798,37 +874,47 @@ fn setup_processed_spans(
                     },
                     LineHeight::Px(LINE_HEIGHT),
                     TextColor(COLOR_ACTION),
-                    ProcessedLineSpan { line_offset },
-                ));
-            }
-        });
-    }
-}
-
-fn setup_processed_papers(mut commands: Commands, canvas_query: Query<(Entity, &PanelCanvas)>) {
-    for (entity, panel_canvas) in canvas_query.iter() {
-        if panel_canvas.kind != PanelKind::Processed {
-            continue;
-        }
-
-        commands.entity(entity).with_children(|parent| {
-            for slot in 1..PROCESSED_PAPER_CAPACITY {
-                parent.spawn((
                     Node {
                         position_type: PositionType::Absolute,
+                        left: px(PAGE_TEXT_MARGIN_LEFT),
+                        top: px(PAGE_TEXT_MARGIN_TOP),
+                        width: px((A4_WIDTH_POINTS
+                            - PAGE_TEXT_MARGIN_LEFT
+                            - PAGE_TEXT_MARGIN_RIGHT)
+                            .max(1.0)),
+                        height: px((A4_HEIGHT_POINTS
+                            - PAGE_TEXT_MARGIN_TOP
+                            - PAGE_TEXT_MARGIN_BOTTOM)
+                            .max(1.0)),
+                        overflow: Overflow::clip(),
                         ..default()
                     },
                     UiTransform::default(),
-                    BackgroundColor(COLOR_PAPER),
-                    Visibility::Hidden,
-                    ZIndex(0),
-                    PanelPaper {
-                        kind: PanelKind::Processed,
-                        slot,
-                    },
-                ));
-            }
+                    ZIndex(1),
+                    ProcessedPaperText { slot },
+                ))
+                .with_children(|text_parent| {
+                    for line_offset in 0..span_capacity {
+                        text_parent.spawn((
+                            TextSpan::new(""),
+                            TextFont {
+                                font: regular_font.clone(),
+                                font_size: FONT_SIZE,
+                                ..default()
+                            },
+                            LineHeight::Px(LINE_HEIGHT),
+                            TextColor(COLOR_ACTION),
+                            ProcessedPaperLineSpan { slot, line_offset },
+                        ));
+                    }
+                });
         });
+    }
+
+    for (entity, panel_text) in text_query.iter() {
+        if panel_text.kind == PanelKind::Processed {
+            commands.entity(entity).despawn();
+        }
     }
 }
 
@@ -991,6 +1077,7 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle
                         (
                             Node {
                                 position_type: PositionType::Absolute,
+                                overflow: Overflow::clip(),
                                 ..default()
                             },
                             UiTransform::default(),
@@ -2019,12 +2106,24 @@ fn handle_mouse_click(
     let processed_wrap_columns = processed_layout_info.map_or(64, |layout| layout.wrap_columns);
     let processed_lines_per_page = processed_layout_info.map_or(40, |layout| layout.lines_per_page);
     let processed_spacer_lines = processed_layout_info.map_or(2, |layout| layout.spacer_lines);
+    let processed_step_lines = processed_layout_info
+        .map_or(processed_page_step_lines(), |layout| layout.page_step_lines)
+        .max(1);
+    let processed_view_capacity = processed_step_lines
+        .saturating_mul(PROCESSED_PAPER_CAPACITY)
+        .max(1);
     let plain_lines = visible_plain_lines(&state, visible_lines);
-    let processed_view = build_processed_view(
+    let processed_all_lines = processed_cache_lines(
         &mut state,
         processed_wrap_columns,
         processed_lines_per_page,
         processed_spacer_lines,
+    )
+    .to_vec();
+    let processed_view = build_processed_view(
+        &processed_all_lines,
+        state.top_line,
+        processed_view_capacity,
     );
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
     let processed_layout = None;
@@ -2191,12 +2290,22 @@ fn render_editor(
             Without<PanelCaret>,
             Without<PanelPaper>,
             Without<PanelCanvas>,
-            Without<ProcessedLineSpan>,
+            Without<ProcessedPaperText>,
+            Without<ProcessedPaperLineSpan>,
+        ),
+    >,
+    mut processed_paper_text_query: Query<
+        (&ProcessedPaperText, &mut Node, &mut UiTransform),
+        (
+            Without<PanelText>,
+            Without<PanelPaper>,
+            Without<PanelCaret>,
+            Without<PanelCanvas>,
         ),
     >,
     mut processed_span_query: Query<
         (
-            &ProcessedLineSpan,
+            &ProcessedPaperLineSpan,
             &mut TextSpan,
             &mut TextFont,
             &mut LineHeight,
@@ -2264,11 +2373,20 @@ fn render_editor(
     state.clamp_scroll(visible_lines);
 
     let plain_lines = visible_plain_lines(&state, visible_lines);
-    let processed_view = build_processed_view(
+    let processed_view_capacity = processed_page_step_lines
+        .saturating_mul(PROCESSED_PAPER_CAPACITY)
+        .max(1);
+    let processed_all_lines = processed_cache_lines(
         &mut state,
         processed_wrap_columns,
         processed_lines_per_page,
         processed_spacer_lines,
+    )
+    .to_vec();
+    let processed_view = build_processed_view(
+        &processed_all_lines,
+        state.top_line,
+        processed_view_capacity,
     );
     let first_visible_page = processed_view.start_index / processed_page_step_lines;
     let processed_text_origin_y = processed_geometry.text_top;
@@ -2312,6 +2430,20 @@ fn render_editor(
         *visibility = Visibility::Visible;
     }
 
+    for (paper_text, mut node, mut transform) in processed_paper_text_query.iter_mut() {
+        if paper_text.slot >= PROCESSED_PAPER_CAPACITY {
+            continue;
+        }
+
+        node.left = px(processed_geometry.text_left - processed_geometry.paper_left);
+        node.top = px(processed_geometry.text_top - processed_geometry.paper_top);
+        node.width = px(processed_geometry.text_width);
+        node.height = px(processed_geometry.text_height);
+        node.overflow = Overflow::clip();
+        transform.scale = Vec2::ONE;
+        transform.translation = Val2::ZERO;
+    }
+
     let plain_view = plain_lines.join("\n");
 
     for (panel_text, mut text, mut text_font, mut line_height_comp, mut node, mut transform) in
@@ -2333,19 +2465,10 @@ fn render_editor(
                 text_font.font_size = processed_font_size;
                 *line_height_comp = LineHeight::Px(processed_line_height);
                 **text = String::new();
-                let (text_left, text_top, text_width, text_height) = (
-                    processed_geometry.text_left,
-                    processed_text_origin_y,
-                    processed_geometry.text_width,
-                    processed_geometry.text_height,
-                );
-                node.left = px(text_left);
-                node.top = px(text_top);
-                node.width = px(text_width);
-                let text_draw_height = (processed_view.lines.len().max(1) as f32
-                    * processed_line_height)
-                    .max(text_height);
-                node.height = px(text_draw_height);
+                node.left = px(0.0);
+                node.top = px(0.0);
+                node.width = px(0.0);
+                node.height = px(0.0);
                 transform.scale = Vec2::ONE;
                 transform.translation = Val2::ZERO;
             }
@@ -2355,7 +2478,10 @@ fn render_editor(
     apply_processed_styles(
         &mut processed_span_query,
         &state,
-        &processed_view,
+        &processed_all_lines,
+        first_visible_page,
+        processed_page_step_lines,
+        processed_lines_per_page,
         &fonts,
         processed_font_size,
         processed_line_height,
@@ -2544,7 +2670,12 @@ fn ensure_cursor_visible_in_processed_panel(
         ((panel_size.y / zoom) - processed_layout.geometry.text_top).max(processed_line_height);
     let processed_visible_lines =
         (visible_height / processed_line_height).floor().max(1.0) as usize;
-    let max_window = processed_visible_lines.min(PROCESSED_SPAN_CAPACITY).max(1);
+    let rendered_window = processed_layout
+        .page_step_lines
+        .max(1)
+        .saturating_mul(PROCESSED_PAPER_CAPACITY)
+        .max(1);
+    let max_window = processed_visible_lines.min(rendered_window).max(1);
 
     let all_lines = processed_cache_lines(
         state,
@@ -2628,19 +2759,17 @@ struct ProcessedView {
 }
 
 fn build_processed_view(
-    state: &mut EditorState,
-    wrap_columns: usize,
-    lines_per_page: usize,
-    spacer_lines: usize,
+    all_lines: &[ProcessedVisualLine],
+    top_line: usize,
+    max_visible: usize,
 ) -> ProcessedView {
-    let max_visible = PROCESSED_SPAN_CAPACITY.max(1);
-    let mut all_lines =
-        processed_cache_lines(state, wrap_columns, lines_per_page, spacer_lines).to_vec();
+    let max_visible = max_visible.max(1);
+    let mut all_lines = all_lines.to_vec();
     if all_lines.is_empty() {
         return ProcessedView::default();
     }
 
-    let anchor_index = first_visual_index_for_source_line(&all_lines, state.top_line)
+    let anchor_index = first_visual_index_for_source_line(&all_lines, top_line)
         .unwrap_or_else(|| all_lines.len().saturating_sub(1));
     let mut start_index = anchor_index;
 
@@ -3124,7 +3253,7 @@ fn nearest_non_spacer_visual_index(lines: &[ProcessedVisualLine], index: usize) 
 fn apply_processed_styles(
     processed_span_query: &mut Query<
         (
-            &ProcessedLineSpan,
+            &ProcessedPaperLineSpan,
             &mut TextSpan,
             &mut TextFont,
             &mut LineHeight,
@@ -3133,30 +3262,47 @@ fn apply_processed_styles(
         Without<PanelText>,
     >,
     state: &EditorState,
-    processed_view: &ProcessedView,
+    processed_lines: &[ProcessedVisualLine],
+    first_visible_page: usize,
+    page_step_lines: usize,
+    lines_per_page: usize,
     fonts: &EditorFonts,
     font_size: f32,
     line_height: f32,
 ) {
-    let visible_count = processed_view.lines.len().min(PROCESSED_SPAN_CAPACITY);
+    let page_step_lines = page_step_lines.max(1);
+    let lines_per_page = lines_per_page.max(1).min(page_step_lines);
 
     for (processed_span, mut text_span, mut text_font, mut text_line_height, mut text_color) in
         processed_span_query.iter_mut()
     {
-        let line_offset = processed_span.line_offset;
+        let page_index = first_visible_page.saturating_add(processed_span.slot);
+        let line_offset = processed_span
+            .line_offset
+            .min(page_step_lines.saturating_sub(1));
+        let page_start = page_index.saturating_mul(page_step_lines);
+        let global_index = page_start.saturating_add(line_offset);
 
-        if line_offset >= visible_count {
+        if line_offset >= lines_per_page {
             **text_span = String::new();
             continue;
         }
 
-        let Some(visual_line) = processed_view.lines.get(line_offset) else {
-            **text_span = String::new();
+        let Some(visual_line) = processed_lines.get(global_index) else {
+            **text_span = if line_offset + 1 < lines_per_page {
+                "\n".to_owned()
+            } else {
+                String::new()
+            };
+            text_font.font = fonts.regular.clone();
+            text_font.font_size = font_size;
+            *text_line_height = LineHeight::Px(line_height);
+            text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
             continue;
         };
 
         let mut line_text = visual_line.text.clone();
-        if line_offset + 1 < visible_count {
+        if line_offset + 1 < lines_per_page {
             line_text.push('\n');
         }
 
