@@ -17,7 +17,7 @@ use bevy::{
     prelude::*,
     tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
     text::{LineHeight, TextLayoutInfo},
-    ui::RelativeCursorPosition,
+    ui::{RelativeCursorPosition, UiTransform, Val2},
     window::{PrimaryWindow, RawHandleWrapper},
 };
 use rfd::AsyncFileDialog;
@@ -507,19 +507,26 @@ struct ProcessedPageLayout {
     page_step_lines: usize,
 }
 
+fn processed_page_step_lines() -> usize {
+    ((A4_HEIGHT_POINTS + PAGE_GAP) / LINE_HEIGHT)
+        .round()
+        .max(1.0) as usize
+}
+
 fn processed_page_geometry(panel_size: Vec2, state: &EditorState) -> ProcessedPageGeometry {
     let _ = panel_size;
-    // Zoom scales a fixed A4 page model (in typographic points).
-    let zoom = state.zoom;
-    let paper_width = A4_WIDTH_POINTS * zoom;
-    let paper_height = A4_HEIGHT_POINTS * zoom;
+    // Geometry stays at 100%; processed zoom is applied as a UI transform.
+    let paper_width = A4_WIDTH_POINTS;
+    // Keep paper height on the same line grid used by processed pagination.
+    let page_step_lines = processed_page_step_lines();
+    let paper_height = ((page_step_lines as f32 * LINE_HEIGHT) - PAGE_GAP).max(1.0);
     let paper_left = PAGE_OUTER_MARGIN;
     let paper_top = PAGE_OUTER_MARGIN;
 
-    let margin_left = state.page_margin_left * zoom;
-    let margin_right = state.page_margin_right * zoom;
-    let margin_top = state.page_margin_top * zoom;
-    let margin_bottom = state.page_margin_bottom * zoom;
+    let margin_left = state.page_margin_left;
+    let margin_right = state.page_margin_right;
+    let margin_top = state.page_margin_top;
+    let margin_bottom = state.page_margin_bottom;
     let text_left = paper_left + margin_left;
     let text_top = paper_top + margin_top;
     let text_width = (paper_width - margin_left - margin_right).max(1.0);
@@ -552,12 +559,8 @@ fn processed_page_layout(panel_size: Vec2, state: &EditorState) -> ProcessedPage
         .floor()
         .max(1.0) as usize;
 
-    let spacer_lines = (((A4_HEIGHT_POINTS + PAGE_GAP) - lines_per_page as f32 * LINE_HEIGHT)
-        .max(0.0)
-        / LINE_HEIGHT)
-        .round()
-        .max(0.0) as usize;
-    let page_step_lines = lines_per_page.saturating_add(spacer_lines);
+    let page_step_lines = processed_page_step_lines();
+    let spacer_lines = page_step_lines.saturating_sub(lines_per_page);
 
     ProcessedPageLayout {
         geometry,
@@ -802,6 +805,7 @@ fn setup_processed_papers(mut commands: Commands, body_query: Query<(Entity, &Pa
                         position_type: PositionType::Absolute,
                         ..default()
                     },
+                    UiTransform::default(),
                     BackgroundColor(COLOR_PAPER),
                     Visibility::Hidden,
                     ZIndex(0),
@@ -965,6 +969,7 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle
                             position_type: PositionType::Absolute,
                             ..default()
                         },
+                        UiTransform::default(),
                         BackgroundColor(COLOR_PAPER),
                         Visibility::Hidden,
                         ZIndex(0),
@@ -979,6 +984,7 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle
                             height: px(LINE_HEIGHT),
                             ..default()
                         },
+                        UiTransform::default(),
                         BackgroundColor(Color::srgba(0.12, 0.12, 0.13, 0.35)),
                         Visibility::Hidden,
                         ZIndex(1),
@@ -1000,6 +1006,7 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle
                             top: px(TEXT_PADDING_Y),
                             ..default()
                         },
+                        UiTransform::default(),
                         ZIndex(2),
                         PanelText { kind },
                     )
@@ -1415,6 +1422,16 @@ fn scaled_text_padding_y(state: &EditorState) -> f32 {
     TEXT_PADDING_Y * state.zoom
 }
 
+fn apply_top_left_zoom_transform(transform: &mut UiTransform, zoom: f32, size: Vec2) {
+    transform.scale = Vec2::splat(zoom);
+    let offset = size * ((zoom - 1.0) * 0.5);
+    transform.translation = Val2::px(offset.x, offset.y);
+}
+
+fn scale_about_anchor(value: f32, anchor: f32, zoom: f32) -> f32 {
+    anchor + (value - anchor) * zoom
+}
+
 fn shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
     keys.any_pressed([
         KeyCode::ControlLeft,
@@ -1784,7 +1801,7 @@ fn handle_navigation_input(
                 state.measured_line_step,
                 scaled_text_padding_y(&state),
             );
-            state.ensure_cursor_visible(zoom_visible_lines);
+            state.clamp_scroll(zoom_visible_lines);
             return;
         }
 
@@ -1797,7 +1814,7 @@ fn handle_navigation_input(
                 state.measured_line_step,
                 scaled_text_padding_y(&state),
             );
-            state.ensure_cursor_visible(zoom_visible_lines);
+            state.clamp_scroll(zoom_visible_lines);
             return;
         }
     }
@@ -1916,7 +1933,7 @@ fn handle_mouse_scroll(
                 state.measured_line_step,
                 scaled_text_padding_y(&state),
             );
-            state.ensure_cursor_visible(visible_lines);
+            state.clamp_scroll(visible_lines);
         }
         return;
     }
@@ -1978,9 +1995,9 @@ fn handle_mouse_click(
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
     let processed_layout = panel_layout_info(&text_layout_query, PanelKind::Processed);
     let plain_line_height = state.measured_line_step.max(1.0);
-    let processed_line_height = scaled_line_height(&state).max(1.0);
+    let processed_line_height = LINE_HEIGHT;
     let plain_char_width = scaled_char_width(&state).max(1.0);
-    let processed_char_width = scaled_char_width(&state).max(1.0);
+    let processed_char_width = DEFAULT_CHAR_WIDTH;
     let plain_origin_x = scaled_text_padding_x(&state);
     let plain_origin_y = scaled_text_padding_y(&state);
     let processed_origin_x =
@@ -1991,6 +2008,11 @@ fn handle_mouse_click(
         * processed_line_height;
     let processed_origin_y = processed_layout_info.map_or(plain_origin_y, |layout| {
         layout.geometry.text_top - anchor_line_offset_px
+    });
+    let processed_zoom_anchor_x =
+        processed_layout_info.map_or(plain_origin_x, |layout| layout.geometry.paper_left);
+    let processed_zoom_anchor_y = processed_layout_info.map_or(plain_origin_y, |layout| {
+        layout.geometry.paper_top - anchor_line_offset_px
     });
 
     for (panel, relative_cursor, computed) in panel_query.iter() {
@@ -2009,6 +2031,9 @@ fn handle_mouse_click(
 
         let inverse_scale = computed.inverse_scale_factor();
         let size = computed.size() * inverse_scale;
+        let processed_zoom = state.zoom.max(f32::EPSILON);
+        let raw_x = normalized.x * size.x;
+        let raw_y = normalized.y * size.y;
         let origin_x = if panel.kind == PanelKind::Processed {
             processed_origin_x
         } else {
@@ -2019,8 +2044,18 @@ fn handle_mouse_click(
         } else {
             plain_origin_y
         };
-        let local_x = (normalized.x * size.x - origin_x).max(0.0);
-        let local_y = (normalized.y * size.y - origin_y).max(0.0);
+        let local_x = if panel.kind == PanelKind::Processed {
+            let base_x = scale_about_anchor(raw_x, processed_zoom_anchor_x, 1.0 / processed_zoom);
+            (base_x - origin_x).max(0.0)
+        } else {
+            (raw_x - origin_x).max(0.0)
+        };
+        let local_y = if panel.kind == PanelKind::Processed {
+            let base_y = scale_about_anchor(raw_y, processed_zoom_anchor_y, 1.0 / processed_zoom);
+            (base_y - origin_y).max(0.0)
+        } else {
+            (raw_y - origin_y).max(0.0)
+        };
 
         let panel_layout = match panel.kind {
             PanelKind::Plain => plain_layout,
@@ -2125,6 +2160,7 @@ fn render_editor(
             &mut TextFont,
             &mut LineHeight,
             &mut Node,
+            &mut UiTransform,
         ),
         (
             Without<StatusText>,
@@ -2145,7 +2181,7 @@ fn render_editor(
     >,
     text_layout_query: Query<(&PanelText, &TextLayoutInfo)>,
     mut caret_query: Query<
-        (&PanelCaret, &mut Node, &mut Visibility),
+        (&PanelCaret, &mut Node, &mut Visibility, &mut UiTransform),
         (Without<PanelText>, Without<PanelPaper>),
     >,
     mut paper_query: Query<
@@ -2154,6 +2190,7 @@ fn render_editor(
             &mut Node,
             &mut Visibility,
             &mut BackgroundColor,
+            &mut UiTransform,
         ),
         (Without<PanelText>, Without<PanelCaret>),
     >,
@@ -2166,9 +2203,9 @@ fn render_editor(
     let plain_char_width = scaled_char_width(&state).max(1.0);
     let plain_origin_x = scaled_text_padding_x(&state);
     let plain_origin_y = scaled_text_padding_y(&state);
-    let processed_font_size = scaled_font_size(&state);
-    let processed_line_height = scaled_line_height(&state).max(1.0);
-    let processed_char_width = scaled_char_width(&state).max(1.0);
+    let processed_font_size = FONT_SIZE;
+    let processed_line_height = LINE_HEIGHT;
+    let processed_char_width = DEFAULT_CHAR_WIDTH;
 
     let mut plain_inverse_scale = 1.0;
     let mut processed_inverse_scale = 1.0;
@@ -2185,7 +2222,6 @@ fn render_editor(
             }
         }
     }
-
     let processed_layout_info =
         processed_panel_size.map(|size| processed_page_layout(size, &state));
     let processed_geometry = processed_layout_info.map(|layout| layout.geometry);
@@ -2212,7 +2248,13 @@ fn render_editor(
     let processed_text_origin_y = processed_geometry.map_or(plain_origin_y, |geometry| {
         geometry.text_top - anchor_line_offset_px
     });
-    for (panel_paper, mut node, mut visibility, mut color) in paper_query.iter_mut() {
+    let processed_zoom_anchor_x =
+        processed_geometry.map_or(plain_origin_x, |geometry| geometry.paper_left);
+    let processed_zoom_anchor_y = processed_geometry.map_or(plain_origin_y, |geometry| {
+        geometry.paper_top - anchor_line_offset_px
+    });
+    for (panel_paper, mut node, mut visibility, mut color, mut transform) in paper_query.iter_mut()
+    {
         if panel_paper.kind != PanelKind::Processed {
             *visibility = Visibility::Hidden;
             continue;
@@ -2226,25 +2268,34 @@ fn render_editor(
         let page_index = first_visible_page.saturating_add(panel_paper.slot);
         let page_start_line = page_index.saturating_mul(processed_page_step_lines);
         let line_delta = page_start_line as isize - processed_view.start_index as isize;
-        let page_top =
+        let page_top_base =
             geometry.paper_top - anchor_line_offset_px + line_delta as f32 * processed_line_height;
+        let page_left =
+            scale_about_anchor(geometry.paper_left, processed_zoom_anchor_x, state.zoom);
+        let page_top = scale_about_anchor(page_top_base, processed_zoom_anchor_y, state.zoom);
+        let page_height = geometry.paper_height * state.zoom;
 
-        if page_top > panel_size.y || page_top + geometry.paper_height < 0.0 {
+        if page_top > panel_size.y || page_top + page_height < 0.0 {
             *visibility = Visibility::Hidden;
             continue;
         }
 
-        node.left = px(geometry.paper_left);
+        node.left = px(page_left);
         node.top = px(page_top);
         node.width = px(geometry.paper_width);
         node.height = px(geometry.paper_height);
+        apply_top_left_zoom_transform(
+            &mut transform,
+            state.zoom,
+            Vec2::new(geometry.paper_width, geometry.paper_height),
+        );
         color.0 = COLOR_PAPER;
         *visibility = Visibility::Visible;
     }
 
     let plain_view = plain_lines.join("\n");
 
-    for (panel_text, mut text, mut text_font, mut line_height_comp, mut node) in
+    for (panel_text, mut text, mut text_font, mut line_height_comp, mut node, mut transform) in
         text_query.iter_mut()
     {
         match panel_text.kind {
@@ -2256,6 +2307,8 @@ fn render_editor(
                 node.top = px(plain_origin_y);
                 node.width = Val::Auto;
                 node.height = Val::Auto;
+                transform.scale = Vec2::ONE;
+                transform.translation = Val2::ZERO;
             }
             PanelKind::Processed => {
                 text_font.font_size = processed_font_size;
@@ -2272,11 +2325,22 @@ fn render_editor(
                         )
                     },
                 );
-                node.left = px(text_left);
-                node.top = px(text_top);
+                let scaled_text_left =
+                    scale_about_anchor(text_left, processed_zoom_anchor_x, state.zoom);
+                let scaled_text_top =
+                    scale_about_anchor(text_top, processed_zoom_anchor_y, state.zoom);
+                node.left = px(scaled_text_left);
+                node.top = px(scaled_text_top);
                 node.width = px(text_width);
-                let _ = text_height;
-                node.height = Val::Auto;
+                let text_draw_height = (processed_view.lines.len().max(1) as f32
+                    * processed_line_height)
+                    .max(text_height);
+                node.height = px(text_draw_height);
+                apply_top_left_zoom_transform(
+                    &mut transform,
+                    state.zoom,
+                    Vec2::new(text_width, text_draw_height),
+                );
             }
         }
     }
@@ -2297,8 +2361,13 @@ fn render_editor(
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
     let processed_layout = panel_layout_info(&text_layout_query, PanelKind::Processed);
     state.measured_line_step = scaled_line_height(&state);
+    let processed_zoom_anchor_x =
+        processed_geometry.map_or(plain_origin_x, |geometry| geometry.paper_left);
+    let processed_zoom_anchor_y = processed_geometry.map_or(plain_origin_y, |geometry| {
+        geometry.paper_top - anchor_line_offset_px
+    });
 
-    for (panel_caret, mut node, mut visibility) in caret_query.iter_mut() {
+    for (panel_caret, mut node, mut visibility, mut transform) in caret_query.iter_mut() {
         if !state.caret_visible {
             *visibility = Visibility::Hidden;
             continue;
@@ -2392,11 +2461,27 @@ fn render_editor(
             })
             .unwrap_or(line_offset as f32 * panel_line_height);
 
-        node.left = px(origin_x + (caret_x + panel_caret_x_offset).max(0.0));
+        let mut caret_left = origin_x + (caret_x + panel_caret_x_offset).max(0.0);
         let caret_y_offset = CARET_Y_OFFSET_FACTOR * panel_line_height;
-        node.top = px(origin_y + (caret_top + caret_y_offset).max(0.0));
+        let mut caret_top = origin_y + (caret_top + caret_y_offset).max(0.0);
+        if panel_caret.kind == PanelKind::Processed {
+            caret_left = scale_about_anchor(caret_left, processed_zoom_anchor_x, state.zoom);
+            caret_top = scale_about_anchor(caret_top, processed_zoom_anchor_y, state.zoom);
+        }
+        node.left = px(caret_left);
+        node.top = px(caret_top);
         node.width = px(panel_caret_width);
         node.height = px(panel_line_height.max(1.0));
+        if panel_caret.kind == PanelKind::Processed {
+            apply_top_left_zoom_transform(
+                &mut transform,
+                state.zoom,
+                Vec2::new(panel_caret_width, panel_line_height.max(1.0)),
+            );
+        } else {
+            transform.scale = Vec2::ONE;
+            transform.translation = Val2::ZERO;
+        }
         *visibility = Visibility::Visible;
     }
 }
@@ -2465,9 +2550,10 @@ fn ensure_cursor_visible_in_processed_panel(
     };
 
     let processed_layout = processed_page_layout(panel_size, state);
-    let processed_line_height = scaled_line_height(state).max(1.0);
+    let processed_line_height = LINE_HEIGHT;
+    let zoom = state.zoom.max(f32::EPSILON);
     let visible_height =
-        (panel_size.y - processed_layout.geometry.text_top).max(processed_line_height);
+        ((panel_size.y / zoom) - processed_layout.geometry.text_top).max(processed_line_height);
     let processed_visible_lines =
         (visible_height / processed_line_height).floor().max(1.0) as usize;
     let max_window = processed_visible_lines.min(PROCESSED_SPAN_CAPACITY).max(1);
