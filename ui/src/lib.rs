@@ -153,6 +153,11 @@ struct PanelPaper {
 }
 
 #[derive(Component)]
+struct PanelCanvas {
+    kind: PanelKind,
+}
+
+#[derive(Component)]
 struct ProcessedLineSpan {
     line_offset: usize,
 }
@@ -226,6 +231,8 @@ struct EditorState {
     page_margin_bottom: f32,
     zoom: f32,
     measured_line_step: f32,
+    processed_cache: Option<ProcessedCache>,
+    processed_cache_dirty_from_line: Option<usize>,
 }
 
 #[derive(Resource, Default)]
@@ -343,6 +350,8 @@ impl FromWorld for EditorState {
             page_margin_bottom: settings.page_margin_bottom,
             zoom: 1.0,
             measured_line_step: LINE_HEIGHT,
+            processed_cache: None,
+            processed_cache_dirty_from_line: Some(0),
         };
         normalize_page_margins(&mut next);
         next
@@ -362,6 +371,20 @@ impl EditorState {
 
     fn reparse(&mut self) {
         self.parsed = parse_document(&self.document);
+        self.mark_processed_cache_dirty_from(0);
+    }
+
+    fn reparse_with_dirty_hint(&mut self, dirty_line: usize) {
+        self.parsed = parse_document(&self.document);
+        self.mark_processed_cache_dirty_from(dirty_line);
+    }
+
+    fn mark_processed_cache_dirty_from(&mut self, source_line: usize) {
+        let dirty_line = source_line.min(self.document.line_count().saturating_sub(1));
+        self.processed_cache_dirty_from_line = Some(
+            self.processed_cache_dirty_from_line
+                .map_or(dirty_line, |current| current.min(dirty_line)),
+        );
     }
 
     fn reset_blink(&mut self) {
@@ -546,18 +569,8 @@ fn processed_page_geometry(panel_size: Vec2, state: &EditorState) -> ProcessedPa
 
 fn processed_page_layout(panel_size: Vec2, state: &EditorState) -> ProcessedPageLayout {
     let geometry = processed_page_geometry(panel_size, state);
-    let wrap_columns = ((A4_WIDTH_POINTS - state.page_margin_left - state.page_margin_right)
-        .max(1.0)
-        / DEFAULT_CHAR_WIDTH)
-        .floor()
-        .max(1.0) as usize;
-
-    // Keep page line metrics independent of zoom so text stays coupled to page on zoom.
-    let lines_per_page = ((A4_HEIGHT_POINTS - state.page_margin_top - state.page_margin_bottom)
-        .max(1.0)
-        / LINE_HEIGHT)
-        .floor()
-        .max(1.0) as usize;
+    let wrap_columns = (geometry.text_width / DEFAULT_CHAR_WIDTH).floor().max(1.0) as usize;
+    let lines_per_page = (geometry.text_height / LINE_HEIGHT).floor().max(1.0) as usize;
 
     let page_step_lines = processed_page_step_lines();
     let spacer_lines = page_step_lines.saturating_sub(lines_per_page);
@@ -792,9 +805,9 @@ fn setup_processed_spans(
     }
 }
 
-fn setup_processed_papers(mut commands: Commands, body_query: Query<(Entity, &PanelBody)>) {
-    for (entity, panel_body) in body_query.iter() {
-        if panel_body.kind != PanelKind::Processed {
+fn setup_processed_papers(mut commands: Commands, canvas_query: Query<(Entity, &PanelCanvas)>) {
+    for (entity, panel_canvas) in canvas_query.iter() {
+        if panel_canvas.kind != PanelKind::Processed {
             continue;
         }
 
@@ -963,54 +976,66 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle
                 BackgroundColor(body_color),
                 RelativeCursorPosition::default(),
                 PanelBody { kind },
-                children![
-                    (
-                        Node {
-                            position_type: PositionType::Absolute,
-                            ..default()
-                        },
-                        UiTransform::default(),
-                        BackgroundColor(COLOR_PAPER),
-                        Visibility::Hidden,
-                        ZIndex(0),
-                        PanelPaper { kind, slot: 0 },
-                    ),
-                    (
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: px(TEXT_PADDING_X),
-                            top: px(TEXT_PADDING_Y),
-                            width: px(CARET_WIDTH),
-                            height: px(LINE_HEIGHT),
-                            ..default()
-                        },
-                        UiTransform::default(),
-                        BackgroundColor(Color::srgba(0.12, 0.12, 0.13, 0.35)),
-                        Visibility::Hidden,
-                        ZIndex(1),
-                        PanelCaret { kind },
-                    ),
-                    (
-                        Text::new(""),
-                        TextLayout::new_with_no_wrap(),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: FONT_SIZE,
-                            ..default()
-                        },
-                        LineHeight::Px(LINE_HEIGHT),
-                        TextColor(COLOR_ACTION),
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: px(TEXT_PADDING_X),
-                            top: px(TEXT_PADDING_Y),
-                            ..default()
-                        },
-                        UiTransform::default(),
-                        ZIndex(2),
-                        PanelText { kind },
-                    )
-                ],
+                children![(
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(0.0),
+                        top: px(0.0),
+                        width: percent(100.0),
+                        height: percent(100.0),
+                        ..default()
+                    },
+                    UiTransform::default(),
+                    PanelCanvas { kind },
+                    children![
+                        (
+                            Node {
+                                position_type: PositionType::Absolute,
+                                ..default()
+                            },
+                            UiTransform::default(),
+                            BackgroundColor(COLOR_PAPER),
+                            Visibility::Hidden,
+                            ZIndex(0),
+                            PanelPaper { kind, slot: 0 },
+                        ),
+                        (
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: px(TEXT_PADDING_X),
+                                top: px(TEXT_PADDING_Y),
+                                width: px(CARET_WIDTH),
+                                height: px(LINE_HEIGHT),
+                                ..default()
+                            },
+                            UiTransform::default(),
+                            BackgroundColor(Color::srgba(0.12, 0.12, 0.13, 0.35)),
+                            Visibility::Hidden,
+                            ZIndex(1),
+                            PanelCaret { kind },
+                        ),
+                        (
+                            Text::new(""),
+                            TextLayout::new_with_no_wrap(),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: FONT_SIZE,
+                                ..default()
+                            },
+                            LineHeight::Px(LINE_HEIGHT),
+                            TextColor(COLOR_ACTION),
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: px(TEXT_PADDING_X),
+                                top: px(TEXT_PADDING_Y),
+                                ..default()
+                            },
+                            UiTransform::default(),
+                            ZIndex(2),
+                            PanelText { kind },
+                        )
+                    ],
+                )],
             )
         ],
     )
@@ -1153,6 +1178,7 @@ fn handle_settings_buttons(
         }
 
         if settings_changed {
+            state.mark_processed_cache_dirty_from(0);
             let persistent = persistent_settings_from_state(&state);
             if let Err(error) = save_persistent_settings(&persistent) {
                 state.status_message = format!("Settings save failed: {error}");
@@ -1426,10 +1452,6 @@ fn apply_top_left_zoom_transform(transform: &mut UiTransform, zoom: f32, size: V
     transform.scale = Vec2::splat(zoom);
     let offset = size * ((zoom - 1.0) * 0.5);
     transform.translation = Val2::px(offset.x, offset.y);
-}
-
-fn scale_about_anchor(value: f32, anchor: f32, zoom: f32) -> f32 {
-    anchor + (value - anchor) * zoom
 }
 
 fn shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
@@ -1724,6 +1746,7 @@ fn handle_text_input(
         .find(|(panel, _)| panel.kind == PanelKind::Processed)
         .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
     let mut edited = false;
+    let mut dirty_from_line = None::<usize>;
 
     for input in keyboard_inputs.read() {
         if !input.state.is_pressed() {
@@ -1737,18 +1760,25 @@ fn handle_text_input(
                 let cursor_pos = state.cursor.position;
                 let next = state.document.insert_newline(cursor_pos);
                 state.set_cursor(next, true);
+                dirty_from_line =
+                    Some(dirty_from_line.map_or(cursor_pos.line, |line| line.min(cursor_pos.line)));
                 changed = true;
             }
             Key::Backspace => {
                 let cursor_pos = state.cursor.position;
                 let next = state.document.backspace(cursor_pos);
                 state.set_cursor(next, true);
+                let dirty_candidate = cursor_pos.line.saturating_sub(1).min(next.line);
+                dirty_from_line =
+                    Some(dirty_from_line.map_or(dirty_candidate, |line| line.min(dirty_candidate)));
                 changed = true;
             }
             Key::Delete => {
                 let cursor_pos = state.cursor.position;
                 let next = state.document.delete(cursor_pos);
                 state.set_cursor(next, false);
+                dirty_from_line =
+                    Some(dirty_from_line.map_or(cursor_pos.line, |line| line.min(cursor_pos.line)));
                 changed = true;
             }
             _ => {
@@ -1757,6 +1787,10 @@ fn handle_text_input(
                         let cursor_pos = state.cursor.position;
                         let next = state.document.insert_text(cursor_pos, inserted_text);
                         state.set_cursor(next, true);
+                        dirty_from_line = Some(
+                            dirty_from_line
+                                .map_or(cursor_pos.line, |line| line.min(cursor_pos.line)),
+                        );
                         changed = true;
                     }
                 }
@@ -1769,7 +1803,7 @@ fn handle_text_input(
     }
 
     if edited {
-        state.reparse();
+        state.reparse_with_dirty_hint(dirty_from_line.unwrap_or(0));
         state.ensure_cursor_visible(visible_lines);
         ensure_cursor_visible_in_processed_panel(&mut state, processed_panel_size, visible_lines);
     }
@@ -1987,13 +2021,13 @@ fn handle_mouse_click(
     let processed_spacer_lines = processed_layout_info.map_or(2, |layout| layout.spacer_lines);
     let plain_lines = visible_plain_lines(&state, visible_lines);
     let processed_view = build_processed_view(
-        &state,
+        &mut state,
         processed_wrap_columns,
         processed_lines_per_page,
         processed_spacer_lines,
     );
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
-    let processed_layout = panel_layout_info(&text_layout_query, PanelKind::Processed);
+    let processed_layout = None;
     let plain_line_height = state.measured_line_step.max(1.0);
     let processed_line_height = LINE_HEIGHT;
     let plain_char_width = scaled_char_width(&state).max(1.0);
@@ -2002,19 +2036,8 @@ fn handle_mouse_click(
     let plain_origin_y = scaled_text_padding_y(&state);
     let processed_origin_x =
         processed_layout_info.map_or(plain_origin_x, |layout| layout.geometry.text_left);
-    let anchor_line_offset_px = processed_view
-        .anchor_index
-        .saturating_sub(processed_view.start_index) as f32
-        * processed_line_height;
-    let processed_origin_y = processed_layout_info.map_or(plain_origin_y, |layout| {
-        layout.geometry.text_top - anchor_line_offset_px
-    });
-    let processed_zoom_anchor_x =
-        processed_layout_info.map_or(plain_origin_x, |layout| layout.geometry.paper_left);
-    let processed_zoom_anchor_y = processed_layout_info.map_or(plain_origin_y, |layout| {
-        layout.geometry.paper_top - anchor_line_offset_px
-    });
-
+    let processed_origin_y =
+        processed_layout_info.map_or(plain_origin_y, |layout| layout.geometry.text_top);
     for (panel, relative_cursor, computed) in panel_query.iter() {
         if !relative_cursor.cursor_over() {
             continue;
@@ -2034,6 +2057,16 @@ fn handle_mouse_click(
         let processed_zoom = state.zoom.max(f32::EPSILON);
         let raw_x = normalized.x * size.x;
         let raw_y = normalized.y * size.y;
+        let panel_x = if panel.kind == PanelKind::Processed {
+            raw_x / processed_zoom
+        } else {
+            raw_x
+        };
+        let panel_y = if panel.kind == PanelKind::Processed {
+            raw_y / processed_zoom
+        } else {
+            raw_y
+        };
         let origin_x = if panel.kind == PanelKind::Processed {
             processed_origin_x
         } else {
@@ -2044,18 +2077,8 @@ fn handle_mouse_click(
         } else {
             plain_origin_y
         };
-        let local_x = if panel.kind == PanelKind::Processed {
-            let base_x = scale_about_anchor(raw_x, processed_zoom_anchor_x, 1.0 / processed_zoom);
-            (base_x - origin_x).max(0.0)
-        } else {
-            (raw_x - origin_x).max(0.0)
-        };
-        let local_y = if panel.kind == PanelKind::Processed {
-            let base_y = scale_about_anchor(raw_y, processed_zoom_anchor_y, 1.0 / processed_zoom);
-            (base_y - origin_y).max(0.0)
-        } else {
-            (raw_y - origin_y).max(0.0)
-        };
+        let local_x = (panel_x - origin_x).max(0.0);
+        let local_y = (panel_y - origin_y).max(0.0);
 
         let panel_layout = match panel.kind {
             PanelKind::Plain => plain_layout,
@@ -2153,6 +2176,7 @@ fn blink_caret(time: Res<Time>, mut state: ResMut<EditorState>) {
 
 fn render_editor(
     body_query: Query<(&PanelBody, &ComputedNode)>,
+    mut canvas_query: Query<(&PanelCanvas, &mut UiTransform)>,
     mut text_query: Query<
         (
             &PanelText,
@@ -2166,6 +2190,7 @@ fn render_editor(
             Without<StatusText>,
             Without<PanelCaret>,
             Without<PanelPaper>,
+            Without<PanelCanvas>,
             Without<ProcessedLineSpan>,
         ),
     >,
@@ -2182,7 +2207,11 @@ fn render_editor(
     text_layout_query: Query<(&PanelText, &TextLayoutInfo)>,
     mut caret_query: Query<
         (&PanelCaret, &mut Node, &mut Visibility, &mut UiTransform),
-        (Without<PanelText>, Without<PanelPaper>),
+        (
+            Without<PanelText>,
+            Without<PanelPaper>,
+            Without<PanelCanvas>,
+        ),
     >,
     mut paper_query: Query<
         (
@@ -2192,7 +2221,11 @@ fn render_editor(
             &mut BackgroundColor,
             &mut UiTransform,
         ),
-        (Without<PanelText>, Without<PanelCaret>),
+        (
+            Without<PanelText>,
+            Without<PanelCaret>,
+            Without<PanelCanvas>,
+        ),
     >,
     mut status_query: Query<&mut Text, (With<StatusText>, Without<PanelText>, Without<PanelCaret>)>,
     fonts: Res<EditorFonts>,
@@ -2208,7 +2241,6 @@ fn render_editor(
     let processed_char_width = DEFAULT_CHAR_WIDTH;
 
     let mut plain_inverse_scale = 1.0;
-    let mut processed_inverse_scale = 1.0;
     let mut processed_panel_size = None;
 
     for (panel, computed) in body_query.iter() {
@@ -2217,42 +2249,44 @@ fn render_editor(
         match panel.kind {
             PanelKind::Plain => plain_inverse_scale = inverse_scale,
             PanelKind::Processed => {
-                processed_inverse_scale = inverse_scale;
                 processed_panel_size = Some(logical_size);
             }
         }
     }
     let processed_layout_info =
-        processed_panel_size.map(|size| processed_page_layout(size, &state));
-    let processed_geometry = processed_layout_info.map(|layout| layout.geometry);
-    let processed_wrap_columns = processed_layout_info.map_or(64, |layout| layout.wrap_columns);
-    let processed_lines_per_page = processed_layout_info.map_or(40, |layout| layout.lines_per_page);
-    let processed_spacer_lines = processed_layout_info.map_or(2, |layout| layout.spacer_lines);
-    let processed_page_step_lines =
-        processed_layout_info.map_or(42, |layout| layout.page_step_lines.max(1));
+        processed_page_layout(processed_panel_size.unwrap_or(Vec2::ZERO), &state);
+    let processed_geometry = processed_layout_info.geometry;
+    let processed_wrap_columns = processed_layout_info.wrap_columns;
+    let processed_lines_per_page = processed_layout_info.lines_per_page;
+    let processed_spacer_lines = processed_layout_info.spacer_lines;
+    let processed_page_step_lines = processed_layout_info.page_step_lines.max(1);
     let visible_lines = viewport_lines(&body_query, state.measured_line_step, plain_origin_y);
     state.clamp_scroll(visible_lines);
 
     let plain_lines = visible_plain_lines(&state, visible_lines);
     let processed_view = build_processed_view(
-        &state,
+        &mut state,
         processed_wrap_columns,
         processed_lines_per_page,
         processed_spacer_lines,
     );
     let first_visible_page = processed_view.start_index / processed_page_step_lines;
-    let anchor_line_offset_px = processed_view
-        .anchor_index
-        .saturating_sub(processed_view.start_index) as f32
-        * processed_line_height;
-    let processed_text_origin_y = processed_geometry.map_or(plain_origin_y, |geometry| {
-        geometry.text_top - anchor_line_offset_px
-    });
-    let processed_zoom_anchor_x =
-        processed_geometry.map_or(plain_origin_x, |geometry| geometry.paper_left);
-    let processed_zoom_anchor_y = processed_geometry.map_or(plain_origin_y, |geometry| {
-        geometry.paper_top - anchor_line_offset_px
-    });
+    let processed_text_origin_y = processed_geometry.text_top;
+
+    for (panel_canvas, mut transform) in canvas_query.iter_mut() {
+        if panel_canvas.kind == PanelKind::Processed {
+            if let Some(panel_size) = processed_panel_size {
+                apply_top_left_zoom_transform(&mut transform, state.zoom, panel_size);
+            } else {
+                transform.scale = Vec2::ONE;
+                transform.translation = Val2::ZERO;
+            }
+        } else {
+            transform.scale = Vec2::ONE;
+            transform.translation = Val2::ZERO;
+        }
+    }
+
     for (panel_paper, mut node, mut visibility, mut color, mut transform) in paper_query.iter_mut()
     {
         if panel_paper.kind != PanelKind::Processed {
@@ -2260,35 +2294,20 @@ fn render_editor(
             continue;
         }
 
-        let (Some(geometry), Some(panel_size)) = (processed_geometry, processed_panel_size) else {
-            *visibility = Visibility::Hidden;
-            continue;
-        };
-
         let page_index = first_visible_page.saturating_add(panel_paper.slot);
         let page_start_line = page_index.saturating_mul(processed_page_step_lines);
         let line_delta = page_start_line as isize - processed_view.start_index as isize;
         let page_top_base =
-            geometry.paper_top - anchor_line_offset_px + line_delta as f32 * processed_line_height;
-        let page_left =
-            scale_about_anchor(geometry.paper_left, processed_zoom_anchor_x, state.zoom);
-        let page_top = scale_about_anchor(page_top_base, processed_zoom_anchor_y, state.zoom);
-        let page_height = geometry.paper_height * state.zoom;
-
-        if page_top > panel_size.y || page_top + page_height < 0.0 {
-            *visibility = Visibility::Hidden;
-            continue;
-        }
+            processed_geometry.paper_top + line_delta as f32 * processed_line_height;
+        let page_left = processed_geometry.paper_left;
+        let page_top = page_top_base;
 
         node.left = px(page_left);
         node.top = px(page_top);
-        node.width = px(geometry.paper_width);
-        node.height = px(geometry.paper_height);
-        apply_top_left_zoom_transform(
-            &mut transform,
-            state.zoom,
-            Vec2::new(geometry.paper_width, geometry.paper_height),
-        );
+        node.width = px(processed_geometry.paper_width);
+        node.height = px(processed_geometry.paper_height);
+        transform.scale = Vec2::ONE;
+        transform.translation = Val2::ZERO;
         color.0 = COLOR_PAPER;
         *visibility = Visibility::Visible;
     }
@@ -2314,33 +2333,21 @@ fn render_editor(
                 text_font.font_size = processed_font_size;
                 *line_height_comp = LineHeight::Px(processed_line_height);
                 **text = String::new();
-                let (text_left, text_top, text_width, text_height) = processed_geometry.map_or(
-                    (plain_origin_x, plain_origin_y, 1.0, 1.0),
-                    |geometry| {
-                        (
-                            geometry.text_left,
-                            processed_text_origin_y,
-                            geometry.text_width,
-                            geometry.text_height,
-                        )
-                    },
+                let (text_left, text_top, text_width, text_height) = (
+                    processed_geometry.text_left,
+                    processed_text_origin_y,
+                    processed_geometry.text_width,
+                    processed_geometry.text_height,
                 );
-                let scaled_text_left =
-                    scale_about_anchor(text_left, processed_zoom_anchor_x, state.zoom);
-                let scaled_text_top =
-                    scale_about_anchor(text_top, processed_zoom_anchor_y, state.zoom);
-                node.left = px(scaled_text_left);
-                node.top = px(scaled_text_top);
+                node.left = px(text_left);
+                node.top = px(text_top);
                 node.width = px(text_width);
                 let text_draw_height = (processed_view.lines.len().max(1) as f32
                     * processed_line_height)
                     .max(text_height);
                 node.height = px(text_draw_height);
-                apply_top_left_zoom_transform(
-                    &mut transform,
-                    state.zoom,
-                    Vec2::new(text_width, text_draw_height),
-                );
+                transform.scale = Vec2::ONE;
+                transform.translation = Val2::ZERO;
             }
         }
     }
@@ -2359,13 +2366,8 @@ fn render_editor(
     }
 
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
-    let processed_layout = panel_layout_info(&text_layout_query, PanelKind::Processed);
+    let processed_layout = None;
     state.measured_line_step = scaled_line_height(&state);
-    let processed_zoom_anchor_x =
-        processed_geometry.map_or(plain_origin_x, |geometry| geometry.paper_left);
-    let processed_zoom_anchor_y = processed_geometry.map_or(plain_origin_y, |geometry| {
-        geometry.paper_top - anchor_line_offset_px
-    });
 
     for (panel_caret, mut node, mut visibility, mut transform) in caret_query.iter_mut() {
         if !state.caret_visible {
@@ -2420,16 +2422,14 @@ fn render_editor(
                     continue;
                 };
 
-                let (processed_origin_x, processed_origin_y) = processed_geometry
-                    .map_or((plain_origin_x, plain_origin_y), |geometry| {
-                        (geometry.text_left, processed_text_origin_y)
-                    });
+                let (processed_origin_x, processed_origin_y) =
+                    (processed_geometry.text_left, processed_text_origin_y);
                 (
                     visual_index,
                     display_column,
                     line_text,
                     processed_layout,
-                    processed_inverse_scale,
+                    1.0,
                     processed_origin_x,
                     processed_origin_y,
                     processed_char_width,
@@ -2461,27 +2461,15 @@ fn render_editor(
             })
             .unwrap_or(line_offset as f32 * panel_line_height);
 
-        let mut caret_left = origin_x + (caret_x + panel_caret_x_offset).max(0.0);
+        let caret_left = origin_x + (caret_x + panel_caret_x_offset).max(0.0);
         let caret_y_offset = CARET_Y_OFFSET_FACTOR * panel_line_height;
-        let mut caret_top = origin_y + (caret_top + caret_y_offset).max(0.0);
-        if panel_caret.kind == PanelKind::Processed {
-            caret_left = scale_about_anchor(caret_left, processed_zoom_anchor_x, state.zoom);
-            caret_top = scale_about_anchor(caret_top, processed_zoom_anchor_y, state.zoom);
-        }
+        let caret_top = origin_y + (caret_top + caret_y_offset).max(0.0);
         node.left = px(caret_left);
         node.top = px(caret_top);
         node.width = px(panel_caret_width);
         node.height = px(panel_line_height.max(1.0));
-        if panel_caret.kind == PanelKind::Processed {
-            apply_top_left_zoom_transform(
-                &mut transform,
-                state.zoom,
-                Vec2::new(panel_caret_width, panel_line_height.max(1.0)),
-            );
-        } else {
-            transform.scale = Vec2::ONE;
-            transform.translation = Val2::ZERO;
-        }
+        transform.scale = Vec2::ONE;
+        transform.translation = Val2::ZERO;
         *visibility = Visibility::Visible;
     }
 }
@@ -2558,12 +2546,13 @@ fn ensure_cursor_visible_in_processed_panel(
         (visible_height / processed_line_height).floor().max(1.0) as usize;
     let max_window = processed_visible_lines.min(PROCESSED_SPAN_CAPACITY).max(1);
 
-    let all_lines = build_all_processed_visual_lines(
+    let all_lines = processed_cache_lines(
         state,
         processed_layout.wrap_columns,
         processed_layout.lines_per_page,
         processed_layout.spacer_lines,
-    );
+    )
+    .to_vec();
     if all_lines.is_empty() {
         return;
     }
@@ -2584,8 +2573,7 @@ fn ensure_cursor_visible_in_processed_panel(
     for candidate_top in min_top_for_plain..=max_top_for_plain {
         let anchor_index = first_visual_index_for_source_line(&all_lines, candidate_top)
             .unwrap_or_else(|| all_lines.len().saturating_sub(1));
-        let page_step_lines = processed_layout.page_step_lines.max(1);
-        let start_index = (anchor_index / page_step_lines) * page_step_lines;
+        let start_index = anchor_index;
         let end_index_exclusive = start_index.saturating_add(max_window);
 
         if cursor_visual_index >= start_index && cursor_visual_index < end_index_exclusive {
@@ -2615,30 +2603,46 @@ struct ProcessedVisualLine {
     is_spacer: bool,
 }
 
+#[derive(Clone, Debug)]
+struct ProcessedSegment {
+    start_line: usize,
+    end_line_exclusive: usize,
+    ends_with_hard_break: bool,
+    lines: Vec<ProcessedVisualLine>,
+}
+
+#[derive(Clone, Debug)]
+struct ProcessedCache {
+    wrap_columns: usize,
+    lines_per_page: usize,
+    spacer_lines: usize,
+    segments: Vec<ProcessedSegment>,
+    lines: Vec<ProcessedVisualLine>,
+    source_line_count: usize,
+}
+
 #[derive(Clone, Debug, Default)]
 struct ProcessedView {
     start_index: usize,
-    anchor_index: usize,
     lines: Vec<ProcessedVisualLine>,
 }
 
 fn build_processed_view(
-    state: &EditorState,
+    state: &mut EditorState,
     wrap_columns: usize,
     lines_per_page: usize,
     spacer_lines: usize,
 ) -> ProcessedView {
     let max_visible = PROCESSED_SPAN_CAPACITY.max(1);
-    let page_step_lines = lines_per_page.saturating_add(spacer_lines).max(1);
     let mut all_lines =
-        build_all_processed_visual_lines(state, wrap_columns, lines_per_page, spacer_lines);
+        processed_cache_lines(state, wrap_columns, lines_per_page, spacer_lines).to_vec();
     if all_lines.is_empty() {
         return ProcessedView::default();
     }
 
     let anchor_index = first_visual_index_for_source_line(&all_lines, state.top_line)
         .unwrap_or_else(|| all_lines.len().saturating_sub(1));
-    let mut start_index = (anchor_index / page_step_lines) * page_step_lines;
+    let mut start_index = anchor_index;
 
     // Keep page-start anchoring near EOF by padding the view window.
     let required_len = start_index.saturating_add(max_visible);
@@ -2657,13 +2661,30 @@ fn build_processed_view(
 
     ProcessedView {
         start_index,
-        anchor_index,
         lines: all_lines[start_index..end_index].to_vec(),
     }
 }
 
-fn build_all_processed_visual_lines(
+fn processed_segment_ranges(state: &EditorState) -> Vec<(usize, usize, bool)> {
+    let mut ranges = Vec::new();
+    let mut segment_start = 0usize;
+
+    for (line_index, parsed_line) in state.parsed.iter().enumerate() {
+        if is_fountain_page_break_marker(&parsed_line.raw) {
+            ranges.push((segment_start, line_index, true));
+            segment_start = line_index.saturating_add(1);
+        }
+    }
+
+    ranges.push((segment_start, state.parsed.len(), false));
+    ranges
+}
+
+fn build_processed_segment_lines(
     state: &EditorState,
+    start_line: usize,
+    end_line_exclusive: usize,
+    ends_with_hard_break: bool,
     wrap_columns: usize,
     lines_per_page: usize,
     spacer_lines: usize,
@@ -2672,16 +2693,10 @@ fn build_all_processed_visual_lines(
     let mut paged_lines = Vec::<ProcessedVisualLine>::new();
     let mut lines_in_page = 0usize;
 
-    for (source_line, parsed_line) in state.parsed.iter().enumerate() {
-        if is_fountain_page_break_marker(&parsed_line.raw) {
-            if lines_in_page > 0 {
-                let remaining_content = lines_per_page.saturating_sub(lines_in_page);
-                let spacer_total = remaining_content.saturating_add(spacer_lines);
-                push_page_spacers(&mut paged_lines, source_line, spacer_total);
-                lines_in_page = 0;
-            }
+    for source_line in start_line..end_line_exclusive {
+        let Some(parsed_line) = state.parsed.get(source_line) else {
             continue;
-        }
+        };
 
         let indent_width = parsed_line.indent_width();
         let uppercase = matches!(
@@ -2725,7 +2740,160 @@ fn build_all_processed_visual_lines(
         }
     }
 
+    if ends_with_hard_break && lines_in_page > 0 {
+        let remaining_content = lines_per_page.saturating_sub(lines_in_page);
+        let spacer_total = remaining_content.saturating_add(spacer_lines);
+        push_page_spacers(&mut paged_lines, end_line_exclusive, spacer_total);
+    }
+
     paged_lines
+}
+
+fn build_processed_cache(
+    state: &EditorState,
+    wrap_columns: usize,
+    lines_per_page: usize,
+    spacer_lines: usize,
+) -> ProcessedCache {
+    let mut segments = Vec::<ProcessedSegment>::new();
+    let mut lines = Vec::<ProcessedVisualLine>::new();
+
+    for (start_line, end_line_exclusive, ends_with_hard_break) in processed_segment_ranges(state) {
+        let segment_lines = build_processed_segment_lines(
+            state,
+            start_line,
+            end_line_exclusive,
+            ends_with_hard_break,
+            wrap_columns,
+            lines_per_page,
+            spacer_lines,
+        );
+        lines.extend(segment_lines.iter().cloned());
+        segments.push(ProcessedSegment {
+            start_line,
+            end_line_exclusive,
+            ends_with_hard_break,
+            lines: segment_lines,
+        });
+    }
+
+    ProcessedCache {
+        wrap_columns,
+        lines_per_page,
+        spacer_lines,
+        segments,
+        lines,
+        source_line_count: state.parsed.len(),
+    }
+}
+
+fn rebuild_processed_cache_segment(
+    state: &EditorState,
+    cache: &mut ProcessedCache,
+    dirty_line: usize,
+) -> bool {
+    let Some(segment_index) = cache.segments.iter().position(|segment| {
+        dirty_line >= segment.start_line
+            && dirty_line < segment.end_line_exclusive.max(segment.start_line + 1)
+    }) else {
+        return false;
+    };
+
+    let segment = &cache.segments[segment_index];
+    let updated_lines = build_processed_segment_lines(
+        state,
+        segment.start_line,
+        segment.end_line_exclusive,
+        segment.ends_with_hard_break,
+        cache.wrap_columns,
+        cache.lines_per_page,
+        cache.spacer_lines,
+    );
+    cache.segments[segment_index].lines = updated_lines;
+    cache.lines.clear();
+    for segment in &cache.segments {
+        cache.lines.extend(segment.lines.iter().cloned());
+    }
+    true
+}
+
+fn ensure_processed_cache(
+    state: &mut EditorState,
+    wrap_columns: usize,
+    lines_per_page: usize,
+    spacer_lines: usize,
+) {
+    let requires_full_rebuild = state.processed_cache.as_ref().map_or(true, |cache| {
+        cache.wrap_columns != wrap_columns
+            || cache.lines_per_page != lines_per_page
+            || cache.spacer_lines != spacer_lines
+            || cache.source_line_count != state.parsed.len()
+    });
+
+    if requires_full_rebuild {
+        state.processed_cache = Some(build_processed_cache(
+            state,
+            wrap_columns,
+            lines_per_page,
+            spacer_lines,
+        ));
+        state.processed_cache_dirty_from_line = None;
+        return;
+    }
+
+    let Some(dirty_line) = state.processed_cache_dirty_from_line.take() else {
+        return;
+    };
+
+    let marker_near_dirty = state
+        .parsed
+        .get(dirty_line)
+        .is_some_and(|line| is_fountain_page_break_marker(&line.raw))
+        || dirty_line
+            .checked_sub(1)
+            .and_then(|line| state.parsed.get(line))
+            .is_some_and(|line| is_fountain_page_break_marker(&line.raw))
+        || state
+            .parsed
+            .get(dirty_line.saturating_add(1))
+            .is_some_and(|line| is_fountain_page_break_marker(&line.raw));
+
+    if marker_near_dirty {
+        state.processed_cache = Some(build_processed_cache(
+            state,
+            wrap_columns,
+            lines_per_page,
+            spacer_lines,
+        ));
+        return;
+    }
+
+    if let Some(mut cache) = state.processed_cache.take() {
+        let updated = rebuild_processed_cache_segment(state, &mut cache, dirty_line);
+        if updated {
+            state.processed_cache = Some(cache);
+        } else {
+            state.processed_cache = Some(build_processed_cache(
+                state,
+                wrap_columns,
+                lines_per_page,
+                spacer_lines,
+            ));
+        }
+    }
+}
+
+fn processed_cache_lines<'a>(
+    state: &'a mut EditorState,
+    wrap_columns: usize,
+    lines_per_page: usize,
+    spacer_lines: usize,
+) -> &'a [ProcessedVisualLine] {
+    ensure_processed_cache(state, wrap_columns, lines_per_page, spacer_lines);
+    state
+        .processed_cache
+        .as_ref()
+        .map_or(&[], |cache| cache.lines.as_slice())
 }
 
 fn push_wrapped_visual_lines(
