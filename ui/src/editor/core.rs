@@ -55,8 +55,6 @@ const PAGE_TEXT_MARGIN_RIGHT: f32 = 34.0;
 const PAGE_TEXT_MARGIN_TOP: f32 = 30.0;
 const PAGE_TEXT_MARGIN_BOTTOM: f32 = 30.0;
 const PAGE_GAP: f32 = 24.0;
-const PROCESSED_TEXT_CLIP_BLEED_X: f32 = 2.0;
-const PROCESSED_TEXT_CLIP_BLEED_Y: f32 = 1.0;
 const PAGE_MARGIN_STEP: f32 = 8.0;
 const MIN_TEXT_BOX_WIDTH: f32 = 120.0;
 const MIN_TEXT_BOX_HEIGHT: f32 = 120.0;
@@ -664,4 +662,3 @@ struct ProcessedPageLayout {
     spacer_lines: usize,
     page_step_lines: usize,
 }
-

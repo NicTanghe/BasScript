@@ -167,15 +167,11 @@ fn render_editor(
             continue;
         }
 
-        node.left = px(
-            (processed_geometry.text_left - processed_geometry.paper_left)
-                - PROCESSED_TEXT_CLIP_BLEED_X,
-        );
-        node.top = px((processed_geometry.text_top - processed_geometry.paper_top)
-            - PROCESSED_TEXT_CLIP_BLEED_Y);
-        node.width = px(processed_geometry.text_width + PROCESSED_TEXT_CLIP_BLEED_X * 2.0);
-        node.height = px(processed_geometry.text_height + PROCESSED_TEXT_CLIP_BLEED_Y * 2.0);
-        node.overflow = Overflow::clip();
+        node.left = px(processed_geometry.text_left - processed_geometry.paper_left);
+        node.top = px(processed_geometry.text_top - processed_geometry.paper_top);
+        node.width = px(processed_geometry.text_width);
+        node.height = px(processed_geometry.text_height);
+        node.overflow = Overflow::visible();
         transform.scale = Vec2::ONE;
         transform.translation = Val2::ZERO;
     }
@@ -304,8 +300,7 @@ fn render_editor(
             }
         };
 
-        let clamped_display_column = display_column.min(line_text.chars().count());
-        let byte_index = char_to_byte_index(line_text, clamped_display_column);
+        let byte_index = char_to_byte_index(line_text, display_column);
         let caret_x = panel_layout
             .and_then(|layout| {
                 caret_x_from_layout(
@@ -317,7 +312,7 @@ fn render_editor(
                     panel_char_width,
                 )
             })
-            .unwrap_or(clamped_display_column as f32 * panel_char_width);
+            .unwrap_or(display_column as f32 * panel_char_width);
         let caret_top = panel_layout
             .and_then(|layout| {
                 caret_top_from_layout(layout, line_offset, byte_index, panel_inverse_scale)
@@ -325,9 +320,9 @@ fn render_editor(
             })
             .unwrap_or(line_offset as f32 * panel_line_height);
 
-        let caret_left = origin_x + (caret_x + panel_caret_x_offset).max(0.0);
+        let caret_left = origin_x + caret_x + panel_caret_x_offset;
         let caret_y_offset = CARET_Y_OFFSET_FACTOR * panel_line_height;
-        let caret_top = origin_y + (caret_top + caret_y_offset).max(0.0);
+        let caret_top = origin_y + caret_top + caret_y_offset;
         node.left = px(caret_left);
         node.top = px(caret_top);
         node.width = px(panel_caret_width);

@@ -234,19 +234,17 @@ fn setup_processed_papers(
                                 TextColor(COLOR_ACTION),
                                 Node {
                                     position_type: PositionType::Absolute,
-                                    left: px(PAGE_TEXT_MARGIN_LEFT - PROCESSED_TEXT_CLIP_BLEED_X),
-                                    top: px(PAGE_TEXT_MARGIN_TOP - PROCESSED_TEXT_CLIP_BLEED_Y),
+                                    left: px(PAGE_TEXT_MARGIN_LEFT),
+                                    top: px(PAGE_TEXT_MARGIN_TOP),
                                     width: px((A4_WIDTH_POINTS
                                         - PAGE_TEXT_MARGIN_LEFT
                                         - PAGE_TEXT_MARGIN_RIGHT)
-                                        .max(1.0)
-                                        + PROCESSED_TEXT_CLIP_BLEED_X * 2.0),
+                                        .max(1.0)),
                                     height: px((A4_HEIGHT_POINTS
                                         - PAGE_TEXT_MARGIN_TOP
                                         - PAGE_TEXT_MARGIN_BOTTOM)
-                                        .max(1.0)
-                                        + PROCESSED_TEXT_CLIP_BLEED_Y * 2.0),
-                                    overflow: Overflow::clip(),
+                                        .max(1.0)),
+                                    overflow: Overflow::visible(),
                                     ..default()
                                 },
                                 UiTransform::default(),
@@ -294,19 +292,17 @@ fn setup_processed_papers(
                     TextColor(COLOR_ACTION),
                     Node {
                         position_type: PositionType::Absolute,
-                        left: px(PAGE_TEXT_MARGIN_LEFT - PROCESSED_TEXT_CLIP_BLEED_X),
-                        top: px(PAGE_TEXT_MARGIN_TOP - PROCESSED_TEXT_CLIP_BLEED_Y),
+                        left: px(PAGE_TEXT_MARGIN_LEFT),
+                        top: px(PAGE_TEXT_MARGIN_TOP),
                         width: px((A4_WIDTH_POINTS
                             - PAGE_TEXT_MARGIN_LEFT
                             - PAGE_TEXT_MARGIN_RIGHT)
-                            .max(1.0)
-                            + PROCESSED_TEXT_CLIP_BLEED_X * 2.0),
+                            .max(1.0)),
                         height: px((A4_HEIGHT_POINTS
                             - PAGE_TEXT_MARGIN_TOP
                             - PAGE_TEXT_MARGIN_BOTTOM)
-                            .max(1.0)
-                            + PROCESSED_TEXT_CLIP_BLEED_Y * 2.0),
-                        overflow: Overflow::clip(),
+                            .max(1.0)),
+                        overflow: Overflow::visible(),
                         ..default()
                     },
                     UiTransform::default(),
