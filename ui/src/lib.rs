@@ -42,6 +42,7 @@ const CARET_Y_OFFSET_FACTOR: f32 = -0.12;
 const ZOOM_MIN: f32 = 0.6;
 const ZOOM_MAX: f32 = 1.8;
 const ZOOM_STEP: f32 = 0.1;
+const HISTORY_LIMIT: usize = 512;
 const MM_PER_INCH: f32 = 25.4;
 const POINTS_PER_INCH: f32 = 72.0;
 const A4_WIDTH_MM: f32 = 210.0;
@@ -54,6 +55,8 @@ const PAGE_TEXT_MARGIN_RIGHT: f32 = 34.0;
 const PAGE_TEXT_MARGIN_TOP: f32 = 30.0;
 const PAGE_TEXT_MARGIN_BOTTOM: f32 = 30.0;
 const PAGE_GAP: f32 = 24.0;
+const PROCESSED_TEXT_CLIP_BLEED_X: f32 = 2.0;
+const PROCESSED_TEXT_CLIP_BLEED_Y: f32 = 1.0;
 const PAGE_MARGIN_STEP: f32 = 8.0;
 const MIN_TEXT_BOX_WIDTH: f32 = 120.0;
 const MIN_TEXT_BOX_HEIGHT: f32 = 120.0;
@@ -71,7 +74,7 @@ const COLOR_APP_BG: Color = Color::srgb(0.79, 0.80, 0.82);
 const COLOR_PANEL_BG: Color = Color::srgb(0.89, 0.90, 0.91);
 const COLOR_PANEL_BODY_PLAIN: Color = Color::srgb(0.96, 0.96, 0.97);
 const COLOR_PANEL_BODY_PROCESSED: Color = Color::srgb(0.82, 0.83, 0.84);
-const COLOR_PAPER: Color = Color::srgb(0.99, 0.99, 0.985);
+const COLOR_PAPER: Color = Color::srgb(1.0, 1.0, 1.0);
 const COLOR_TEXT_MAIN: Color = Color::srgb(0.18, 0.19, 0.20);
 const COLOR_TEXT_MUTED: Color = Color::srgb(0.34, 0.36, 0.39);
 
@@ -217,6 +220,8 @@ struct EditorState {
     parsed: Vec<ParsedLine>,
     cursor: Cursor,
     top_line: usize,
+    plain_horizontal_scroll: f32,
+    processed_horizontal_scroll: f32,
     paths: DocumentPath,
     status_message: String,
     caret_blink: Timer,
@@ -231,6 +236,17 @@ struct EditorState {
     measured_line_step: f32,
     processed_cache: Option<ProcessedCache>,
     processed_cache_dirty_from_line: Option<usize>,
+    undo_history: Vec<EditorHistorySnapshot>,
+    redo_history: Vec<EditorHistorySnapshot>,
+}
+
+#[derive(Clone)]
+struct EditorHistorySnapshot {
+    document: Document,
+    cursor: Cursor,
+    top_line: usize,
+    plain_horizontal_scroll: f32,
+    processed_horizontal_scroll: f32,
 }
 
 #[derive(Resource, Default)]
@@ -336,6 +352,8 @@ impl FromWorld for EditorState {
             parsed,
             cursor: Cursor::default(),
             top_line: 0,
+            plain_horizontal_scroll: 0.0,
+            processed_horizontal_scroll: 0.0,
             paths,
             status_message,
             caret_blink: Timer::from_seconds(0.5, TimerMode::Repeating),
@@ -350,6 +368,8 @@ impl FromWorld for EditorState {
             measured_line_step: LINE_HEIGHT,
             processed_cache: None,
             processed_cache_dirty_from_line: Some(0),
+            undo_history: Vec::new(),
+            redo_history: Vec::new(),
         };
         normalize_page_margins(&mut next);
         next
@@ -410,6 +430,21 @@ impl EditorState {
     fn clamp_scroll(&mut self, visible_lines: usize) {
         let max_top = self.max_top_line(visible_lines);
         self.top_line = self.top_line.min(max_top);
+    }
+
+    fn clamp_horizontal_scrolls(
+        &mut self,
+        plain_panel_size: Option<Vec2>,
+        processed_panel_size: Option<Vec2>,
+    ) {
+        let plain_max = plain_horizontal_scroll_max(self, plain_panel_size);
+        self.plain_horizontal_scroll = self.plain_horizontal_scroll.clamp(0.0, plain_max);
+
+        let (processed_min, processed_max) =
+            processed_horizontal_scroll_bounds(self, processed_panel_size);
+        self.processed_horizontal_scroll = self
+            .processed_horizontal_scroll
+            .clamp(processed_min, processed_max);
     }
 
     fn scroll_by(&mut self, line_delta: isize, visible_lines: usize) {
@@ -495,6 +530,9 @@ impl EditorState {
                 self.reparse();
                 self.cursor = Cursor::default();
                 self.top_line = 0;
+                self.plain_horizontal_scroll = 0.0;
+                self.processed_horizontal_scroll = 0.0;
+                self.clear_history();
                 self.paths.load_path = path.clone();
                 self.paths.save_path = path.clone();
                 self.status_message = format!("Loaded {}", path.display());
@@ -504,6 +542,105 @@ impl EditorState {
                 self.status_message = format!("Load failed for {}: {error}", path.display());
             }
         }
+    }
+
+    fn history_snapshot(&self) -> EditorHistorySnapshot {
+        EditorHistorySnapshot {
+            document: self.document.clone(),
+            cursor: self.cursor,
+            top_line: self.top_line,
+            plain_horizontal_scroll: self.plain_horizontal_scroll,
+            processed_horizontal_scroll: self.processed_horizontal_scroll,
+        }
+    }
+
+    fn push_history_snapshot(
+        history: &mut Vec<EditorHistorySnapshot>,
+        snapshot: EditorHistorySnapshot,
+    ) {
+        if history.len() >= HISTORY_LIMIT {
+            history.remove(0);
+        }
+        history.push(snapshot);
+    }
+
+    fn push_undo_snapshot(&mut self, snapshot: EditorHistorySnapshot) {
+        Self::push_history_snapshot(&mut self.undo_history, snapshot);
+        self.redo_history.clear();
+    }
+
+    fn apply_history_snapshot(
+        &mut self,
+        snapshot: EditorHistorySnapshot,
+        visible_lines: usize,
+        plain_panel_size: Option<Vec2>,
+        processed_panel_size: Option<Vec2>,
+    ) {
+        self.document = snapshot.document;
+        self.parsed = parse_document(&self.document);
+        self.processed_cache = None;
+        self.processed_cache_dirty_from_line = Some(0);
+
+        self.cursor = snapshot.cursor;
+        self.cursor.position = self.document.clamp_position(self.cursor.position);
+        self.cursor.preferred_column = self
+            .cursor
+            .preferred_column
+            .min(self.document.line_len_chars(self.cursor.position.line));
+
+        self.top_line = snapshot.top_line;
+        self.plain_horizontal_scroll = snapshot.plain_horizontal_scroll;
+        self.processed_horizontal_scroll = snapshot.processed_horizontal_scroll;
+        self.clamp_scroll(visible_lines);
+        self.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
+        self.reset_blink();
+    }
+
+    fn undo(
+        &mut self,
+        visible_lines: usize,
+        plain_panel_size: Option<Vec2>,
+        processed_panel_size: Option<Vec2>,
+    ) -> bool {
+        let Some(snapshot) = self.undo_history.pop() else {
+            return false;
+        };
+
+        let current = self.history_snapshot();
+        Self::push_history_snapshot(&mut self.redo_history, current);
+        self.apply_history_snapshot(
+            snapshot,
+            visible_lines,
+            plain_panel_size,
+            processed_panel_size,
+        );
+        true
+    }
+
+    fn redo(
+        &mut self,
+        visible_lines: usize,
+        plain_panel_size: Option<Vec2>,
+        processed_panel_size: Option<Vec2>,
+    ) -> bool {
+        let Some(snapshot) = self.redo_history.pop() else {
+            return false;
+        };
+
+        let current = self.history_snapshot();
+        Self::push_history_snapshot(&mut self.undo_history, current);
+        self.apply_history_snapshot(
+            snapshot,
+            visible_lines,
+            plain_panel_size,
+            processed_panel_size,
+        );
+        true
+    }
+
+    fn clear_history(&mut self) {
+        self.undo_history.clear();
+        self.redo_history.clear();
     }
 }
 
@@ -535,13 +672,19 @@ fn processed_page_step_lines() -> usize {
 }
 
 fn processed_page_geometry(panel_size: Vec2, state: &EditorState) -> ProcessedPageGeometry {
-    let _ = panel_size;
     // Geometry stays at 100%; processed zoom is applied as a UI transform.
     let paper_width = A4_WIDTH_POINTS;
     // Keep paper height on the same line grid used by processed pagination.
     let page_step_lines = processed_page_step_lines();
     let paper_height = ((page_step_lines as f32 * LINE_HEIGHT) - PAGE_GAP).max(1.0);
-    let paper_left = PAGE_OUTER_MARGIN;
+    let unzoomed_panel_width = panel_size.x / state.zoom.max(f32::EPSILON);
+    let paper_left = if unzoomed_panel_width > paper_width {
+        ((unzoomed_panel_width - paper_width) * 0.5)
+            .max(0.0)
+            .round()
+    } else {
+        PAGE_OUTER_MARGIN
+    };
     let paper_top = PAGE_OUTER_MARGIN;
 
     let margin_left = state.page_margin_left;
@@ -818,16 +961,18 @@ fn setup_processed_papers(
                                 TextColor(COLOR_ACTION),
                                 Node {
                                     position_type: PositionType::Absolute,
-                                    left: px(PAGE_TEXT_MARGIN_LEFT),
-                                    top: px(PAGE_TEXT_MARGIN_TOP),
+                                    left: px(PAGE_TEXT_MARGIN_LEFT - PROCESSED_TEXT_CLIP_BLEED_X),
+                                    top: px(PAGE_TEXT_MARGIN_TOP - PROCESSED_TEXT_CLIP_BLEED_Y),
                                     width: px((A4_WIDTH_POINTS
                                         - PAGE_TEXT_MARGIN_LEFT
                                         - PAGE_TEXT_MARGIN_RIGHT)
-                                        .max(1.0)),
+                                        .max(1.0)
+                                        + PROCESSED_TEXT_CLIP_BLEED_X * 2.0),
                                     height: px((A4_HEIGHT_POINTS
                                         - PAGE_TEXT_MARGIN_TOP
                                         - PAGE_TEXT_MARGIN_BOTTOM)
-                                        .max(1.0)),
+                                        .max(1.0)
+                                        + PROCESSED_TEXT_CLIP_BLEED_Y * 2.0),
                                     overflow: Overflow::clip(),
                                     ..default()
                                 },
@@ -876,16 +1021,18 @@ fn setup_processed_papers(
                     TextColor(COLOR_ACTION),
                     Node {
                         position_type: PositionType::Absolute,
-                        left: px(PAGE_TEXT_MARGIN_LEFT),
-                        top: px(PAGE_TEXT_MARGIN_TOP),
+                        left: px(PAGE_TEXT_MARGIN_LEFT - PROCESSED_TEXT_CLIP_BLEED_X),
+                        top: px(PAGE_TEXT_MARGIN_TOP - PROCESSED_TEXT_CLIP_BLEED_Y),
                         width: px((A4_WIDTH_POINTS
                             - PAGE_TEXT_MARGIN_LEFT
                             - PAGE_TEXT_MARGIN_RIGHT)
-                            .max(1.0)),
+                            .max(1.0)
+                            + PROCESSED_TEXT_CLIP_BLEED_X * 2.0),
                         height: px((A4_HEIGHT_POINTS
                             - PAGE_TEXT_MARGIN_TOP
                             - PAGE_TEXT_MARGIN_BOTTOM)
-                            .max(1.0)),
+                            .max(1.0)
+                            + PROCESSED_TEXT_CLIP_BLEED_Y * 2.0),
                         overflow: Overflow::clip(),
                         ..default()
                     },
@@ -1535,10 +1682,46 @@ fn scaled_text_padding_y(state: &EditorState) -> f32 {
     TEXT_PADDING_Y * state.zoom
 }
 
-fn apply_top_left_zoom_transform(transform: &mut UiTransform, zoom: f32, size: Vec2) {
+fn plain_horizontal_scroll_max(state: &EditorState, plain_panel_size: Option<Vec2>) -> f32 {
+    let Some(panel_size) = plain_panel_size else {
+        return 0.0;
+    };
+
+    let char_width = scaled_char_width(state).max(1.0);
+    let max_line_chars = state
+        .document
+        .lines()
+        .iter()
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or(0) as f32;
+    let content_width =
+        scaled_text_padding_x(state) + max_line_chars * char_width + scaled_text_padding_x(state);
+    (content_width - panel_size.x).max(0.0)
+}
+
+fn processed_horizontal_scroll_bounds(
+    state: &EditorState,
+    processed_panel_size: Option<Vec2>,
+) -> (f32, f32) {
+    let Some(panel_size) = processed_panel_size else {
+        return (0.0, 0.0);
+    };
+
+    let geometry = processed_page_geometry(panel_size, state);
+    let zoom = state.zoom.max(f32::EPSILON);
+    let base_left = geometry.paper_left * zoom;
+    let base_right = (geometry.paper_left + geometry.paper_width) * zoom;
+    let overflow_left = (-base_left).max(0.0);
+    let overflow_right = (base_right - panel_size.x).max(0.0);
+    (-overflow_left, overflow_right)
+}
+
+fn apply_top_left_zoom_transform(transform: &mut UiTransform, zoom: f32, size: Vec2, pan_x: f32) {
     transform.scale = Vec2::splat(zoom);
     let offset = size * ((zoom - 1.0) * 0.5);
-    transform.translation = Val2::px(offset.x, offset.y);
+    // Snap translation to whole pixels to reduce edge shimmer/gray blending at high zoom.
+    transform.translation = Val2::px(offset.x.round() - pan_x.round(), offset.y.round());
 }
 
 fn shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
@@ -1834,10 +2017,24 @@ fn handle_text_input(
         .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
     let mut edited = false;
     let mut dirty_from_line = None::<usize>;
+    let mut undo_snapshot = None::<EditorHistorySnapshot>;
 
     for input in keyboard_inputs.read() {
         if !input.state.is_pressed() {
             continue;
+        }
+
+        let edit_intent = matches!(input.logical_key, Key::Enter | Key::Backspace | Key::Delete)
+            || input
+                .text
+                .as_ref()
+                .is_some_and(|text| !text.is_empty() && text.chars().all(is_printable_char));
+        if !edit_intent {
+            continue;
+        }
+
+        if undo_snapshot.is_none() {
+            undo_snapshot = Some(state.history_snapshot());
         }
 
         let mut changed = false;
@@ -1853,24 +2050,32 @@ fn handle_text_input(
             }
             Key::Backspace => {
                 let cursor_pos = state.cursor.position;
-                let next = state.document.backspace(cursor_pos);
-                state.set_cursor(next, true);
-                let dirty_candidate = cursor_pos.line.saturating_sub(1).min(next.line);
-                dirty_from_line =
-                    Some(dirty_from_line.map_or(dirty_candidate, |line| line.min(dirty_candidate)));
-                changed = true;
+                if cursor_pos.line > 0 || cursor_pos.column > 0 {
+                    let next = state.document.backspace(cursor_pos);
+                    state.set_cursor(next, true);
+                    let dirty_candidate = cursor_pos.line.saturating_sub(1).min(next.line);
+                    dirty_from_line = Some(
+                        dirty_from_line.map_or(dirty_candidate, |line| line.min(dirty_candidate)),
+                    );
+                    changed = true;
+                }
             }
             Key::Delete => {
                 let cursor_pos = state.cursor.position;
-                let next = state.document.delete(cursor_pos);
-                state.set_cursor(next, false);
-                dirty_from_line =
-                    Some(dirty_from_line.map_or(cursor_pos.line, |line| line.min(cursor_pos.line)));
-                changed = true;
+                let line_len = state.document.line_len_chars(cursor_pos.line);
+                let has_next_line = cursor_pos.line + 1 < state.document.line_count();
+                if cursor_pos.column < line_len || has_next_line {
+                    let next = state.document.delete(cursor_pos);
+                    state.set_cursor(next, false);
+                    dirty_from_line = Some(
+                        dirty_from_line.map_or(cursor_pos.line, |line| line.min(cursor_pos.line)),
+                    );
+                    changed = true;
+                }
             }
             _ => {
                 if let Some(inserted_text) = &input.text {
-                    if inserted_text.chars().all(is_printable_char) {
+                    if !inserted_text.is_empty() && inserted_text.chars().all(is_printable_char) {
                         let cursor_pos = state.cursor.position;
                         let next = state.document.insert_text(cursor_pos, inserted_text);
                         state.set_cursor(next, true);
@@ -1890,6 +2095,9 @@ fn handle_text_input(
     }
 
     if edited {
+        if let Some(snapshot) = undo_snapshot {
+            state.push_undo_snapshot(snapshot);
+        }
         state.reparse_with_dirty_hint(dirty_from_line.unwrap_or(0));
         state.ensure_cursor_visible(visible_lines);
         ensure_cursor_visible_in_processed_panel(&mut state, processed_panel_size, visible_lines);
@@ -1906,13 +2114,48 @@ fn handle_navigation_input(
         state.measured_line_step,
         scaled_text_padding_y(&state),
     );
+    let plain_panel_size = body_query
+        .iter()
+        .find(|(panel, _)| panel.kind == PanelKind::Plain)
+        .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
     let processed_panel_size = body_query
         .iter()
         .find(|(panel, _)| panel.kind == PanelKind::Processed)
         .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
+    state.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
     let mut moved = false;
 
     if shortcut_modifier_pressed(&keys) {
+        if keys.just_pressed(KeyCode::KeyZ) {
+            let redo = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+            let changed = if redo {
+                state.redo(visible_lines, plain_panel_size, processed_panel_size)
+            } else {
+                state.undo(visible_lines, plain_panel_size, processed_panel_size)
+            };
+
+            if changed {
+                state.status_message = if redo {
+                    "Redo".to_string()
+                } else {
+                    "Undo".to_string()
+                };
+                state.ensure_cursor_visible(visible_lines);
+                ensure_cursor_visible_in_processed_panel(
+                    &mut state,
+                    processed_panel_size,
+                    visible_lines,
+                );
+            } else {
+                state.status_message = if redo {
+                    "Nothing to redo.".to_string()
+                } else {
+                    "Nothing to undo.".to_string()
+                };
+            }
+            return;
+        }
+
         if keys.just_pressed(KeyCode::Equal) {
             let next_zoom = state.zoom + ZOOM_STEP;
             state.set_zoom(next_zoom);
@@ -1923,6 +2166,7 @@ fn handle_navigation_input(
                 scaled_text_padding_y(&state),
             );
             state.clamp_scroll(zoom_visible_lines);
+            state.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
             return;
         }
 
@@ -1936,6 +2180,7 @@ fn handle_navigation_input(
                 scaled_text_padding_y(&state),
             );
             state.clamp_scroll(zoom_visible_lines);
+            state.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
             return;
         }
     }
@@ -2032,48 +2277,97 @@ fn handle_navigation_input(
 fn handle_mouse_scroll(
     mut mouse_wheels: MessageReader<MouseWheel>,
     keys: Res<ButtonInput<KeyCode>>,
-    body_query: Query<(&PanelBody, &ComputedNode)>,
+    panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
     mut state: ResMut<EditorState>,
 ) {
+    let shift_horizontal = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    let mut plain_panel_size = None;
+    let mut processed_panel_size = None;
+    let mut hovered_panel = None;
+    for (panel, relative_cursor, computed) in panel_query.iter() {
+        let logical_size = computed.size() * computed.inverse_scale_factor();
+        match panel.kind {
+            PanelKind::Plain => plain_panel_size = Some(logical_size),
+            PanelKind::Processed => processed_panel_size = Some(logical_size),
+        }
+        if relative_cursor.cursor_over() {
+            hovered_panel = Some(panel.kind);
+        }
+    }
+    state.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
+
     if shortcut_modifier_pressed(&keys) {
         let mut zoom_steps = 0.0_f32;
 
         for wheel in mouse_wheels.read() {
-            zoom_steps += match wheel.unit {
+            let y = match wheel.unit {
                 MouseScrollUnit::Line => wheel.y,
                 MouseScrollUnit::Pixel => wheel.y / 120.0,
             };
+            zoom_steps += y;
         }
 
         if zoom_steps.abs() > f32::EPSILON {
             let next_zoom = state.zoom + zoom_steps * ZOOM_STEP;
             state.set_zoom(next_zoom);
             state.status_message = format!("Zoom: {}%", state.zoom_percent());
-            let visible_lines = viewport_lines(
-                &body_query,
+            let visible_lines = viewport_lines_from_panels(
+                &panel_query,
                 state.measured_line_step,
                 scaled_text_padding_y(&state),
             );
             state.clamp_scroll(visible_lines);
+            state.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
         }
         return;
     }
 
-    let visible_lines = viewport_lines(
-        &body_query,
+    let visible_lines = viewport_lines_from_panels(
+        &panel_query,
         state.measured_line_step,
         scaled_text_padding_y(&state),
     );
     let mut delta_lines: isize = 0;
+    let mut horizontal_delta_px = 0.0_f32;
 
     for wheel in mouse_wheels.read() {
-        let mut delta = -wheel.y;
-
-        if wheel.unit == MouseScrollUnit::Pixel {
-            delta /= state.measured_line_step.max(1.0);
+        let mut dx = wheel.x;
+        let mut dy = wheel.y;
+        if shift_horizontal && dx.abs() <= f32::EPSILON {
+            dx = -dy;
+            dy = 0.0;
         }
 
-        delta_lines += delta.round() as isize;
+        match wheel.unit {
+            MouseScrollUnit::Line => {
+                delta_lines += (-dy).round() as isize;
+                horizontal_delta_px += -dx * 32.0;
+            }
+            MouseScrollUnit::Pixel => {
+                let vertical_lines = -dy / state.measured_line_step.max(1.0);
+                delta_lines += vertical_lines.round() as isize;
+                horizontal_delta_px += -dx;
+            }
+        }
+    }
+
+    if horizontal_delta_px.abs() > f32::EPSILON {
+        match hovered_panel {
+            Some(PanelKind::Plain) => {
+                let max_scroll = plain_horizontal_scroll_max(&state, plain_panel_size);
+                state.plain_horizontal_scroll =
+                    (state.plain_horizontal_scroll + horizontal_delta_px).clamp(0.0, max_scroll);
+            }
+            Some(PanelKind::Processed) => {
+                let (min_scroll, max_scroll) =
+                    processed_horizontal_scroll_bounds(&state, processed_panel_size);
+                state.processed_horizontal_scroll = (state.processed_horizontal_scroll
+                    + horizontal_delta_px)
+                    .clamp(min_scroll, max_scroll);
+            }
+            None => {}
+        }
+        state.reset_blink();
     }
 
     if delta_lines != 0 {
@@ -2097,10 +2391,15 @@ fn handle_mouse_click(
         state.measured_line_step,
         scaled_text_padding_y(&state),
     );
+    let plain_panel_size = panel_query
+        .iter()
+        .find(|(panel, _, _)| panel.kind == PanelKind::Plain)
+        .map(|(_, _, computed)| computed.size() * computed.inverse_scale_factor());
     let processed_panel_size = panel_query
         .iter()
         .find(|(panel, _, _)| panel.kind == PanelKind::Processed)
         .map(|(_, _, computed)| computed.size() * computed.inverse_scale_factor());
+    state.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
     let processed_layout_info =
         processed_panel_size.map(|size| processed_page_layout(size, &state));
     let processed_wrap_columns = processed_layout_info.map_or(64, |layout| layout.wrap_columns);
@@ -2131,7 +2430,7 @@ fn handle_mouse_click(
     let processed_line_height = LINE_HEIGHT;
     let plain_char_width = scaled_char_width(&state).max(1.0);
     let processed_char_width = DEFAULT_CHAR_WIDTH;
-    let plain_origin_x = scaled_text_padding_x(&state);
+    let plain_origin_x = scaled_text_padding_x(&state) - state.plain_horizontal_scroll;
     let plain_origin_y = scaled_text_padding_y(&state);
     let processed_origin_x =
         processed_layout_info.map_or(plain_origin_x, |layout| layout.geometry.text_left);
@@ -2157,7 +2456,7 @@ fn handle_mouse_click(
         let raw_x = normalized.x * size.x;
         let raw_y = normalized.y * size.y;
         let panel_x = if panel.kind == PanelKind::Processed {
-            raw_x / processed_zoom
+            (raw_x + state.processed_horizontal_scroll) / processed_zoom
         } else {
             raw_x
         };
@@ -2343,25 +2642,30 @@ fn render_editor(
     let plain_font_size = scaled_font_size(&state);
     let plain_line_height = state.measured_line_step.max(1.0);
     let plain_char_width = scaled_char_width(&state).max(1.0);
-    let plain_origin_x = scaled_text_padding_x(&state);
     let plain_origin_y = scaled_text_padding_y(&state);
     let processed_font_size = FONT_SIZE;
     let processed_line_height = LINE_HEIGHT;
     let processed_char_width = DEFAULT_CHAR_WIDTH;
 
     let mut plain_inverse_scale = 1.0;
+    let mut plain_panel_size = None;
     let mut processed_panel_size = None;
 
     for (panel, computed) in body_query.iter() {
         let inverse_scale = computed.inverse_scale_factor();
         let logical_size = computed.size() * inverse_scale;
         match panel.kind {
-            PanelKind::Plain => plain_inverse_scale = inverse_scale,
+            PanelKind::Plain => {
+                plain_inverse_scale = inverse_scale;
+                plain_panel_size = Some(logical_size);
+            }
             PanelKind::Processed => {
                 processed_panel_size = Some(logical_size);
             }
         }
     }
+    state.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
+    let plain_origin_x = scaled_text_padding_x(&state) - state.plain_horizontal_scroll;
     let processed_layout_info =
         processed_page_layout(processed_panel_size.unwrap_or(Vec2::ZERO), &state);
     let processed_geometry = processed_layout_info.geometry;
@@ -2394,7 +2698,12 @@ fn render_editor(
     for (panel_canvas, mut transform) in canvas_query.iter_mut() {
         if panel_canvas.kind == PanelKind::Processed {
             if let Some(panel_size) = processed_panel_size {
-                apply_top_left_zoom_transform(&mut transform, state.zoom, panel_size);
+                apply_top_left_zoom_transform(
+                    &mut transform,
+                    state.zoom,
+                    panel_size,
+                    state.processed_horizontal_scroll,
+                );
             } else {
                 transform.scale = Vec2::ONE;
                 transform.translation = Val2::ZERO;
@@ -2435,10 +2744,14 @@ fn render_editor(
             continue;
         }
 
-        node.left = px(processed_geometry.text_left - processed_geometry.paper_left);
-        node.top = px(processed_geometry.text_top - processed_geometry.paper_top);
-        node.width = px(processed_geometry.text_width);
-        node.height = px(processed_geometry.text_height);
+        node.left = px(
+            (processed_geometry.text_left - processed_geometry.paper_left)
+                - PROCESSED_TEXT_CLIP_BLEED_X,
+        );
+        node.top = px((processed_geometry.text_top - processed_geometry.paper_top)
+            - PROCESSED_TEXT_CLIP_BLEED_Y);
+        node.width = px(processed_geometry.text_width + PROCESSED_TEXT_CLIP_BLEED_X * 2.0);
+        node.height = px(processed_geometry.text_height + PROCESSED_TEXT_CLIP_BLEED_Y * 2.0);
         node.overflow = Overflow::clip();
         transform.scale = Vec2::ONE;
         transform.translation = Val2::ZERO;
