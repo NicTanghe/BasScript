@@ -383,6 +383,10 @@ fn handle_mouse_click(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
     text_layout_query: Query<(&PanelText, &TextLayoutInfo)>,
+    processed_text_layout_query: Query<
+        (&ProcessedPaperText, &TextLayoutInfo, &ComputedNode),
+        (Without<PanelText>, Without<PanelPaper>, Without<PanelCaret>, Without<PanelCanvas>),
+    >,
     mut state: ResMut<EditorState>,
 ) {
     if !mouse_buttons.just_pressed(MouseButton::Left) {
@@ -427,24 +431,18 @@ fn handle_mouse_click(
         processed_step_lines,
         processed_view_capacity,
     );
+    let first_visible_page = processed_view.start_index / processed_step_lines;
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
-    let processed_layout = None;
     let plain_line_height = state.measured_line_step.max(1.0);
     let processed_line_height = scaled_line_height(&state).max(1.0);
     let plain_char_width = scaled_char_width(&state).max(1.0);
     let processed_char_width = scaled_char_width(&state).max(1.0);
     let plain_origin_x = scaled_text_padding_x(&state) - state.plain_horizontal_scroll;
     let plain_origin_y = scaled_text_padding_y(&state);
-    let processed_origin_x = processed_layout_info.map_or(plain_origin_x, |layout| {
-        layout.geometry.text_left - state.processed_horizontal_scroll
-    });
     let processed_anchor_offset_px = processed_view
         .anchor_index
         .saturating_sub(processed_view.start_index) as f32
         * processed_line_height;
-    let processed_origin_y = processed_layout_info.map_or(plain_origin_y, |layout| {
-        layout.geometry.text_top - processed_anchor_offset_px
-    });
     for (panel, relative_cursor, computed) in panel_query.iter() {
         if !relative_cursor.cursor_over() {
             continue;
@@ -461,100 +459,142 @@ fn handle_mouse_click(
 
         let inverse_scale = computed.inverse_scale_factor();
         let size = computed.size() * inverse_scale;
-        let raw_x = normalized.x * size.x;
-        let raw_y = normalized.y * size.y;
+        let raw_x = (normalized.x + 0.5) * size.x;
+        let raw_y = (normalized.y + 0.5) * size.y;
         let panel_x = raw_x;
         let panel_y = raw_y;
-        let origin_x = if panel.kind == PanelKind::Processed {
-            processed_origin_x
-        } else {
-            plain_origin_x
-        };
-        let origin_y = if panel.kind == PanelKind::Processed {
-            processed_origin_y
-        } else {
-            plain_origin_y
-        };
-        let local_x = (panel_x - origin_x).max(0.0);
-        let local_y = (panel_y - origin_y).max(0.0);
+        if panel.kind == PanelKind::Processed {
+            let Some(processed_layout) = processed_layout_info else {
+                continue;
+            };
+            if processed_all_lines.is_empty() {
+                continue;
+            }
 
-        let panel_layout = match panel.kind {
-            PanelKind::Plain => plain_layout,
-            PanelKind::Processed => processed_layout,
-        };
-        let panel_line_count = match panel.kind {
-            PanelKind::Plain => plain_lines.len().max(1),
-            PanelKind::Processed => processed_view.lines.len().max(1),
-        };
-        let fallback_line_height = match panel.kind {
-            PanelKind::Plain => plain_line_height,
-            PanelKind::Processed => processed_line_height,
-        };
+            let geometry = processed_layout.geometry;
+            let text_left = geometry.text_left - state.processed_horizontal_scroll;
+            let text_top_offset = geometry.text_top - geometry.paper_top;
+            let text_right = text_left + geometry.text_width;
 
-        // Anchor Y mapping to measured layout origin while keeping fixed line-height steps.
-        let line_offset = panel_layout
+            let mut clicked_page = None;
+            for slot in 0..PROCESSED_PAPER_CAPACITY {
+                let page_index = first_visible_page.saturating_add(slot);
+                let page_start_line = page_index.saturating_mul(processed_step_lines);
+                let line_delta = page_start_line as isize - processed_view.start_index as isize;
+                let page_top = geometry.paper_top - processed_anchor_offset_px
+                    + line_delta as f32 * processed_line_height;
+                let page_bottom = page_top + geometry.paper_height;
+
+                if panel_y >= page_top && panel_y <= page_bottom {
+                    clicked_page = Some((slot, page_index, page_top));
+                    break;
+                }
+            }
+
+            let Some((slot, page_index, page_top)) = clicked_page else {
+                continue;
+            };
+
+            let text_top = page_top + text_top_offset;
+            let local_x = (panel_x - text_left).max(0.0);
+            let local_y = (panel_y - text_top).max(0.0);
+            let fallback_line_in_page = ((local_y / processed_line_height).floor().max(0.0)
+                as usize)
+                .min(processed_lines_per_page.saturating_sub(1));
+            let fallback_column = if panel_x <= text_left {
+                0
+            } else {
+                ((panel_x.min(text_right) - text_left) / processed_char_width)
+                    .round()
+                    .max(0.0) as usize
+            };
+
+            let (line_in_page, display_column) = processed_text_layout_query
+                .iter()
+                .find(|(paper_text, _, _)| paper_text.slot == slot)
+                .map_or((fallback_line_in_page, fallback_column), |(_, layout, text_computed)| {
+                    let inverse_scale = text_computed.inverse_scale_factor();
+                    let line_in_page = line_index_from_layout_y(
+                        layout,
+                        local_y,
+                        processed_lines_per_page.max(1),
+                        inverse_scale,
+                    )
+                    .unwrap_or(fallback_line_in_page)
+                    .min(processed_lines_per_page.saturating_sub(1));
+
+                    let global_for_line = page_index
+                        .saturating_mul(processed_step_lines)
+                        .saturating_add(line_in_page)
+                        .min(processed_all_lines.len().saturating_sub(1));
+                    let display_line =
+                        processed_all_lines.get(global_for_line).map_or("", |line| line.text.as_str());
+                    let display_column = column_from_layout_x(
+                        layout,
+                        line_in_page,
+                        local_x,
+                        display_line,
+                        inverse_scale,
+                        processed_char_width,
+                    )
+                    .unwrap_or(fallback_column);
+                    (line_in_page, display_column)
+                });
+
+            let global_index = page_index
+                .saturating_mul(processed_step_lines)
+                .saturating_add(line_in_page)
+                .min(processed_all_lines.len().saturating_sub(1));
+            let Some(global_index) =
+                nearest_non_spacer_visual_index(&processed_all_lines, global_index)
+            else {
+                continue;
+            };
+            let Some(visual_line) = processed_all_lines.get(global_index) else {
+                continue;
+            };
+            let raw_column = processed_raw_column_from_display(&state, visual_line, display_column);
+            let line = visual_line.source_line;
+            let max_col = state.document.line_len_chars(line);
+            let column = raw_column.min(max_col);
+
+            state.set_cursor(Position { line, column }, true);
+            state.ensure_cursor_visible(visible_lines);
+            ensure_cursor_visible_in_processed_panel(&mut state, processed_panel_size, visible_lines);
+            break;
+        }
+
+        let local_x = (panel_x - plain_origin_x).max(0.0);
+        let local_y = (panel_y - plain_origin_y).max(0.0);
+        let panel_line_count = plain_lines.len().max(1);
+        let line_offset = plain_layout
             .and_then(|layout| {
                 line_index_from_layout_y(layout, local_y, panel_line_count, inverse_scale)
             })
             .unwrap_or_else(|| {
-                ((local_y / fallback_line_height).floor().max(0.0) as usize)
+                ((local_y / plain_line_height).floor().max(0.0) as usize)
                     .min(panel_line_count.saturating_sub(1))
             });
-
-        let (line, raw_column) = match panel.kind {
-            PanelKind::Plain => {
-                let line = state
-                    .top_line
-                    .saturating_add(line_offset)
-                    .min(state.document.line_count().saturating_sub(1));
-                let visible_offset = line.saturating_sub(state.top_line);
-                let display_line = plain_lines
-                    .get(visible_offset)
-                    .map_or("", |line| line.as_str());
-                let display_column = plain_layout
-                    .and_then(|layout| {
-                        column_from_layout_x(
-                            layout,
-                            visible_offset,
-                            local_x,
-                            display_line,
-                            inverse_scale,
-                            plain_char_width,
-                        )
-                    })
-                    .unwrap_or_else(|| (local_x / plain_char_width).round().max(0.0) as usize);
-                (line, display_column)
-            }
-            PanelKind::Processed => {
-                let visual_index = line_offset.min(processed_view.lines.len().saturating_sub(1));
-                let Some(visual_index) =
-                    nearest_non_spacer_visual_index(&processed_view.lines, visual_index)
-                else {
-                    continue;
-                };
-                let Some(visual_line) = processed_view.lines.get(visual_index) else {
-                    continue;
-                };
-
-                let display_line = visual_line.text.as_str();
-                let display_column = processed_layout
-                    .and_then(|layout| {
-                        column_from_layout_x(
-                            layout,
-                            visual_index,
-                            local_x,
-                            display_line,
-                            inverse_scale,
-                            processed_char_width,
-                        )
-                    })
-                    .unwrap_or_else(|| (local_x / processed_char_width).round().max(0.0) as usize);
-
-                let raw_column =
-                    processed_raw_column_from_display(&state, visual_line, display_column);
-                (visual_line.source_line, raw_column)
-            }
-        };
+        let line = state
+            .top_line
+            .saturating_add(line_offset)
+            .min(state.document.line_count().saturating_sub(1));
+        let visible_offset = line.saturating_sub(state.top_line);
+        let display_line = plain_lines
+            .get(visible_offset)
+            .map_or("", |line| line.as_str());
+        let raw_column = plain_layout
+            .and_then(|layout| {
+                column_from_layout_x(
+                    layout,
+                    visible_offset,
+                    local_x,
+                    display_line,
+                    inverse_scale,
+                    plain_char_width,
+                )
+            })
+            .unwrap_or_else(|| (local_x / plain_char_width).round().max(0.0) as usize);
 
         let max_col = state.document.line_len_chars(line);
         let column = raw_column.min(max_col);
