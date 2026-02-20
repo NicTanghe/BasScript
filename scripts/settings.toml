@@ -2,7 +2,7 @@
 # true: processed pane renders dialogue double spaces as new lines
 dialogue_double_space_newline = true
 # true: processed pane renders non-dialogue double spaces as new lines
-non_dialogue_double_space_newline = false
+non_dialogue_double_space_newline = true
 # processed page margins in typographic points
 page_margin_left = 98
 page_margin_right = 74

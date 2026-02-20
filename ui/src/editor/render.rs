@@ -45,6 +45,10 @@ fn render_editor(
         Without<PanelText>,
     >,
     text_layout_query: Query<(&PanelText, &TextLayoutInfo)>,
+    processed_text_layout_query: Query<
+        (&ProcessedPaperText, &TextLayoutInfo, &ComputedNode),
+        (Without<PanelText>, Without<PanelPaper>, Without<PanelCaret>, Without<PanelCanvas>),
+    >,
     mut caret_query: Query<
         (&PanelCaret, &mut Node, &mut Visibility, &mut UiTransform),
         (
@@ -130,7 +134,6 @@ fn render_editor(
         .anchor_index
         .saturating_sub(processed_view.start_index) as f32
         * processed_line_height;
-    let processed_text_origin_y = processed_geometry.text_top - processed_anchor_offset_px;
 
     for (_, mut transform) in canvas_query.iter_mut() {
         transform.scale = Vec2::ONE;
@@ -224,7 +227,6 @@ fn render_editor(
     }
 
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
-    let processed_layout = None;
     state.measured_line_step = scaled_line_height(&state);
 
     for (panel_caret, mut node, mut visibility, mut transform) in caret_query.iter_mut() {
@@ -245,6 +247,8 @@ fn render_editor(
             panel_line_height,
             panel_caret_x_offset,
             panel_caret_width,
+            clamp_display_column,
+            clamp_local_position_to_origin,
         ) = match panel_caret.kind {
             PanelKind::Plain => {
                 let in_view = state.cursor.position.line >= state.top_line
@@ -270,6 +274,8 @@ fn render_editor(
                     plain_line_height,
                     CARET_X_OFFSET,
                     CARET_WIDTH.max(1.0),
+                    true,
+                    true,
                 )
             }
             PanelKind::Processed => {
@@ -280,26 +286,52 @@ fn render_editor(
                     continue;
                 };
 
+                let global_index = processed_view.start_index.saturating_add(visual_index);
+                let page_index = global_index / processed_page_step_lines;
+                let line_in_page = global_index % processed_page_step_lines;
+                if line_in_page >= processed_lines_per_page {
+                    *visibility = Visibility::Hidden;
+                    continue;
+                }
+                let slot = page_index.saturating_sub(first_visible_page);
+                let (processed_layout, processed_inverse_scale) = processed_text_layout_query
+                    .iter()
+                    .find(|(paper_text, _, _)| paper_text.slot == slot)
+                    .map_or((None, 1.0), |(_, layout, computed)| {
+                        (Some(layout), computed.inverse_scale_factor())
+                    });
+
+                let page_start_line = page_index.saturating_mul(processed_page_step_lines);
+                let line_delta = page_start_line as isize - processed_view.start_index as isize;
+                let page_text_top = processed_geometry.text_top - processed_anchor_offset_px
+                    + line_delta as f32 * processed_line_height;
                 let (processed_origin_x, processed_origin_y) = (
                     processed_geometry.text_left - state.processed_horizontal_scroll,
-                    processed_text_origin_y,
+                    page_text_top,
                 );
                 (
-                    visual_index,
+                    line_in_page,
                     display_column,
                     line_text,
                     processed_layout,
-                    1.0,
+                    processed_inverse_scale,
                     processed_origin_x,
                     processed_origin_y,
                     processed_char_width,
                     processed_line_height,
                     CARET_X_OFFSET,
                     CARET_WIDTH.max(1.0),
+                    true,
+                    true,
                 )
             }
         };
 
+        let display_column = if clamp_display_column {
+            display_column.min(line_text.chars().count())
+        } else {
+            display_column
+        };
         let byte_index = char_to_byte_index(line_text, display_column);
         let caret_x = panel_layout
             .and_then(|layout| {
@@ -320,9 +352,19 @@ fn render_editor(
             })
             .unwrap_or(line_offset as f32 * panel_line_height);
 
-        let caret_left = origin_x + caret_x + panel_caret_x_offset;
+        let local_caret_left = if clamp_local_position_to_origin {
+            (caret_x + panel_caret_x_offset).max(0.0)
+        } else {
+            caret_x + panel_caret_x_offset
+        };
+        let caret_left = origin_x + local_caret_left;
         let caret_y_offset = CARET_Y_OFFSET_FACTOR * panel_line_height;
-        let caret_top = origin_y + caret_top + caret_y_offset;
+        let local_caret_top = if clamp_local_position_to_origin {
+            (caret_top + caret_y_offset).max(0.0)
+        } else {
+            caret_top + caret_y_offset
+        };
+        let caret_top = origin_y + local_caret_top;
         node.left = px(caret_left);
         node.top = px(caret_top);
         node.width = px(panel_caret_width);

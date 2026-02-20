@@ -419,10 +419,22 @@ fn first_visual_anchor_index_for_source_line(
     lines: &[ProcessedVisualLine],
     source_line: usize,
 ) -> Option<usize> {
-    lines
-        .iter()
-        .position(|line| line.source_line >= source_line)
-        .or_else(|| lines.iter().rposition(|line| line.source_line <= source_line))
+    let Some(first_index) = lines.iter().position(|line| line.source_line >= source_line) else {
+        return lines.iter().rposition(|line| line.source_line <= source_line);
+    };
+
+    let first_line = &lines[first_index];
+    if first_line.source_line == source_line && first_line.is_spacer {
+        return lines
+            .iter()
+            .enumerate()
+            .skip(first_index)
+            .find(|(_, line)| line.source_line == source_line && !line.is_spacer)
+            .map(|(index, _)| index)
+            .or(Some(first_index));
+    }
+
+    Some(first_index)
 }
 
 fn first_visual_index_for_source_line(
