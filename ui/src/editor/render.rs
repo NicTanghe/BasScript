@@ -434,7 +434,7 @@ fn ensure_cursor_visible_in_processed_panel(
     let mut best_distance = usize::MAX;
 
     for candidate_top in min_top_for_plain..=max_top_for_plain {
-        let anchor_index = first_visual_index_for_source_line(&all_lines, candidate_top)
+        let anchor_index = first_visual_anchor_index_for_source_line(&all_lines, candidate_top)
             .unwrap_or_else(|| all_lines.len().saturating_sub(1));
         let page_step_lines = processed_layout.page_step_lines.max(1);
         let start_index = (anchor_index / page_step_lines) * page_step_lines;

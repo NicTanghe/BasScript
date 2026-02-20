@@ -74,7 +74,7 @@ fn build_processed_view(
         return ProcessedView::default();
     }
 
-    let anchor_index = first_visual_index_for_source_line(&all_lines, top_line)
+    let anchor_index = first_visual_anchor_index_for_source_line(&all_lines, top_line)
         .unwrap_or_else(|| all_lines.len().saturating_sub(1));
     let mut start_index = (anchor_index / page_step_lines) * page_step_lines;
 
@@ -413,6 +413,16 @@ fn should_split_on_double_space(state: &EditorState, kind: &LineKind) -> bool {
         LineKind::Dialogue => state.dialogue_double_space_newline,
         _ => state.non_dialogue_double_space_newline,
     }
+}
+
+fn first_visual_anchor_index_for_source_line(
+    lines: &[ProcessedVisualLine],
+    source_line: usize,
+) -> Option<usize> {
+    lines
+        .iter()
+        .position(|line| line.source_line >= source_line)
+        .or_else(|| lines.iter().rposition(|line| line.source_line <= source_line))
 }
 
 fn first_visual_index_for_source_line(
