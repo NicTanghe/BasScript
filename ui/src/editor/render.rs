@@ -130,10 +130,12 @@ fn render_editor(
         processed_view_capacity,
     );
     let first_visible_page = processed_view.start_index / processed_page_step_lines;
-    let processed_anchor_offset_px = processed_view
-        .anchor_index
-        .saturating_sub(processed_view.start_index) as f32
-        * processed_line_height;
+    let anchor_line_in_page =
+        processed_anchor_line_in_page(&processed_view, processed_page_step_lines);
+    let processed_anchor_offset_px =
+        processed_anchor_scroll_offset_px(anchor_line_in_page, processed_line_height);
+    let processed_page_step_pixels = processed_page_step_px(&processed_geometry, state.zoom);
+    let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
 
     for (_, mut transform) in canvas_query.iter_mut() {
         transform.scale = Vec2::ONE;
@@ -147,13 +149,13 @@ fn render_editor(
             continue;
         }
 
-        let page_index = first_visible_page.saturating_add(panel_paper.slot);
-        let page_start_line = page_index.saturating_mul(processed_page_step_lines);
-        let line_delta = page_start_line as isize - processed_view.start_index as isize;
-        let page_top_base = processed_geometry.paper_top - processed_anchor_offset_px
-            + line_delta as f32 * processed_line_height;
+        let page_top = processed_page_top_for_slot(
+            &processed_geometry,
+            panel_paper.slot,
+            processed_page_step_pixels,
+            processed_anchor_offset_px,
+        ) + processed_zoom_bias_px;
         let page_left = processed_geometry.paper_left - state.processed_horizontal_scroll;
-        let page_top = page_top_base;
 
         node.left = px(page_left);
         node.top = px(page_top);
@@ -301,10 +303,12 @@ fn render_editor(
                         (Some(layout), computed.inverse_scale_factor())
                     });
 
-                let page_start_line = page_index.saturating_mul(processed_page_step_lines);
-                let line_delta = page_start_line as isize - processed_view.start_index as isize;
-                let page_text_top = processed_geometry.text_top - processed_anchor_offset_px
-                    + line_delta as f32 * processed_line_height;
+                let page_text_top = processed_text_top_for_slot(
+                    &processed_geometry,
+                    slot,
+                    processed_page_step_pixels,
+                    processed_anchor_offset_px,
+                ) + processed_zoom_bias_px;
                 let (processed_origin_x, processed_origin_y) = (
                     processed_geometry.text_left - state.processed_horizontal_scroll,
                     page_text_top,

@@ -220,6 +220,7 @@ struct EditorState {
     top_line: usize,
     plain_horizontal_scroll: f32,
     processed_horizontal_scroll: f32,
+    processed_zoom_anchor_bias_px: f32,
     paths: DocumentPath,
     status_message: String,
     caret_blink: Timer,
@@ -245,6 +246,7 @@ struct EditorHistorySnapshot {
     top_line: usize,
     plain_horizontal_scroll: f32,
     processed_horizontal_scroll: f32,
+    processed_zoom_anchor_bias_px: f32,
 }
 
 #[derive(Resource, Default)]
@@ -352,6 +354,7 @@ impl FromWorld for EditorState {
             top_line: 0,
             plain_horizontal_scroll: 0.0,
             processed_horizontal_scroll: 0.0,
+            processed_zoom_anchor_bias_px: 0.0,
             paths,
             status_message,
             caret_blink: Timer::from_seconds(0.5, TimerMode::Repeating),
@@ -530,6 +533,7 @@ impl EditorState {
                 self.top_line = 0;
                 self.plain_horizontal_scroll = 0.0;
                 self.processed_horizontal_scroll = 0.0;
+                self.processed_zoom_anchor_bias_px = 0.0;
                 self.clear_history();
                 self.paths.load_path = path.clone();
                 self.paths.save_path = path.clone();
@@ -549,6 +553,7 @@ impl EditorState {
             top_line: self.top_line,
             plain_horizontal_scroll: self.plain_horizontal_scroll,
             processed_horizontal_scroll: self.processed_horizontal_scroll,
+            processed_zoom_anchor_bias_px: self.processed_zoom_anchor_bias_px,
         }
     }
 
@@ -589,6 +594,7 @@ impl EditorState {
         self.top_line = snapshot.top_line;
         self.plain_horizontal_scroll = snapshot.plain_horizontal_scroll;
         self.processed_horizontal_scroll = snapshot.processed_horizontal_scroll;
+        self.processed_zoom_anchor_bias_px = snapshot.processed_zoom_anchor_bias_px;
         self.clamp_scroll(visible_lines);
         self.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
         self.reset_blink();

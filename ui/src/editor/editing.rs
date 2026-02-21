@@ -160,7 +160,7 @@ fn handle_navigation_input(
 
         if keys.just_pressed(KeyCode::Equal) {
             let next_zoom = state.zoom + ZOOM_STEP;
-            state.set_zoom(next_zoom);
+            set_zoom_preserving_processed_anchor(&mut state, processed_panel_size, next_zoom);
             state.status_message = format!("Zoom: {}%", state.zoom_percent());
             let zoom_visible_lines = viewport_lines(
                 &body_query,
@@ -174,7 +174,7 @@ fn handle_navigation_input(
 
         if keys.just_pressed(KeyCode::Minus) {
             let next_zoom = state.zoom - ZOOM_STEP;
-            state.set_zoom(next_zoom);
+            set_zoom_preserving_processed_anchor(&mut state, processed_panel_size, next_zoom);
             state.status_message = format!("Zoom: {}%", state.zoom_percent());
             let zoom_visible_lines = viewport_lines(
                 &body_query,
@@ -311,7 +311,7 @@ fn handle_mouse_scroll(
 
         if zoom_steps.abs() > f32::EPSILON {
             let next_zoom = state.zoom + zoom_steps * ZOOM_STEP;
-            state.set_zoom(next_zoom);
+            set_zoom_preserving_processed_anchor(&mut state, processed_panel_size, next_zoom);
             state.status_message = format!("Zoom: {}%", state.zoom_percent());
             let visible_lines = viewport_lines_from_panels(
                 &panel_query,
@@ -439,10 +439,10 @@ fn handle_mouse_click(
     let processed_char_width = scaled_char_width(&state).max(1.0);
     let plain_origin_x = scaled_text_padding_x(&state) - state.plain_horizontal_scroll;
     let plain_origin_y = scaled_text_padding_y(&state);
-    let processed_anchor_offset_px = processed_view
-        .anchor_index
-        .saturating_sub(processed_view.start_index) as f32
-        * processed_line_height;
+    let anchor_line_in_page = processed_anchor_line_in_page(&processed_view, processed_step_lines);
+    let processed_anchor_offset_px =
+        processed_anchor_scroll_offset_px(anchor_line_in_page, processed_line_height);
+    let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
     for (panel, relative_cursor, computed) in panel_query.iter() {
         if !relative_cursor.cursor_over() {
             continue;
@@ -472,30 +472,37 @@ fn handle_mouse_click(
             }
 
             let geometry = processed_layout.geometry;
+            let processed_step_px = processed_page_step_px(&geometry, state.zoom);
             let text_left = geometry.text_left - state.processed_horizontal_scroll;
-            let text_top_offset = geometry.text_top - geometry.paper_top;
             let text_right = text_left + geometry.text_width;
 
             let mut clicked_page = None;
             for slot in 0..PROCESSED_PAPER_CAPACITY {
                 let page_index = first_visible_page.saturating_add(slot);
-                let page_start_line = page_index.saturating_mul(processed_step_lines);
-                let line_delta = page_start_line as isize - processed_view.start_index as isize;
-                let page_top = geometry.paper_top - processed_anchor_offset_px
-                    + line_delta as f32 * processed_line_height;
+                let page_top = processed_page_top_for_slot(
+                    &geometry,
+                    slot,
+                    processed_step_px,
+                    processed_anchor_offset_px,
+                ) + processed_zoom_bias_px;
                 let page_bottom = page_top + geometry.paper_height;
 
                 if panel_y >= page_top && panel_y <= page_bottom {
-                    clicked_page = Some((slot, page_index, page_top));
+                    clicked_page = Some((slot, page_index));
                     break;
                 }
             }
 
-            let Some((slot, page_index, page_top)) = clicked_page else {
+            let Some((slot, page_index)) = clicked_page else {
                 continue;
             };
 
-            let text_top = page_top + text_top_offset;
+            let text_top = processed_text_top_for_slot(
+                &geometry,
+                slot,
+                processed_step_px,
+                processed_anchor_offset_px,
+            ) + processed_zoom_bias_px;
             let local_x = (panel_x - text_left).max(0.0);
             let local_y = (panel_y - text_top).max(0.0);
             let fallback_line_in_page = ((local_y / processed_line_height).floor().max(0.0)

@@ -548,11 +548,16 @@ fn handle_toolbar_buttons(
     _dialog_main_thread: NonSend<DialogMainThreadMarker>,
     interaction_query: Query<(&Interaction, &ToolbarAction), (Changed<Interaction>, With<Button>)>,
     primary_window_query: Query<&RawHandleWrapper, With<PrimaryWindow>>,
+    body_query: Query<(&PanelBody, &ComputedNode)>,
     mut state: ResMut<EditorState>,
     mut dialogs: ResMut<DialogState>,
     mut next_screen_state: ResMut<NextState<UiScreenState>>,
 ) {
     let parent_handle = primary_window_query.iter().next();
+    let processed_panel_size = body_query
+        .iter()
+        .find(|(panel, _)| panel.kind == PanelKind::Processed)
+        .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
 
     for (interaction, action) in interaction_query.iter() {
         if *interaction != Interaction::Pressed {
@@ -571,12 +576,12 @@ fn handle_toolbar_buttons(
             ToolbarAction::SaveAs => open_save_dialog(&mut state, &mut dialogs, parent_handle),
             ToolbarAction::ZoomOut => {
                 let next_zoom = state.zoom - ZOOM_STEP;
-                state.set_zoom(next_zoom);
+                set_zoom_preserving_processed_anchor(&mut state, processed_panel_size, next_zoom);
                 state.status_message = format!("Zoom: {}%", state.zoom_percent());
             }
             ToolbarAction::ZoomIn => {
                 let next_zoom = state.zoom + ZOOM_STEP;
-                state.set_zoom(next_zoom);
+                set_zoom_preserving_processed_anchor(&mut state, processed_panel_size, next_zoom);
                 state.status_message = format!("Zoom: {}%", state.zoom_percent());
             }
             ToolbarAction::Settings => {

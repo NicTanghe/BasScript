@@ -41,14 +41,18 @@ fn processed_page_geometry(panel_size: Vec2, state: &EditorState) -> ProcessedPa
 
 fn processed_page_layout(panel_size: Vec2, state: &EditorState) -> ProcessedPageLayout {
     let geometry = processed_page_geometry(panel_size, state);
-    let wrap_columns = (geometry.text_width / scaled_char_width(state))
-        .floor()
-        .max(1.0) as usize;
-    let lines_per_page = (geometry.text_height / scaled_line_height(state))
-        .floor()
-        .max(1.0) as usize;
-
     let page_step_lines = processed_page_step_lines();
+    let base_paper_height = ((page_step_lines as f32 * LINE_HEIGHT) - PAGE_GAP).max(1.0);
+    let base_text_width =
+        (A4_WIDTH_POINTS - state.page_margin_left - state.page_margin_right).max(1.0);
+    let base_text_height =
+        (base_paper_height - state.page_margin_top - state.page_margin_bottom).max(1.0);
+    let wrap_columns = ((base_text_width / DEFAULT_CHAR_WIDTH) + 1e-4)
+        .floor()
+        .max(1.0) as usize;
+    let lines_per_page = ((base_text_height / LINE_HEIGHT) + 1e-4)
+        .floor()
+        .max(1.0) as usize;
     let spacer_lines = page_step_lines.saturating_sub(lines_per_page);
 
     ProcessedPageLayout {
@@ -57,6 +61,86 @@ fn processed_page_layout(panel_size: Vec2, state: &EditorState) -> ProcessedPage
         lines_per_page,
         spacer_lines,
         page_step_lines,
+    }
+}
+
+fn processed_anchor_line_in_page(processed_view: &ProcessedView, page_step_lines: usize) -> usize {
+    processed_view
+        .anchor_index
+        .saturating_sub(processed_view.start_index)
+        .min(page_step_lines.max(1).saturating_sub(1))
+}
+
+fn processed_anchor_scroll_offset_px(
+    anchor_line_in_page: usize,
+    line_height: f32,
+) -> f32 {
+    anchor_line_in_page as f32 * line_height.max(1.0)
+}
+
+fn processed_page_step_px(geometry: &ProcessedPageGeometry, zoom: f32) -> f32 {
+    (geometry.paper_height + PAGE_GAP * zoom.max(f32::EPSILON)).max(1.0)
+}
+
+fn processed_page_top_for_slot(
+    geometry: &ProcessedPageGeometry,
+    slot: usize,
+    page_step_px: f32,
+    anchor_scroll_offset_px: f32,
+) -> f32 {
+    geometry.paper_top + slot as f32 * page_step_px - anchor_scroll_offset_px
+}
+
+fn processed_text_top_for_slot(
+    geometry: &ProcessedPageGeometry,
+    slot: usize,
+    page_step_px: f32,
+    anchor_scroll_offset_px: f32,
+) -> f32 {
+    let page_top = processed_page_top_for_slot(geometry, slot, page_step_px, anchor_scroll_offset_px);
+    page_top + (geometry.text_top - geometry.paper_top)
+}
+
+fn processed_anchor_page_top_for_state(
+    state: &mut EditorState,
+    processed_panel_size: Option<Vec2>,
+) -> Option<f32> {
+    let panel_size = processed_panel_size?;
+    let layout = processed_page_layout(panel_size, state);
+    let step_lines = layout.page_step_lines.max(1);
+    let step_px = processed_page_step_px(&layout.geometry, state.zoom);
+    let view_capacity = step_lines.saturating_mul(PROCESSED_PAPER_CAPACITY).max(1);
+    let processed_line_height = scaled_line_height(state).max(1.0);
+    let all_lines = processed_cache_lines(
+        state,
+        layout.wrap_columns,
+        layout.lines_per_page,
+        layout.spacer_lines,
+    )
+    .to_vec();
+    if all_lines.is_empty() {
+        return Some(layout.geometry.paper_top + state.processed_zoom_anchor_bias_px);
+    }
+
+    let view = build_processed_view(&all_lines, state.top_line, step_lines, view_capacity);
+    let anchor_line_in_page = processed_anchor_line_in_page(&view, step_lines);
+    let anchor_offset_px = processed_anchor_scroll_offset_px(anchor_line_in_page, processed_line_height);
+    let page_top =
+        processed_page_top_for_slot(&layout.geometry, 0, step_px, anchor_offset_px)
+            + state.processed_zoom_anchor_bias_px;
+    Some(page_top)
+}
+
+fn set_zoom_preserving_processed_anchor(
+    state: &mut EditorState,
+    processed_panel_size: Option<Vec2>,
+    next_zoom: f32,
+) {
+    let before_page_top = processed_anchor_page_top_for_state(state, processed_panel_size);
+    state.set_zoom(next_zoom);
+    let after_page_top = processed_anchor_page_top_for_state(state, processed_panel_size);
+    if let (Some(before), Some(after)) = (before_page_top, after_page_top) {
+        state.processed_zoom_anchor_bias_px += before - after;
     }
 }
 
@@ -344,9 +428,11 @@ fn push_wrapped_visual_lines(
     let max_content_columns = wrap_columns.saturating_sub(indent_width).max(1);
 
     if chars.is_empty() {
+        // Keep an actual glyph cell on empty lines so their line box stays stable under zoom.
+        let blank_columns = indent_width.max(1);
         out.push(ProcessedVisualLine {
             source_line,
-            text: " ".repeat(indent_width),
+            text: " ".repeat(blank_columns),
             raw_start_column,
             raw_end_column: raw_start_column,
             is_spacer: false,
@@ -395,7 +481,7 @@ fn push_page_spacers(out: &mut Vec<ProcessedVisualLine>, source_line: usize, cou
     for _ in 0..count {
         out.push(ProcessedVisualLine {
             source_line,
-            text: String::new(),
+            text: " ".to_owned(),
             raw_start_column: 0,
             raw_end_column: 0,
             is_spacer: true,
