@@ -1,4 +1,8 @@
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut images: ResMut<Assets<Image>>,
+) {
     commands.spawn((Camera2d, IsDefaultUiCamera));
 
     let fonts = EditorFonts {
@@ -7,8 +11,17 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         italic: asset_server.load(FONT_ITALIC_PATH),
         bold_italic: asset_server.load(FONT_BOLD_ITALIC_PATH),
     };
+    let workspace_icons = WorkspaceIcons {
+        folder_closed: load_workspace_icon_image(
+            &mut images,
+            "assets/icons/folder-closed.svg",
+            16,
+        ),
+        folder_open: load_workspace_icon_image(&mut images, "assets/icons/folder-open.svg", 16),
+    };
     let font = fonts.regular.clone();
     commands.insert_resource(fonts);
+    commands.insert_resource(workspace_icons);
 
     commands
         .spawn((
@@ -41,7 +54,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                         children![
                             (
                                 Text::new(
-                                    "Cmd/Ctrl+O load | Cmd/Ctrl+S save | Cmd/Ctrl +/- or Ctrl+scroll zoom | arrows/home/end/page move cursor | mouse wheel scroll | click to place cursor",
+                                    "Cmd/Ctrl+O open workspace | Cmd/Ctrl+S save | Cmd/Ctrl +/- or Ctrl+scroll zoom | arrows/home/end/page move cursor | mouse wheel scroll | click to place cursor",
                                 ),
                                 TextFont {
                                     font: font.clone(),
@@ -57,7 +70,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                                     ..default()
                                 },
                                 children![
-                                    toolbar_button(font.clone(), "Load", ToolbarAction::Load),
+                                    toolbar_button(
+                                        font.clone(),
+                                        "Open Folder",
+                                        ToolbarAction::OpenWorkspace,
+                                    ),
                                     toolbar_button(font.clone(), "Save As", ToolbarAction::SaveAs),
                                     toolbar_button(font.clone(), "Zoom -", ToolbarAction::ZoomOut),
                                     toolbar_button(font.clone(), "Zoom +", ToolbarAction::ZoomIn),
@@ -72,7 +89,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                             padding: UiRect::axes(px(12.0), px(0.0)),
                             ..default()
                         },
-                        Text::new("Load opens a native file picker. Save As opens a native save dialog."),
+                        Text::new("Open Folder loads a workspace and shows files in the left sidebar. Save As opens a native save dialog."),
                         TextFont {
                             font: font.clone(),
                             font_size: 12.0,
@@ -90,8 +107,20 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                             ..default()
                         },
                         children![
-                            panel_bundle(font.clone(), PanelKind::Plain, "Plain"),
-                            panel_bundle(font.clone(), PanelKind::Processed, "Processed"),
+                            workspace_sidebar_bundle(font.clone()),
+                            (
+                                Node {
+                                    flex_grow: 1.0,
+                                    height: percent(100.0),
+                                    flex_direction: FlexDirection::Row,
+                                    column_gap: px(10.0),
+                                    ..default()
+                                },
+                                children![
+                                    panel_bundle(font.clone(), PanelKind::Plain, "Plain"),
+                                    panel_bundle(font.clone(), PanelKind::Processed, "Processed"),
+                                ],
+                            )
                         ],
                     ),
                     (
@@ -183,6 +212,89 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 ],
             ));
         });
+}
+
+fn load_workspace_icon_image(
+    images: &mut Assets<Image>,
+    icon_path: &str,
+    max_side_px: u32,
+) -> Handle<Image> {
+    match rasterize_svg_to_image(images, icon_path, max_side_px) {
+        Ok(handle) => handle,
+        Err(error) => {
+            warn!("Failed to rasterize {icon_path}: {error}");
+            images.add(Image::new_fill(
+                bevy::render::render_resource::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                bevy::render::render_resource::TextureDimension::D2,
+                &[255, 255, 255, 0],
+                bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+                bevy::asset::RenderAssetUsages::default(),
+            ))
+        }
+    }
+}
+
+fn rasterize_svg_to_image(
+    images: &mut Assets<Image>,
+    icon_path: &str,
+    max_side_px: u32,
+) -> Result<Handle<Image>, String> {
+    let icon_fs_path = resolve_workspace_asset_path(icon_path)
+        .ok_or_else(|| format!("cannot resolve icon path {}", icon_path))?;
+    let svg_data = fs::read(&icon_fs_path).map_err(|error| {
+        format!(
+            "cannot read icon file {}: {error}",
+            icon_fs_path.display()
+        )
+    })?;
+    let options = resvg::usvg::Options::default();
+    let tree = resvg::usvg::Tree::from_data(&svg_data, &options)
+        .map_err(|error| format!("invalid svg {}: {error}", icon_fs_path.display()))?;
+    let source_size = tree.size().to_int_size();
+    let source_width = source_size.width().max(1);
+    let source_height = source_size.height().max(1);
+    let scale = max_side_px.max(1) as f32 / source_width.max(source_height) as f32;
+    let target_width = (source_width as f32 * scale).round().max(1.0) as u32;
+    let target_height = (source_height as f32 * scale).round().max(1.0) as u32;
+
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(target_width, target_height)
+        .ok_or_else(|| "failed to allocate icon pixmap".to_string())?;
+    let transform = resvg::tiny_skia::Transform::from_scale(
+        target_width as f32 / source_width as f32,
+        target_height as f32 / source_height as f32,
+    );
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+
+    let image = Image::new(
+        bevy::render::render_resource::Extent3d {
+            width: target_width,
+            height: target_height,
+            depth_or_array_layers: 1,
+        },
+        bevy::render::render_resource::TextureDimension::D2,
+        pixmap.take(),
+        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+        bevy::asset::RenderAssetUsages::default(),
+    );
+    Ok(images.add(image))
+}
+
+fn resolve_workspace_asset_path(path: &str) -> Option<PathBuf> {
+    let direct = PathBuf::from(path);
+    if direct.exists() {
+        return Some(direct);
+    }
+
+    let from_ui_crate = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(path);
+    if from_ui_crate.exists() {
+        return Some(from_ui_crate);
+    }
+
+    None
 }
 
 fn setup_processed_papers(
@@ -438,6 +550,52 @@ fn margin_setting_row(
     )
 }
 
+fn workspace_sidebar_bundle(font: Handle<Font>) -> impl Bundle {
+    (
+        Node {
+            width: px(280.0),
+            height: percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(8.0),
+            padding: UiRect::axes(px(10.0), px(10.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgb(0.86, 0.87, 0.89)),
+        children![
+            (
+                Text::new("Workspace"),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 15.0,
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MAIN),
+            ),
+            (
+                Text::new("No workspace opened."),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MUTED),
+                WorkspaceRootLabel,
+            ),
+            (
+                Node {
+                    width: percent(100.0),
+                    flex_grow: 1.0,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(4.0),
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+                WorkspaceFileList,
+            ),
+        ],
+    )
+}
+
 fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle {
     let body_color = match kind {
         PanelKind::Plain => COLOR_PANEL_BODY_PLAIN,
@@ -572,7 +730,9 @@ fn handle_toolbar_buttons(
         );
 
         match action {
-            ToolbarAction::Load => open_load_dialog(&mut state, &mut dialogs, parent_handle),
+            ToolbarAction::OpenWorkspace => {
+                open_workspace_dialog(&mut state, &mut dialogs, parent_handle)
+            }
             ToolbarAction::SaveAs => open_save_dialog(&mut state, &mut dialogs, parent_handle),
             ToolbarAction::ZoomOut => {
                 let next_zoom = state.zoom - ZOOM_STEP;
@@ -587,6 +747,223 @@ fn handle_toolbar_buttons(
             ToolbarAction::Settings => {
                 next_screen_state.set(UiScreenState::Settings);
                 state.status_message = "Opened settings.".to_string();
+            }
+        }
+    }
+}
+
+fn handle_workspace_file_buttons(
+    interaction_query: Query<
+        (&Interaction, &WorkspaceFileButton),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut state: ResMut<EditorState>,
+) {
+    for (interaction, file_button) in interaction_query.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        state.open_workspace_file(file_button.index);
+    }
+}
+
+fn handle_workspace_folder_buttons(
+    interaction_query: Query<
+        (&Interaction, &WorkspaceFolderToggleButton),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut state: ResMut<EditorState>,
+) {
+    for (interaction, folder_button) in interaction_query.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        state.toggle_workspace_folder(&folder_button.folder_key);
+    }
+}
+
+fn sync_workspace_sidebar(
+    mut commands: Commands,
+    fonts: Res<EditorFonts>,
+    workspace_icons: Res<WorkspaceIcons>,
+    mut state: ResMut<EditorState>,
+    mut root_label_query: Query<&mut Text, With<WorkspaceRootLabel>>,
+    list_query: Query<(Entity, Option<&Children>), With<WorkspaceFileList>>,
+) {
+    if !state.workspace_ui_dirty {
+        return;
+    }
+
+    if let Ok(mut root_label) = root_label_query.single_mut() {
+        **root_label = state.workspace_root.as_ref().map_or_else(
+            || "No workspace opened.".to_string(),
+            |root| format!("Root: {}", root.display()),
+        );
+    }
+
+    let Ok((file_list_entity, children)) = list_query.single() else {
+        state.workspace_ui_dirty = false;
+        return;
+    };
+
+    if let Some(children) = children {
+        for child in children.iter() {
+            commands.entity(child).despawn();
+        }
+    }
+
+    let rows = workspace_sidebar_rows(&state);
+
+    commands.entity(file_list_entity).with_children(|parent| {
+        if rows.is_empty() {
+            parent.spawn((
+                Text::new("No .fountain/.md/.txt files found."),
+                TextFont {
+                    font: fonts.regular.clone(),
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MUTED),
+            ));
+            return;
+        }
+
+        for row in rows {
+            match row {
+                WorkspaceSidebarRow::Folder {
+                    folder_key,
+                    folder_name,
+                    depth,
+                    expanded,
+                } => {
+                    let icon_handle = if expanded {
+                        workspace_icons.folder_open.clone()
+                    } else {
+                        workspace_icons.folder_closed.clone()
+                    };
+                    let left_indent = 6.0 + depth as f32 * 14.0;
+                    let fallback_marker = if expanded { "▾" } else { "▸" };
+
+                    parent.spawn((
+                        Button,
+                        WorkspaceFolderToggleButton { folder_key },
+                        Node {
+                            width: percent(100.0),
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            column_gap: px(6.0),
+                            padding: UiRect::axes(px(left_indent), px(4.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
+                        children![
+                            (
+                                Text::new(fallback_marker),
+                                TextFont {
+                                    font: fonts.regular.clone(),
+                                    font_size: 12.0,
+                                    ..default()
+                                },
+                                TextColor(COLOR_TEXT_MUTED),
+                            ),
+                            (
+                                Node {
+                                    width: px(18.0),
+                                    height: px(18.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    ..default()
+                                },
+                                children![(
+                                    ImageNode::new(icon_handle),
+                                    Node {
+                                        width: px(14.0),
+                                        height: px(14.0),
+                                        ..default()
+                                    },
+                                )],
+                            ),
+                            (
+                                Text::new(folder_name),
+                                TextFont {
+                                    font: fonts.regular.clone(),
+                                    font_size: 12.0,
+                                    ..default()
+                                },
+                                TextColor(COLOR_TEXT_MAIN),
+                            )
+                        ],
+                    ));
+                }
+                WorkspaceSidebarRow::File {
+                    file_index,
+                    file_name,
+                    depth,
+                } => {
+                    let left_indent = 28.0 + depth as f32 * 14.0;
+                    let text_color = if state.workspace_selected == Some(file_index) {
+                        COLOR_WORKSPACE_FILE_SELECTED
+                    } else {
+                        COLOR_WORKSPACE_FILE
+                    };
+
+                    parent.spawn((
+                        Button,
+                        WorkspaceFileButton { index: file_index },
+                        Node {
+                            width: percent(100.0),
+                            padding: UiRect::new(
+                                px(left_indent),
+                                px(8.0),
+                                px(4.0),
+                                px(4.0),
+                            ),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
+                        children![(
+                            Text::new(file_name),
+                            TextFont {
+                                font: fonts.regular.clone(),
+                                font_size: 12.0,
+                                ..default()
+                            },
+                            TextColor(text_color),
+                        )],
+                    ));
+                }
+            }
+        }
+    });
+
+    state.workspace_ui_dirty = false;
+}
+
+fn style_workspace_file_entry_text(
+    state: Res<EditorState>,
+    mut file_button_query: Query<
+        (&Interaction, &WorkspaceFileButton, &Children),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut text_color_query: Query<&mut TextColor>,
+) {
+    for (interaction, workspace_file_button, children) in file_button_query.iter_mut() {
+        let color = match *interaction {
+            Interaction::Hovered | Interaction::Pressed => COLOR_WORKSPACE_FILE_HOVER,
+            Interaction::None => {
+                if state.workspace_selected == Some(workspace_file_button.index) {
+                    COLOR_WORKSPACE_FILE_SELECTED
+                } else {
+                    COLOR_WORKSPACE_FILE
+                }
+            }
+        };
+
+        for child in children.iter() {
+            if let Ok(mut text_color) = text_color_query.get_mut(child) {
+                text_color.0 = color;
             }
         }
     }

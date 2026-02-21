@@ -208,7 +208,7 @@ Epic E - Cursor metrics & hit-testing
 E1. Glyph advance cache (authoritative)
 
 Depends: A2, B1
-Status: todo
+Status: done
 
 Compute glyph advances from Bevy font metrics
 

@@ -22,11 +22,11 @@ fn handle_file_shortcuts(
 
     if keys.just_pressed(KeyCode::KeyO) {
         info!(
-            "[dialog] Shortcut Cmd/Ctrl+O detected (parent_handle: {}, has_pending: {})",
+            "[dialog] Shortcut Cmd/Ctrl+O detected for workspace picker (parent_handle: {}, has_pending: {})",
             parent_handle.is_some(),
             dialogs.pending.is_some()
         );
-        open_load_dialog(&mut state, &mut dialogs, parent_handle);
+        open_workspace_dialog(&mut state, &mut dialogs, parent_handle);
     }
 
     if keys.just_pressed(KeyCode::KeyS) {
@@ -39,7 +39,7 @@ fn handle_file_shortcuts(
     }
 }
 
-fn open_load_dialog(
+fn open_workspace_dialog(
     state: &mut EditorState,
     dialogs: &mut DialogState,
     parent_handle: Option<&RawHandleWrapper>,
@@ -50,7 +50,7 @@ fn open_load_dialog(
             .as_ref()
             .map_or("unknown", PendingDialog::kind_name);
         warn!(
-            "[dialog] Ignoring load request because {} dialog is already pending",
+            "[dialog] Ignoring workspace request because {} dialog is already pending",
             pending_kind
         );
         state.status_message = "A file dialog is already open.".to_string();
@@ -58,45 +58,43 @@ fn open_load_dialog(
     }
 
     info!(
-        "[dialog] Starting load dialog request on thread {:?}",
+        "[dialog] Starting workspace dialog request on thread {:?}",
         std::thread::current().id()
     );
 
-    let mut dialog = AsyncFileDialog::new()
-        .set_title("Open Script File")
-        .add_filter("Script files", &["fountain", "txt", "md"]);
+    let mut dialog = AsyncFileDialog::new().set_title("Open Workspace Folder");
 
     if let Some(directory) = preferred_dialog_directory(state) {
         info!(
-            "[dialog] Load dialog preferred directory: {}",
+            "[dialog] Workspace dialog preferred directory: {}",
             directory.display()
         );
         dialog = dialog.set_directory(directory);
     } else {
-        warn!("[dialog] No preferred directory found for load dialog");
+        warn!("[dialog] No preferred directory found for workspace dialog");
     }
 
     dialog = attach_dialog_parent(dialog, parent_handle);
 
-    info!("[dialog] Creating native load dialog future");
-    let request = dialog.pick_file();
-    info!("[dialog] Native load future created; spawning task");
+    info!("[dialog] Creating native workspace dialog future");
+    let request = dialog.pick_folder();
+    info!("[dialog] Native workspace future created; spawning task");
 
     let task = AsyncComputeTaskPool::get().spawn(async move {
-        info!("[dialog] Load task awaiting picker result...");
+        info!("[dialog] Workspace task awaiting picker result...");
         let result = request
             .await
             .map(|file_handle| file_handle.path().to_path_buf());
         match &result {
-            Some(path) => info!("[dialog] Load task received path: {}", path.display()),
-            None => info!("[dialog] Load task returned: canceled"),
+            Some(path) => info!("[dialog] Workspace task received path: {}", path.display()),
+            None => info!("[dialog] Workspace task returned: canceled"),
         }
         result
     });
 
-    dialogs.begin_pending(PendingDialog::Load(task));
-    info!("[dialog] Load dialog task spawned");
-    state.status_message = "Opening file picker...".to_string();
+    dialogs.begin_pending(PendingDialog::Workspace(task));
+    info!("[dialog] Workspace dialog task spawned");
+    state.status_message = "Opening workspace picker...".to_string();
 }
 
 fn open_save_dialog(
@@ -191,13 +189,13 @@ fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<Di
     let pending_kind = pending.kind_name();
 
     enum DialogResult {
-        Load(Option<PathBuf>),
+        Workspace(Option<PathBuf>),
         Save(Option<PathBuf>),
     }
 
     let finished = match pending {
-        PendingDialog::Load(task) => {
-            future::block_on(future::poll_once(task)).map(DialogResult::Load)
+        PendingDialog::Workspace(task) => {
+            future::block_on(future::poll_once(task)).map(DialogResult::Workspace)
         }
         PendingDialog::Save(task) => {
             future::block_on(future::poll_once(task)).map(DialogResult::Save)
@@ -236,13 +234,13 @@ fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<Di
     dialogs.clear_pending();
 
     match result {
-        DialogResult::Load(Some(path)) => {
-            info!("[dialog] Loading selected path: {}", path.display());
-            state.load_from_path(path);
+        DialogResult::Workspace(Some(path)) => {
+            info!("[dialog] Opening selected workspace path: {}", path.display());
+            state.set_workspace_root(path);
         }
-        DialogResult::Load(None) => {
-            info!("[dialog] Load dialog canceled by user");
-            state.status_message = "Load canceled.".to_string();
+        DialogResult::Workspace(None) => {
+            info!("[dialog] Workspace dialog canceled by user");
+            state.status_message = "Workspace open canceled.".to_string();
         }
         DialogResult::Save(Some(path)) => {
             info!("[dialog] Saving to selected path: {}", path.display());
@@ -257,10 +255,15 @@ fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<Di
 
 fn preferred_dialog_directory(state: &EditorState) -> Option<PathBuf> {
     state
-        .paths
-        .load_path
-        .parent()
-        .map(|path| path.to_path_buf())
+        .workspace_root
+        .clone()
+        .or_else(|| {
+            state
+                .paths
+                .load_path
+                .parent()
+                .map(|path| path.to_path_buf())
+        })
         .or_else(|| {
             state
                 .paths
@@ -269,4 +272,3 @@ fn preferred_dialog_directory(state: &EditorState) -> Option<PathBuf> {
                 .map(|path| path.to_path_buf())
         })
 }
-

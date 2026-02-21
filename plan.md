@@ -30,7 +30,7 @@ Status: done
 
 ## Next Milestones
 
-1. Replace approximate glyph width with real font metrics (E1).
+1. [x] Replace approximate glyph width with real font metrics (E1).
 2. Add explicit parser node styling per line (D3).
 3. Incremental parsing + dirty-line tracking (B3/C2).
 4. Optional file-path input UI and native file picker.

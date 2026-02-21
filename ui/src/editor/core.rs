@@ -1,7 +1,7 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs, io,
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
@@ -75,6 +75,9 @@ const COLOR_PANEL_BODY_PROCESSED: Color = Color::srgb(0.82, 0.83, 0.84);
 const COLOR_PAPER: Color = Color::srgb(1.0, 1.0, 1.0);
 const COLOR_TEXT_MAIN: Color = Color::srgb(0.18, 0.19, 0.20);
 const COLOR_TEXT_MUTED: Color = Color::srgb(0.34, 0.36, 0.39);
+const COLOR_WORKSPACE_FILE: Color = Color::srgb(0.18, 0.19, 0.20);
+const COLOR_WORKSPACE_FILE_HOVER: Color = Color::srgb(0.10, 0.35, 0.62);
+const COLOR_WORKSPACE_FILE_SELECTED: Color = Color::srgb(0.69, 0.28, 0.22);
 
 pub struct UiPlugin;
 
@@ -92,10 +95,23 @@ impl Plugin for UiPlugin {
             .init_state::<UiScreenState>()
             .insert_non_send_resource(DialogMainThreadMarker)
             .add_systems(Startup, (setup, setup_processed_papers.after(setup)))
-            .add_systems(Update, (style_toolbar_buttons, sync_settings_ui))
             .add_systems(
                 Update,
-                handle_toolbar_buttons.run_if(in_state(UiScreenState::Editor)),
+                (
+                    style_toolbar_buttons,
+                    style_workspace_file_entry_text,
+                    sync_settings_ui,
+                    sync_workspace_sidebar,
+                ),
+            )
+            .add_systems(
+                Update,
+                (
+                    handle_toolbar_buttons,
+                    handle_workspace_file_buttons,
+                    handle_workspace_folder_buttons,
+                )
+                    .run_if(in_state(UiScreenState::Editor)),
             )
             .add_systems(
                 Update,
@@ -164,9 +180,25 @@ struct ProcessedPaperLineSpan {
 #[derive(Component)]
 struct StatusText;
 
+#[derive(Component)]
+struct WorkspaceRootLabel;
+
+#[derive(Component)]
+struct WorkspaceFileList;
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct WorkspaceFileButton {
+    index: usize,
+}
+
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+struct WorkspaceFolderToggleButton {
+    folder_key: String,
+}
+
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 enum ToolbarAction {
-    Load,
+    OpenWorkspace,
     SaveAs,
     ZoomOut,
     ZoomIn,
@@ -235,6 +267,11 @@ struct EditorState {
     measured_line_step: f32,
     processed_cache: Option<ProcessedCache>,
     processed_cache_dirty_from_line: Option<usize>,
+    workspace_root: Option<PathBuf>,
+    workspace_files: Vec<WorkspaceFileEntry>,
+    workspace_selected: Option<usize>,
+    workspace_expanded_folders: BTreeSet<String>,
+    workspace_ui_dirty: bool,
     undo_history: Vec<EditorHistorySnapshot>,
     redo_history: Vec<EditorHistorySnapshot>,
 }
@@ -258,7 +295,7 @@ struct DialogState {
 }
 
 enum PendingDialog {
-    Load(Task<Option<PathBuf>>),
+    Workspace(Task<Option<PathBuf>>),
     Save(Task<Option<PathBuf>>),
 }
 
@@ -295,6 +332,12 @@ struct EditorFonts {
     bold_italic: Handle<Font>,
 }
 
+#[derive(Resource, Clone)]
+struct WorkspaceIcons {
+    folder_closed: Handle<Image>,
+    folder_open: Handle<Image>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FontVariant {
     Regular,
@@ -323,7 +366,7 @@ impl DialogState {
 impl PendingDialog {
     fn kind_name(&self) -> &'static str {
         match self {
-            PendingDialog::Load(_) => "load",
+            PendingDialog::Workspace(_) => "workspace",
             PendingDialog::Save(_) => "save",
         }
     }
@@ -369,10 +412,20 @@ impl FromWorld for EditorState {
             measured_line_step: LINE_HEIGHT,
             processed_cache: None,
             processed_cache_dirty_from_line: Some(0),
+            workspace_root: None,
+            workspace_files: Vec::new(),
+            workspace_selected: None,
+            workspace_expanded_folders: BTreeSet::new(),
+            workspace_ui_dirty: true,
             undo_history: Vec::new(),
             redo_history: Vec::new(),
         };
         normalize_page_margins(&mut next);
+        let initial_status = next.status_message.clone();
+        if let Some(workspace_root) = next.paths.load_path.parent().map(|path| path.to_path_buf()) {
+            next.set_workspace_root(workspace_root);
+            next.status_message = initial_status;
+        }
         next
     }
 }
@@ -386,6 +439,63 @@ impl EditorState {
 
     fn zoom_percent(&self) -> u32 {
         (self.zoom * 100.0).round() as u32
+    }
+
+    fn set_workspace_root(&mut self, root: PathBuf) {
+        let normalized_root = root.canonicalize().unwrap_or(root);
+        self.workspace_root = Some(normalized_root.clone());
+
+        match collect_workspace_files(&normalized_root) {
+            Ok(files) => {
+                self.workspace_files = files;
+                self.workspace_expanded_folders =
+                    default_expanded_workspace_folders(&self.workspace_files);
+                self.sync_workspace_selection();
+                self.status_message = format!(
+                    "Opened workspace {} ({} files).",
+                    normalized_root.display(),
+                    self.workspace_files.len()
+                );
+            }
+            Err(error) => {
+                self.workspace_files.clear();
+                self.workspace_selected = None;
+                self.workspace_expanded_folders.clear();
+                self.status_message = format!(
+                    "Workspace scan failed for {}: {error}",
+                    normalized_root.display()
+                );
+            }
+        }
+
+        self.workspace_ui_dirty = true;
+    }
+
+    fn open_workspace_file(&mut self, index: usize) {
+        let Some(entry) = self.workspace_files.get(index) else {
+            self.status_message = "Workspace file selection is out of range.".to_string();
+            return;
+        };
+
+        self.load_from_path(entry.path.clone());
+    }
+
+    fn toggle_workspace_folder(&mut self, folder_key: &str) {
+        if self.workspace_expanded_folders.contains(folder_key) {
+            self.workspace_expanded_folders.remove(folder_key);
+        } else {
+            self.workspace_expanded_folders
+                .insert(folder_key.to_owned());
+        }
+        self.workspace_ui_dirty = true;
+    }
+
+    fn sync_workspace_selection(&mut self) {
+        self.workspace_selected = self
+            .workspace_files
+            .iter()
+            .position(|entry| entry.path == self.paths.load_path);
+        self.workspace_ui_dirty = true;
     }
 
     fn reparse(&mut self) {
@@ -538,6 +648,7 @@ impl EditorState {
                 self.paths.load_path = path.clone();
                 self.paths.save_path = path.clone();
                 self.status_message = format!("Loaded {}", path.display());
+                self.sync_workspace_selection();
                 self.reset_blink();
             }
             Err(error) => {
@@ -667,4 +778,204 @@ struct ProcessedPageLayout {
     lines_per_page: usize,
     spacer_lines: usize,
     page_step_lines: usize,
+}
+
+#[derive(Clone, Debug)]
+struct WorkspaceFileEntry {
+    path: PathBuf,
+    relative_display: String,
+}
+
+#[derive(Clone, Debug)]
+enum WorkspaceSidebarRow {
+    Folder {
+        folder_key: String,
+        folder_name: String,
+        depth: usize,
+        expanded: bool,
+    },
+    File {
+        file_index: usize,
+        file_name: String,
+        depth: usize,
+    },
+}
+
+fn workspace_sidebar_rows(state: &EditorState) -> Vec<WorkspaceSidebarRow> {
+    let mut folders_by_parent = BTreeMap::<String, Vec<(String, String)>>::new();
+    let mut files_by_parent = BTreeMap::<String, Vec<(usize, String)>>::new();
+
+    for (index, file) in state.workspace_files.iter().enumerate() {
+        let parent_key = workspace_parent_key(&file.relative_display);
+        let file_name = workspace_base_name(&file.relative_display);
+        files_by_parent
+            .entry(parent_key)
+            .or_default()
+            .push((index, file_name));
+
+        let components = file.relative_display.split('/').collect::<Vec<_>>();
+        if components.len() <= 1 {
+            continue;
+        }
+
+        let mut parent = String::new();
+        for component in components.iter().take(components.len().saturating_sub(1)) {
+            let folder_key = if parent.is_empty() {
+                (*component).to_owned()
+            } else {
+                format!("{parent}/{component}")
+            };
+
+            let siblings = folders_by_parent.entry(parent.clone()).or_default();
+            if !siblings
+                .iter()
+                .any(|(existing_key, _)| *existing_key == folder_key)
+            {
+                siblings.push((folder_key.clone(), (*component).to_owned()));
+            }
+
+            parent = folder_key;
+        }
+    }
+
+    for folders in folders_by_parent.values_mut() {
+        folders.sort_by(|left, right| left.1.cmp(&right.1));
+    }
+    for files in files_by_parent.values_mut() {
+        files.sort_by(|left, right| left.1.cmp(&right.1));
+    }
+
+    let mut rows = Vec::<WorkspaceSidebarRow>::new();
+    append_workspace_sidebar_rows(
+        "",
+        0,
+        &state.workspace_expanded_folders,
+        &folders_by_parent,
+        &files_by_parent,
+        &mut rows,
+    );
+    rows
+}
+
+fn append_workspace_sidebar_rows(
+    parent_key: &str,
+    depth: usize,
+    expanded_folders: &BTreeSet<String>,
+    folders_by_parent: &BTreeMap<String, Vec<(String, String)>>,
+    files_by_parent: &BTreeMap<String, Vec<(usize, String)>>,
+    out: &mut Vec<WorkspaceSidebarRow>,
+) {
+    if let Some(folders) = folders_by_parent.get(parent_key) {
+        for (folder_key, folder_name) in folders {
+            let expanded = expanded_folders.contains(folder_key);
+            out.push(WorkspaceSidebarRow::Folder {
+                folder_key: folder_key.clone(),
+                folder_name: folder_name.clone(),
+                depth,
+                expanded,
+            });
+            if expanded {
+                append_workspace_sidebar_rows(
+                    folder_key,
+                    depth.saturating_add(1),
+                    expanded_folders,
+                    folders_by_parent,
+                    files_by_parent,
+                    out,
+                );
+            }
+        }
+    }
+
+    if let Some(files) = files_by_parent.get(parent_key) {
+        for (file_index, file_name) in files {
+            out.push(WorkspaceSidebarRow::File {
+                file_index: *file_index,
+                file_name: file_name.clone(),
+                depth,
+            });
+        }
+    }
+}
+
+fn workspace_parent_key(relative_display: &str) -> String {
+    relative_display
+        .rsplit_once('/')
+        .map_or_else(String::new, |(parent, _)| parent.to_owned())
+}
+
+fn workspace_base_name(relative_display: &str) -> String {
+    relative_display
+        .rsplit('/')
+        .next()
+        .map_or_else(String::new, str::to_owned)
+}
+
+fn default_expanded_workspace_folders(files: &[WorkspaceFileEntry]) -> BTreeSet<String> {
+    let mut expanded = BTreeSet::<String>::new();
+    for file in files {
+        let Some((top_level, _)) = file.relative_display.split_once('/') else {
+            continue;
+        };
+        expanded.insert(top_level.to_owned());
+    }
+    expanded
+}
+
+fn collect_workspace_files(root: &Path) -> io::Result<Vec<WorkspaceFileEntry>> {
+    let mut files = Vec::<WorkspaceFileEntry>::new();
+    let mut stack = vec![root.to_path_buf()];
+
+    while let Some(directory) = stack.pop() {
+        for entry in fs::read_dir(&directory)? {
+            let entry = entry?;
+            let path = entry.path();
+            let file_type = entry.file_type()?;
+
+            if file_type.is_dir() {
+                if should_skip_workspace_dir(&path) {
+                    continue;
+                }
+                stack.push(path);
+                continue;
+            }
+
+            if !file_type.is_file() || !is_workspace_file_candidate(&path) {
+                continue;
+            }
+
+            let relative = path
+                .strip_prefix(root)
+                .unwrap_or(path.as_path())
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            files.push(WorkspaceFileEntry {
+                path,
+                relative_display: relative,
+            });
+        }
+    }
+
+    files.sort_by(|left, right| left.relative_display.cmp(&right.relative_display));
+    Ok(files)
+}
+
+fn should_skip_workspace_dir(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+
+    name.starts_with('.') || matches!(name, "target" | "node_modules")
+}
+
+fn is_workspace_file_candidate(path: &Path) -> bool {
+    let extension = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase());
+    matches!(
+        extension.as_deref(),
+        Some("fountain") | Some("txt") | Some("md")
+    )
 }
