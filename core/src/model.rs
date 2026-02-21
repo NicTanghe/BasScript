@@ -28,6 +28,19 @@ pub enum LineKind {
     Dialogue,
     Parenthetical,
     Transition,
+    MarkdownHeading,
+    MarkdownListItem,
+    MarkdownQuote,
+    MarkdownCodeFence,
+    MarkdownCode,
+    MarkdownRule,
+    MarkdownParagraph,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DocumentFormat {
+    Fountain,
+    Markdown,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -60,6 +73,13 @@ impl ParsedLine {
             LineKind::Dialogue => 12,
             LineKind::Parenthetical => 18,
             LineKind::Transition => 40,
+            LineKind::MarkdownHeading => 0,
+            LineKind::MarkdownListItem => 0,
+            LineKind::MarkdownQuote => 0,
+            LineKind::MarkdownCodeFence => 0,
+            LineKind::MarkdownCode => 0,
+            LineKind::MarkdownRule => 0,
+            LineKind::MarkdownParagraph => 0,
             LineKind::Empty => 0,
         }
     }
@@ -76,6 +96,20 @@ impl DocumentPath {
         Self {
             load_path: load_path.as_ref().to_path_buf(),
             save_path: save_path.as_ref().to_path_buf(),
+        }
+    }
+}
+
+impl DocumentFormat {
+    pub fn from_path(path: impl AsRef<Path>) -> Self {
+        let extension = path
+            .as_ref()
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase());
+        match extension.as_deref() {
+            Some("md") | Some("markdown") => Self::Markdown,
+            _ => Self::Fountain,
         }
     }
 }

@@ -222,16 +222,18 @@ fn build_processed_segment_lines(
             parsed_line.kind,
             LineKind::SceneHeading | LineKind::Transition | LineKind::Character
         );
+        let (raw_column_base, rendered_raw, checklist_state) = markdown_visual_text(parsed_line)
+            .unwrap_or_else(|| (0, parsed_line.raw.clone(), None));
         let mut wrapped = Vec::<ProcessedVisualLine>::new();
 
         if should_split_on_double_space(state, &parsed_line.kind) {
-            for (raw_start_column, raw_segment) in double_space_segments(&parsed_line.raw) {
+            for (raw_start_column, raw_segment) in double_space_segments(&rendered_raw) {
                 push_wrapped_visual_lines(
                     &mut wrapped,
                     source_line,
                     indent_width,
                     uppercase,
-                    raw_start_column,
+                    raw_column_base.saturating_add(raw_start_column),
                     &raw_segment,
                     wrap_columns,
                 );
@@ -242,10 +244,16 @@ fn build_processed_segment_lines(
                 source_line,
                 indent_width,
                 uppercase,
-                0,
-                &parsed_line.raw,
+                raw_column_base,
+                &rendered_raw,
                 wrap_columns,
             );
+        }
+
+        if let Some(checked) = checklist_state {
+            if let Some(first_wrapped) = wrapped.first_mut() {
+                first_wrapped.markdown_checklist_checked = Some(checked);
+            }
         }
 
         for visual_line in wrapped {
@@ -435,6 +443,7 @@ fn push_wrapped_visual_lines(
             text: " ".repeat(blank_columns),
             raw_start_column,
             raw_end_column: raw_start_column,
+            markdown_checklist_checked: None,
             is_spacer: false,
         });
         return;
@@ -466,6 +475,7 @@ fn push_wrapped_visual_lines(
             text: format!("{}{}", " ".repeat(indent_width), display_chunk),
             raw_start_column: raw_start_column.saturating_add(start),
             raw_end_column: raw_start_column.saturating_add(split),
+            markdown_checklist_checked: None,
             is_spacer: false,
         });
 
@@ -484,6 +494,7 @@ fn push_page_spacers(out: &mut Vec<ProcessedVisualLine>, source_line: usize, cou
             text: " ".to_owned(),
             raw_start_column: 0,
             raw_end_column: 0,
+            markdown_checklist_checked: None,
             is_spacer: true,
         });
     }
@@ -495,10 +506,180 @@ fn is_fountain_page_break_marker(raw: &str) -> bool {
 }
 
 fn should_split_on_double_space(state: &EditorState, kind: &LineKind) -> bool {
+    if matches!(
+        kind,
+        LineKind::MarkdownHeading
+            | LineKind::MarkdownListItem
+            | LineKind::MarkdownQuote
+            | LineKind::MarkdownCodeFence
+            | LineKind::MarkdownCode
+            | LineKind::MarkdownRule
+            | LineKind::MarkdownParagraph
+    ) {
+        return false;
+    }
+
     match kind {
         LineKind::Dialogue => state.dialogue_double_space_newline,
         _ => state.non_dialogue_double_space_newline,
     }
+}
+
+fn markdown_visual_text(parsed_line: &ParsedLine) -> Option<(usize, String, Option<bool>)> {
+    match parsed_line.kind {
+        LineKind::MarkdownHeading => {
+            let (consumed, rendered) = markdown_heading_visual(&parsed_line.raw);
+            Some((consumed, rendered, None))
+        }
+        LineKind::MarkdownListItem => Some(markdown_list_item_visual(&parsed_line.raw)),
+        LineKind::MarkdownQuote => {
+            let (consumed, rendered) = markdown_quote_visual(&parsed_line.raw);
+            Some((consumed, rendered, None))
+        }
+        LineKind::MarkdownRule => Some((0, "────────────────────────".to_string(), None)),
+        LineKind::MarkdownCodeFence => Some((0, "```".to_string(), None)),
+        _ => None,
+    }
+}
+
+fn markdown_heading_visual(raw: &str) -> (usize, String) {
+    let leading = leading_markdown_whitespace(raw);
+    let trimmed = raw.chars().skip(leading).collect::<Vec<_>>();
+    let mut hashes = 0usize;
+    while trimmed.get(hashes).is_some_and(|ch| *ch == '#') {
+        hashes += 1;
+    }
+
+    let mut consumed = hashes;
+    if trimmed.get(consumed).is_some_and(|ch| *ch == ' ') {
+        consumed += 1;
+    }
+
+    let text = trimmed[consumed..].iter().collect::<String>();
+    (leading.saturating_add(consumed), text)
+}
+
+fn markdown_quote_visual(raw: &str) -> (usize, String) {
+    let leading = leading_markdown_whitespace(raw);
+    let trimmed = raw.chars().skip(leading).collect::<Vec<_>>();
+    let mut consumed = 0usize;
+    while trimmed.get(consumed).is_some_and(|ch| *ch == '>') {
+        consumed += 1;
+        if trimmed.get(consumed).is_some_and(|ch| *ch == ' ') {
+            consumed += 1;
+        }
+    }
+    let text = trimmed[consumed..].iter().collect::<String>();
+    (leading.saturating_add(consumed), text)
+}
+
+fn markdown_list_item_visual(raw: &str) -> (usize, String, Option<bool>) {
+    let leading = leading_markdown_whitespace(raw);
+    let trimmed = raw.chars().skip(leading).collect::<Vec<_>>();
+    if trimmed.is_empty() {
+        return (leading, String::new(), None);
+    }
+
+    if let Some(marker_end) = unordered_list_content_start(&trimmed) {
+        if let Some((consumed, checked, content_start)) =
+            markdown_checklist_marker(&trimmed, marker_end)
+        {
+            let text = trimmed[content_start..].iter().collect::<String>();
+            return (leading.saturating_add(consumed), text, Some(checked));
+        }
+
+        let text = trimmed[marker_end..].iter().collect::<String>();
+        return (leading.saturating_add(marker_end), format!("• {text}"), None);
+    }
+
+    if let Some((prefix, content_start)) = ordered_list_content_start(&trimmed) {
+        if let Some((consumed, checked, checklist_content_start)) =
+            markdown_checklist_marker(&trimmed, content_start)
+        {
+            let text = trimmed[checklist_content_start..].iter().collect::<String>();
+            return (
+                leading.saturating_add(consumed),
+                format!("{prefix} {text}"),
+                Some(checked),
+            );
+        }
+
+        let text = trimmed[content_start..].iter().collect::<String>();
+        return (
+            leading.saturating_add(content_start),
+            format!("{prefix} {text}"),
+            None,
+        );
+    }
+
+    (0, raw.to_string(), None)
+}
+
+fn markdown_checklist_marker(
+    chars: &[char],
+    start: usize,
+) -> Option<(usize, bool, usize)> {
+    let checked_char = *chars.get(start + 1)?;
+    let checked = matches!(checked_char, 'x' | 'X');
+    if chars.get(start).is_some_and(|ch| *ch == '[')
+        && matches!(checked_char, 'x' | 'X' | ' ')
+        && chars.get(start + 2).is_some_and(|ch| *ch == ']')
+    {
+        let mut content_start = start + 3;
+        if chars.get(content_start).is_some_and(|ch| *ch == ' ') {
+            content_start += 1;
+        }
+        return Some((content_start, checked, content_start));
+    }
+
+    None
+}
+
+fn leading_markdown_whitespace(raw: &str) -> usize {
+    raw.chars()
+        .take_while(|ch| matches!(*ch, ' ' | '\t'))
+        .count()
+}
+
+fn unordered_list_content_start(chars: &[char]) -> Option<usize> {
+    if chars.is_empty() || !matches!(chars[0], '-' | '*' | '+') {
+        return None;
+    }
+
+    let mut index = 1usize;
+    let mut saw_whitespace = false;
+    while chars.get(index).is_some_and(|ch| ch.is_whitespace()) {
+        saw_whitespace = true;
+        index += 1;
+    }
+
+    saw_whitespace.then_some(index)
+}
+
+fn ordered_list_content_start(chars: &[char]) -> Option<(String, usize)> {
+    let mut digits = 0usize;
+    while chars.get(digits).is_some_and(|ch| ch.is_ascii_digit()) {
+        digits += 1;
+    }
+    if digits == 0 || chars.get(digits) != Some(&'.') {
+        return None;
+    }
+
+    let mut content_start = digits + 1;
+    let mut saw_whitespace = false;
+    while chars
+        .get(content_start)
+        .is_some_and(|ch| ch.is_whitespace())
+    {
+        saw_whitespace = true;
+        content_start += 1;
+    }
+    if !saw_whitespace {
+        return None;
+    }
+
+    let prefix = chars[..=digits].iter().collect::<String>();
+    Some((prefix, content_start))
 }
 
 fn first_visual_anchor_index_for_source_line(
@@ -729,41 +910,66 @@ fn apply_processed_styles(
         text_font.font_size = font_size;
         *text_line_height = LineHeight::Px(line_height);
         if visual_line.is_spacer {
-            text_font.font = fonts.regular.clone();
+            text_font.font =
+                font_for_variant_with_format(fonts, FontVariant::Regular, state.document_format);
             text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
             continue;
         }
 
         let Some(parsed_line) = state.parsed.get(visual_line.source_line) else {
-            text_font.font = fonts.regular.clone();
+            text_font.font =
+                font_for_variant_with_format(fonts, FontVariant::Regular, state.document_format);
             text_color.0 = COLOR_ACTION;
             continue;
         };
 
-        let (font_variant, color) = style_for_line_kind(&parsed_line.kind);
-        text_font.font = font_for_variant(fonts, font_variant);
+        let (font_variant, color, font_scale, line_height_scale) =
+            style_for_line_kind(&parsed_line.kind);
+        text_font.font = font_for_variant_with_format(fonts, font_variant, state.document_format);
+        text_font.font_size = font_size * font_scale;
+        *text_line_height = LineHeight::Px(line_height * line_height_scale);
         text_color.0 = color;
     }
 }
 
-fn style_for_line_kind(kind: &LineKind) -> (FontVariant, Color) {
+fn style_for_line_kind(kind: &LineKind) -> (FontVariant, Color, f32, f32) {
     match kind {
-        LineKind::SceneHeading => (FontVariant::Bold, COLOR_SCENE),
-        LineKind::Action => (FontVariant::Regular, COLOR_ACTION),
-        LineKind::Character => (FontVariant::Bold, COLOR_CHARACTER),
-        LineKind::Dialogue => (FontVariant::Regular, COLOR_DIALOGUE),
-        LineKind::Parenthetical => (FontVariant::Italic, COLOR_PARENTHETICAL),
-        LineKind::Transition => (FontVariant::BoldItalic, COLOR_TRANSITION),
-        LineKind::Empty => (FontVariant::Regular, COLOR_ACTION),
+        LineKind::SceneHeading => (FontVariant::Bold, COLOR_SCENE, 1.0, 1.0),
+        LineKind::Action => (FontVariant::Regular, COLOR_ACTION, 1.0, 1.0),
+        LineKind::Character => (FontVariant::Bold, COLOR_CHARACTER, 1.0, 1.0),
+        LineKind::Dialogue => (FontVariant::Regular, COLOR_DIALOGUE, 1.0, 1.0),
+        LineKind::Parenthetical => (FontVariant::Italic, COLOR_PARENTHETICAL, 1.0, 1.0),
+        LineKind::Transition => (FontVariant::BoldItalic, COLOR_TRANSITION, 1.0, 1.0),
+        // Markdown headings render visibly stronger than body content.
+        LineKind::MarkdownHeading => (FontVariant::Bold, COLOR_MARKDOWN_HEADING, 1.35, 1.25),
+        LineKind::MarkdownListItem => (FontVariant::Regular, COLOR_MARKDOWN_LIST, 1.0, 1.0),
+        LineKind::MarkdownQuote => (FontVariant::Italic, COLOR_MARKDOWN_QUOTE, 1.0, 1.0),
+        LineKind::MarkdownCodeFence => (FontVariant::Bold, COLOR_MARKDOWN_CODE, 1.0, 1.0),
+        LineKind::MarkdownCode => (FontVariant::Regular, COLOR_MARKDOWN_CODE, 1.0, 1.0),
+        LineKind::MarkdownRule => (FontVariant::Bold, COLOR_MARKDOWN_RULE, 1.0, 1.0),
+        LineKind::MarkdownParagraph => (FontVariant::Regular, COLOR_ACTION, 1.0, 1.0),
+        LineKind::Empty => (FontVariant::Regular, COLOR_ACTION, 1.0, 1.0),
     }
 }
 
-fn font_for_variant(fonts: &EditorFonts, variant: FontVariant) -> Handle<Font> {
-    match variant {
-        FontVariant::Regular => fonts.regular.clone(),
-        FontVariant::Bold => fonts.bold.clone(),
-        FontVariant::Italic => fonts.italic.clone(),
-        FontVariant::BoldItalic => fonts.bold_italic.clone(),
+fn font_for_variant_with_format(
+    fonts: &EditorFonts,
+    variant: FontVariant,
+    format: DocumentFormat,
+) -> Handle<Font> {
+    match format {
+        DocumentFormat::Markdown => match variant {
+            FontVariant::Regular => fonts.markdown_regular.clone(),
+            FontVariant::Bold => fonts.markdown_bold.clone(),
+            FontVariant::Italic => fonts.markdown_italic.clone(),
+            FontVariant::BoldItalic => fonts.markdown_bold_italic.clone(),
+        },
+        DocumentFormat::Fountain => match variant {
+            FontVariant::Regular => fonts.regular.clone(),
+            FontVariant::Bold => fonts.bold.clone(),
+            FontVariant::Italic => fonts.italic.clone(),
+            FontVariant::BoldItalic => fonts.bold_italic.clone(),
+        },
     }
 }
 

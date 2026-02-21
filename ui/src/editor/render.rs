@@ -23,6 +23,7 @@ fn render_editor(
             Without<PanelCanvas>,
             Without<ProcessedPaperText>,
             Without<ProcessedPaperLineSpan>,
+            Without<ProcessedChecklistIcon>,
         ),
     >,
     mut processed_paper_text_query: Query<
@@ -32,6 +33,18 @@ fn render_editor(
             Without<PanelPaper>,
             Without<PanelCaret>,
             Without<PanelCanvas>,
+            Without<ProcessedChecklistIcon>,
+        ),
+    >,
+    mut processed_checklist_icon_query: Query<
+        (&ProcessedChecklistIcon, &mut ImageNode, &mut Node, &mut Visibility),
+        (
+            Without<PanelText>,
+            Without<PanelPaper>,
+            Without<PanelCaret>,
+            Without<PanelCanvas>,
+            Without<ProcessedPaperText>,
+            Without<ProcessedPaperLineSpan>,
         ),
     >,
     mut processed_span_query: Query<
@@ -55,6 +68,7 @@ fn render_editor(
             Without<PanelText>,
             Without<PanelPaper>,
             Without<PanelCanvas>,
+            Without<ProcessedChecklistIcon>,
         ),
     >,
     mut paper_query: Query<
@@ -69,10 +83,12 @@ fn render_editor(
             Without<PanelText>,
             Without<PanelCaret>,
             Without<PanelCanvas>,
+            Without<ProcessedChecklistIcon>,
         ),
     >,
     mut status_query: Query<&mut Text, (With<StatusText>, Without<PanelText>, Without<PanelCaret>)>,
     fonts: Res<EditorFonts>,
+    checklist_icons: Res<ChecklistIcons>,
     mut state: ResMut<EditorState>,
 ) {
     let plain_font_size = scaled_font_size(&state);
@@ -181,6 +197,57 @@ fn render_editor(
         transform.translation = Val2::ZERO;
     }
 
+    let text_left_in_paper = processed_geometry.text_left - processed_geometry.paper_left;
+    let text_top_in_paper = processed_geometry.text_top - processed_geometry.paper_top;
+    let checklist_icon_size = (processed_line_height * 0.72).clamp(8.0, 16.0);
+    let checklist_icon_gap = (processed_line_height * 0.20).clamp(2.0, 4.0);
+
+    for (icon, mut image_node, mut node, mut visibility) in processed_checklist_icon_query.iter_mut()
+    {
+        if icon.slot >= PROCESSED_PAPER_CAPACITY {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+
+        let page_index = first_visible_page.saturating_add(icon.slot);
+        let line_offset = icon.line_offset.min(processed_page_step_lines.saturating_sub(1));
+        if line_offset >= processed_lines_per_page {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+
+        let page_start = page_index.saturating_mul(processed_page_step_lines);
+        let global_index = page_start.saturating_add(line_offset);
+        let Some(visual_line) = processed_all_lines.get(global_index) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        let Some(checked) = visual_line.markdown_checklist_checked else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        if visual_line.is_spacer {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+
+        image_node.image = if checked {
+            checklist_icons.checked.clone()
+        } else {
+            checklist_icons.unchecked.clone()
+        };
+        node.left = px((text_left_in_paper - checklist_icon_size - checklist_icon_gap).max(0.0));
+        node.top = px(
+            text_top_in_paper
+                + line_offset as f32 * processed_line_height
+                + ((processed_line_height - checklist_icon_size) * 0.5).max(0.0),
+        );
+        node.width = px(checklist_icon_size);
+        node.height = px(checklist_icon_size);
+        *visibility = Visibility::Visible;
+    }
+
     let plain_view = plain_lines.join("\n");
 
     for (panel_text, mut text, mut text_font, mut line_height_comp, mut node, mut transform) in
@@ -188,6 +255,11 @@ fn render_editor(
     {
         match panel_text.kind {
             PanelKind::Plain => {
+                text_font.font = font_for_variant_with_format(
+                    &fonts,
+                    FontVariant::Regular,
+                    state.document_format,
+                );
                 text_font.font_size = plain_font_size;
                 *line_height_comp = LineHeight::Px(plain_line_height);
                 **text = plain_view.clone();
@@ -510,6 +582,7 @@ struct ProcessedVisualLine {
     text: String,
     raw_start_column: usize,
     raw_end_column: usize,
+    markdown_checklist_checked: Option<bool>,
     is_spacer: bool,
 }
 

@@ -6,7 +6,8 @@ use std::{
 };
 
 use basscript_core::{
-    Cursor, Document, DocumentPath, LineKind, ParsedLine, Position, parse_document,
+    Cursor, Document, DocumentFormat, DocumentPath, LineKind, ParsedLine, Position,
+    parse_document_with_format,
 };
 use bevy::{
     input::{
@@ -26,6 +27,10 @@ const FONT_PATH: &str = "fonts/Courier Prime/Courier Prime.ttf";
 const FONT_BOLD_PATH: &str = "fonts/Courier Prime/Courier Prime Bold.ttf";
 const FONT_ITALIC_PATH: &str = "fonts/Courier Prime/Courier Prime Italic.ttf";
 const FONT_BOLD_ITALIC_PATH: &str = "fonts/Courier Prime/Courier Prime Bold Italic.ttf";
+const FONT_MARKDOWN_PATH: &str = "fonts/SegoeUIVF.ttf";
+const FONT_MARKDOWN_BOLD_PATH: &str = "fonts/SegoeUIVF.ttf";
+const FONT_MARKDOWN_ITALIC_PATH: &str = "fonts/SegoeUIVF.ttf";
+const FONT_MARKDOWN_BOLD_ITALIC_PATH: &str = "fonts/SegoeUIVF.ttf";
 const DEFAULT_LOAD_PATH: &str = "docs/humanDOC.md";
 const DEFAULT_SAVE_PATH: &str = "scripts/session.fountain";
 const SETTINGS_PATH: &str = "scripts/settings.toml";
@@ -68,6 +73,11 @@ const COLOR_CHARACTER: Color = Color::srgb(0.20, 0.16, 0.12);
 const COLOR_DIALOGUE: Color = Color::srgb(0.11, 0.12, 0.13);
 const COLOR_PARENTHETICAL: Color = Color::srgb(0.24, 0.28, 0.32);
 const COLOR_TRANSITION: Color = Color::srgb(0.15, 0.23, 0.31);
+const COLOR_MARKDOWN_HEADING: Color = Color::srgb(0.18, 0.24, 0.40);
+const COLOR_MARKDOWN_LIST: Color = Color::srgb(0.16, 0.22, 0.31);
+const COLOR_MARKDOWN_QUOTE: Color = Color::srgb(0.22, 0.29, 0.26);
+const COLOR_MARKDOWN_CODE: Color = Color::srgb(0.29, 0.17, 0.18);
+const COLOR_MARKDOWN_RULE: Color = Color::srgb(0.35, 0.35, 0.38);
 const COLOR_APP_BG: Color = Color::srgb(0.79, 0.80, 0.82);
 const COLOR_PANEL_BG: Color = Color::srgb(0.89, 0.90, 0.91);
 const COLOR_PANEL_BODY_PLAIN: Color = Color::srgb(0.96, 0.96, 0.97);
@@ -177,6 +187,12 @@ struct ProcessedPaperLineSpan {
     line_offset: usize,
 }
 
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct ProcessedChecklistIcon {
+    slot: usize,
+    line_offset: usize,
+}
+
 #[derive(Component)]
 struct StatusText;
 
@@ -248,6 +264,7 @@ struct SettingMarginLabel {
 struct EditorState {
     document: Document,
     parsed: Vec<ParsedLine>,
+    document_format: DocumentFormat,
     cursor: Cursor,
     top_line: usize,
     plain_horizontal_scroll: f32,
@@ -330,12 +347,22 @@ struct EditorFonts {
     bold: Handle<Font>,
     italic: Handle<Font>,
     bold_italic: Handle<Font>,
+    markdown_regular: Handle<Font>,
+    markdown_bold: Handle<Font>,
+    markdown_italic: Handle<Font>,
+    markdown_bold_italic: Handle<Font>,
 }
 
 #[derive(Resource, Clone)]
 struct WorkspaceIcons {
     folder_closed: Handle<Image>,
     folder_open: Handle<Image>,
+}
+
+#[derive(Resource, Clone)]
+struct ChecklistIcons {
+    unchecked: Handle<Image>,
+    checked: Handle<Image>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -376,23 +403,39 @@ impl FromWorld for EditorState {
     fn from_world(_world: &mut World) -> Self {
         let paths = DocumentPath::new(DEFAULT_LOAD_PATH, DEFAULT_SAVE_PATH);
         let settings = load_persistent_settings();
-
-        let (document, status_message) = match Document::load(&paths.load_path) {
-            Ok(doc) => (doc, format!("Loaded {}", paths.load_path.display())),
-            Err(error) => (
-                Document::new(),
-                format!(
-                    "Could not load {} ({error}). Started empty document.",
-                    paths.load_path.display()
-                ),
-            ),
+        let (document, document_format, status_message) = match Document::load(&paths.load_path) {
+            Ok(doc) => {
+                let format = detect_document_format(&paths.load_path, &doc);
+                (
+                    doc,
+                    format,
+                    format!(
+                        "Loaded {} ({}).",
+                        paths.load_path.display(),
+                        document_format_label(format)
+                    ),
+                )
+            }
+            Err(error) => {
+                let doc = Document::new();
+                let format = detect_document_format(&paths.load_path, &doc);
+                (
+                    doc,
+                    format,
+                    format!(
+                        "Could not load {} ({error}). Started empty document.",
+                        paths.load_path.display()
+                    ),
+                )
+            }
         };
 
-        let parsed = parse_document(&document);
+        let parsed = parse_document_with_format(&document, document_format);
 
         let mut next = Self {
             document,
             parsed,
+            document_format,
             cursor: Cursor::default(),
             top_line: 0,
             plain_horizontal_scroll: 0.0,
@@ -499,12 +542,12 @@ impl EditorState {
     }
 
     fn reparse(&mut self) {
-        self.parsed = parse_document(&self.document);
+        self.parsed = parse_document_with_format(&self.document, self.document_format);
         self.mark_processed_cache_dirty_from(0);
     }
 
     fn reparse_with_dirty_hint(&mut self, dirty_line: usize) {
-        self.parsed = parse_document(&self.document);
+        self.parsed = parse_document_with_format(&self.document, self.document_format);
         self.mark_processed_cache_dirty_from(dirty_line);
     }
 
@@ -523,8 +566,9 @@ impl EditorState {
 
     fn visible_status(&self) -> String {
         format!(
-            "{} | line {}, col {} | load: {} | save: {}",
+            "{} | format: {} | line {}, col {} | load: {} | save: {}",
             self.status_message,
+            document_format_label(self.document_format),
             self.cursor.position.line + 1,
             self.cursor.position.column + 1,
             self.paths.load_path.display(),
@@ -637,7 +681,9 @@ impl EditorState {
     fn load_from_path(&mut self, path: PathBuf) {
         match Document::load(&path) {
             Ok(document) => {
+                let document_format = detect_document_format(&path, &document);
                 self.document = document;
+                self.document_format = document_format;
                 self.reparse();
                 self.cursor = Cursor::default();
                 self.top_line = 0;
@@ -647,7 +693,11 @@ impl EditorState {
                 self.clear_history();
                 self.paths.load_path = path.clone();
                 self.paths.save_path = path.clone();
-                self.status_message = format!("Loaded {}", path.display());
+                self.status_message = format!(
+                    "Loaded {} ({}).",
+                    path.display(),
+                    document_format_label(self.document_format)
+                );
                 self.sync_workspace_selection();
                 self.reset_blink();
             }
@@ -691,7 +741,7 @@ impl EditorState {
         processed_panel_size: Option<Vec2>,
     ) {
         self.document = snapshot.document;
-        self.parsed = parse_document(&self.document);
+        self.parsed = parse_document_with_format(&self.document, self.document_format);
         self.processed_cache = None;
         self.processed_cache_dirty_from_line = Some(0);
 
@@ -922,6 +972,142 @@ fn default_expanded_workspace_folders(files: &[WorkspaceFileEntry]) -> BTreeSet<
     expanded
 }
 
+fn document_format_label(format: DocumentFormat) -> &'static str {
+    match format {
+        DocumentFormat::Fountain => "Fountain",
+        DocumentFormat::Markdown => "Markdown",
+    }
+}
+
+fn detect_document_format(path: &Path, document: &Document) -> DocumentFormat {
+    let path_format = DocumentFormat::from_path(path);
+    if path_format == DocumentFormat::Markdown {
+        return DocumentFormat::Markdown;
+    }
+
+    let extension = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase());
+    if matches!(extension.as_deref(), Some("fountain")) {
+        return DocumentFormat::Fountain;
+    }
+
+    if looks_like_markdown_document(document) {
+        DocumentFormat::Markdown
+    } else {
+        path_format
+    }
+}
+
+fn looks_like_markdown_document(document: &Document) -> bool {
+    let mut markdown_hits = 0usize;
+    let mut fountain_hits = 0usize;
+
+    for line in document.lines().iter().take(300) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if is_markdown_hint(trimmed) {
+            markdown_hits += 1;
+        }
+        if is_fountain_hint(trimmed) {
+            fountain_hits += 1;
+        }
+
+        if markdown_hits >= 3 && markdown_hits >= fountain_hits.saturating_add(1) {
+            return true;
+        }
+    }
+
+    markdown_hits >= 2 && markdown_hits > fountain_hits
+}
+
+fn is_markdown_hint(trimmed: &str) -> bool {
+    if trimmed.starts_with('#')
+        || trimmed.starts_with('>')
+        || trimmed.starts_with("```")
+        || trimmed.starts_with("~~~")
+        || trimmed.starts_with('|')
+    {
+        return true;
+    }
+
+    if is_markdown_bullet_hint(trimmed) || is_markdown_ordered_list_hint(trimmed) {
+        return true;
+    }
+
+    let compact = trimmed.replace([' ', '\t'], "");
+    let compact_bytes = compact.as_bytes();
+    compact_bytes.len() >= 3
+        && (compact_bytes.iter().all(|byte| *byte == b'-')
+            || compact_bytes.iter().all(|byte| *byte == b'*')
+            || compact_bytes.iter().all(|byte| *byte == b'_'))
+}
+
+fn is_markdown_bullet_hint(trimmed: &str) -> bool {
+    let mut chars = trimmed.chars();
+    let Some(marker) = chars.next() else {
+        return false;
+    };
+    if !matches!(marker, '-' | '*' | '+') {
+        return false;
+    }
+    chars.next().is_some_and(char::is_whitespace)
+}
+
+fn is_markdown_ordered_list_hint(trimmed: &str) -> bool {
+    let mut digits = 0usize;
+    for ch in trimmed.chars() {
+        if ch.is_ascii_digit() {
+            digits += 1;
+        } else {
+            break;
+        }
+    }
+    if digits == 0 {
+        return false;
+    }
+
+    let mut chars = trimmed.chars().skip(digits);
+    if chars.next() != Some('.') {
+        return false;
+    }
+    chars.next().is_some_and(char::is_whitespace)
+}
+
+fn is_fountain_hint(trimmed: &str) -> bool {
+    let upper = trimmed.to_ascii_uppercase();
+    let is_scene_heading = ["INT.", "EXT.", "EST.", "INT/EXT.", "I/E."]
+        .iter()
+        .any(|prefix| upper.starts_with(prefix));
+    if is_scene_heading {
+        return true;
+    }
+
+    if upper.ends_with(" TO:")
+        || upper == "CUT TO:"
+        || upper == "FADE OUT."
+        || upper == "FADE TO BLACK."
+    {
+        return true;
+    }
+
+    if trimmed.chars().count() > 32 {
+        return false;
+    }
+    let words = trimmed.split_whitespace().count();
+    if words == 0 || words > 4 || trimmed.ends_with(':') {
+        return false;
+    }
+
+    trimmed
+        .chars()
+        .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || " .()'-".contains(ch))
+}
+
 fn collect_workspace_files(root: &Path) -> io::Result<Vec<WorkspaceFileEntry>> {
     let mut files = Vec::<WorkspaceFileEntry>::new();
     let mut stack = vec![root.to_path_buf()];
@@ -976,6 +1162,6 @@ fn is_workspace_file_candidate(path: &Path) -> bool {
         .map(|ext| ext.to_ascii_lowercase());
     matches!(
         extension.as_deref(),
-        Some("fountain") | Some("txt") | Some("md")
+        Some("fountain") | Some("txt") | Some("md") | Some("markdown")
     )
 }

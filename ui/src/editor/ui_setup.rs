@@ -10,6 +10,26 @@ fn setup(
         bold: asset_server.load(FONT_BOLD_PATH),
         italic: asset_server.load(FONT_ITALIC_PATH),
         bold_italic: asset_server.load(FONT_BOLD_ITALIC_PATH),
+        markdown_regular: load_font_with_fallback(
+            &asset_server,
+            FONT_MARKDOWN_PATH,
+            FONT_ITALIC_PATH,
+        ),
+        markdown_bold: load_font_with_fallback(
+            &asset_server,
+            FONT_MARKDOWN_BOLD_PATH,
+            FONT_BOLD_ITALIC_PATH,
+        ),
+        markdown_italic: load_font_with_fallback(
+            &asset_server,
+            FONT_MARKDOWN_ITALIC_PATH,
+            FONT_ITALIC_PATH,
+        ),
+        markdown_bold_italic: load_font_with_fallback(
+            &asset_server,
+            FONT_MARKDOWN_BOLD_ITALIC_PATH,
+            FONT_BOLD_ITALIC_PATH,
+        ),
     };
     let workspace_icons = WorkspaceIcons {
         folder_closed: load_workspace_icon_image(
@@ -19,9 +39,22 @@ fn setup(
         ),
         folder_open: load_workspace_icon_image(&mut images, "assets/icons/folder-open.svg", 16),
     };
+    let checklist_icons = ChecklistIcons {
+        unchecked: load_workspace_icon_image(
+            &mut images,
+            "assets/icons/checklist-unchecked.svg",
+            16,
+        ),
+        checked: load_workspace_icon_image(
+            &mut images,
+            "assets/icons/checklist-checked.svg",
+            16,
+        ),
+    };
     let font = fonts.regular.clone();
     commands.insert_resource(fonts);
     commands.insert_resource(workspace_icons);
+    commands.insert_resource(checklist_icons);
 
     commands
         .spawn((
@@ -238,6 +271,22 @@ fn load_workspace_icon_image(
     }
 }
 
+fn load_font_with_fallback(
+    asset_server: &AssetServer,
+    preferred_path: &str,
+    fallback_path: &str,
+) -> Handle<Font> {
+    if resolve_workspace_asset_path(preferred_path).is_some() {
+        return asset_server.load(preferred_path.to_owned());
+    }
+
+    warn!(
+        "Preferred font {} not found. Falling back to {}.",
+        preferred_path, fallback_path
+    );
+    asset_server.load(fallback_path.to_owned())
+}
+
 fn rasterize_svg_to_image(
     images: &mut Assets<Image>,
     icon_path: &str,
@@ -303,8 +352,10 @@ fn setup_processed_papers(
     paper_query: Query<(Entity, &PanelPaper)>,
     text_query: Query<(Entity, &PanelText)>,
     fonts: Res<EditorFonts>,
+    checklist_icons: Res<ChecklistIcons>,
 ) {
     let regular_font = fonts.regular.clone();
+    let unchecked_icon = checklist_icons.unchecked.clone();
     let span_capacity = processed_page_step_lines().max(1);
 
     for (entity, panel_canvas) in canvas_query.iter() {
@@ -313,9 +364,11 @@ fn setup_processed_papers(
         }
 
         let regular_font = regular_font.clone();
+        let unchecked_icon = unchecked_icon.clone();
         commands.entity(entity).with_children(|parent| {
             for slot in 1..PROCESSED_PAPER_CAPACITY {
                 let slot_font = regular_font.clone();
+                let slot_unchecked_icon = unchecked_icon.clone();
                 parent
                     .spawn((
                         Node {
@@ -378,6 +431,23 @@ fn setup_processed_papers(
                                     ));
                                 }
                             });
+
+                        for line_offset in 0..span_capacity {
+                            paper.spawn((
+                                ImageNode::new(slot_unchecked_icon.clone()),
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: px(PAGE_TEXT_MARGIN_LEFT),
+                                    top: px(PAGE_TEXT_MARGIN_TOP + line_offset as f32 * LINE_HEIGHT),
+                                    width: px(10.0),
+                                    height: px(10.0),
+                                    ..default()
+                                },
+                                Visibility::Hidden,
+                                ZIndex(3),
+                                ProcessedChecklistIcon { slot, line_offset },
+                            ));
+                        }
                     });
             }
         });
@@ -390,6 +460,7 @@ fn setup_processed_papers(
 
         let slot = panel_paper.slot;
         let regular_font = regular_font.clone();
+        let unchecked_icon = unchecked_icon.clone();
         commands.entity(entity).with_children(|paper| {
             paper
                 .spawn((
@@ -434,8 +505,25 @@ fn setup_processed_papers(
                             TextColor(COLOR_ACTION),
                             ProcessedPaperLineSpan { slot, line_offset },
                         ));
-                    }
-                });
+                        }
+                    });
+
+            for line_offset in 0..span_capacity {
+                paper.spawn((
+                    ImageNode::new(unchecked_icon.clone()),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(PAGE_TEXT_MARGIN_LEFT),
+                        top: px(PAGE_TEXT_MARGIN_TOP + line_offset as f32 * LINE_HEIGHT),
+                        width: px(10.0),
+                        height: px(10.0),
+                        ..default()
+                    },
+                    Visibility::Hidden,
+                    ZIndex(3),
+                    ProcessedChecklistIcon { slot, line_offset },
+                ));
+            }
         });
     }
 
