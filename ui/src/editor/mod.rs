@@ -1,5 +1,7 @@
 // Core types, state, constants, plugin wiring.
 include!("core.rs");
+// Status bar formatting and layout.
+include!("status_line.rs");
 // Processed pane pagination/cache/styling and text layout helpers.
 include!("processed.rs");
 // UI hierarchy and toolbar/settings widgets.

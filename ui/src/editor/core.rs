@@ -194,9 +194,6 @@ struct ProcessedChecklistIcon {
 }
 
 #[derive(Component)]
-struct StatusText;
-
-#[derive(Component)]
 struct WorkspaceRootLabel;
 
 #[derive(Component)]
@@ -411,7 +408,7 @@ impl FromWorld for EditorState {
                     format,
                     format!(
                         "Loaded {} ({}).",
-                        paths.load_path.display(),
+                        status_path_label(&paths.load_path),
                         document_format_label(format)
                     ),
                 )
@@ -424,7 +421,7 @@ impl FromWorld for EditorState {
                     format,
                     format!(
                         "Could not load {} ({error}). Started empty document.",
-                        paths.load_path.display()
+                        status_path_label(&paths.load_path)
                     ),
                 )
             }
@@ -564,18 +561,6 @@ impl EditorState {
         self.caret_visible = true;
     }
 
-    fn visible_status(&self) -> String {
-        format!(
-            "{} | format: {} | line {}, col {} | load: {} | save: {}",
-            self.status_message,
-            document_format_label(self.document_format),
-            self.cursor.position.line + 1,
-            self.cursor.position.column + 1,
-            self.paths.load_path.display(),
-            self.paths.save_path.display()
-        )
-    }
-
     fn max_top_line(&self, visible_lines: usize) -> usize {
         self.document
             .line_count()
@@ -670,10 +655,11 @@ impl EditorState {
         match self.document.save(&path) {
             Ok(()) => {
                 self.paths.save_path = path.clone();
-                self.status_message = format!("Saved {}", path.display());
+                self.status_message = format!("Saved {}", status_path_label(&path));
             }
             Err(error) => {
-                self.status_message = format!("Save failed for {}: {error}", path.display());
+                self.status_message =
+                    format!("Save failed for {}: {error}", status_path_label(&path));
             }
         }
     }
@@ -695,14 +681,14 @@ impl EditorState {
                 self.paths.save_path = path.clone();
                 self.status_message = format!(
                     "Loaded {} ({}).",
-                    path.display(),
+                    status_path_label(&path),
                     document_format_label(self.document_format)
                 );
                 self.sync_workspace_selection();
                 self.reset_blink();
             }
             Err(error) => {
-                self.status_message = format!("Load failed for {}: {error}", path.display());
+                self.status_message = format!("Load failed for {}: {error}", status_path_label(&path));
             }
         }
     }

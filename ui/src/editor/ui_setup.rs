@@ -136,7 +136,7 @@ fn setup(
                             flex_grow: 1.0,
                             flex_direction: FlexDirection::Row,
                             column_gap: px(10.0),
-                            padding: UiRect::axes(px(10.0), px(8.0)),
+                            padding: UiRect::new(px(10.0), px(10.0), px(8.0), px(0.0)),
                             ..default()
                         },
                         children![
@@ -156,21 +156,7 @@ fn setup(
                             )
                         ],
                     ),
-                    (
-                        Node {
-                            width: percent(100.0),
-                            padding: UiRect::axes(px(12.0), px(8.0)),
-                            ..default()
-                        },
-                        Text::new(""),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: 13.0,
-                            ..default()
-                        },
-                        TextColor(COLOR_TEXT_MAIN),
-                        StatusText,
-                    )
+                    status_line_bundle(font.clone())
                 ],
             ));
 
