@@ -140,9 +140,16 @@ fn render_editor(
         processed_spacer_lines,
     )
     .to_vec();
+    if processed_all_lines.is_empty() {
+        state.processed_top_visual = 0;
+    } else {
+        state.processed_top_visual = state
+            .processed_top_visual
+            .min(processed_all_lines.len().saturating_sub(1));
+    }
     let processed_view = build_processed_view(
         &processed_all_lines,
-        state.processed_top_line,
+        state.processed_top_visual,
         processed_page_step_lines,
         processed_view_capacity,
     );
@@ -504,77 +511,6 @@ fn visible_plain_lines(state: &EditorState, visible_lines: usize) -> Vec<String>
         .take(last.saturating_sub(state.top_line))
         .cloned()
         .collect()
-}
-
-fn ensure_cursor_visible_in_processed_panel(
-    state: &mut EditorState,
-    processed_panel_size: Option<Vec2>,
-    plain_visible_lines: usize,
-) {
-    let Some(panel_size) = processed_panel_size else {
-        return;
-    };
-
-    let processed_layout = processed_page_layout(panel_size, state);
-    let processed_line_height = scaled_line_height(state).max(1.0);
-    let visible_height =
-        (panel_size.y - processed_layout.geometry.text_top).max(processed_line_height);
-    let processed_visible_lines =
-        (visible_height / processed_line_height).floor().max(1.0) as usize;
-    let rendered_window = processed_layout
-        .page_step_lines
-        .max(1)
-        .saturating_mul(PROCESSED_PAPER_CAPACITY)
-        .max(1);
-    let max_window = processed_visible_lines.min(rendered_window).max(1);
-
-    let all_lines = processed_cache_lines(
-        state,
-        processed_layout.wrap_columns,
-        processed_layout.lines_per_page,
-        processed_layout.spacer_lines,
-    )
-    .to_vec();
-    if all_lines.is_empty() {
-        return;
-    }
-
-    let cursor_line = state.cursor.position.line;
-    let Some(cursor_visual_index) = first_visual_index_for_source_line(&all_lines, cursor_line)
-    else {
-        return;
-    };
-
-    let max_top_line = state.max_top_line(plain_visible_lines);
-    let min_top_for_plain = cursor_line.saturating_sub(plain_visible_lines.saturating_sub(1));
-    let max_top_for_plain = cursor_line.min(max_top_line);
-    let current_top = state.top_line.min(max_top_line);
-    let mut best_top = None;
-    let mut best_distance = usize::MAX;
-
-    for candidate_top in min_top_for_plain..=max_top_for_plain {
-        let anchor_index = first_visual_anchor_index_for_source_line(&all_lines, candidate_top)
-            .unwrap_or_else(|| all_lines.len().saturating_sub(1));
-        let page_step_lines = processed_layout.page_step_lines.max(1);
-        let start_index = (anchor_index / page_step_lines) * page_step_lines;
-        let end_index_exclusive = start_index.saturating_add(max_window);
-
-        if cursor_visual_index >= start_index && cursor_visual_index < end_index_exclusive {
-            let distance = current_top.abs_diff(candidate_top);
-            if distance < best_distance {
-                best_distance = distance;
-                best_top = Some(candidate_top);
-                if distance == 0 {
-                    break;
-                }
-            }
-        }
-    }
-
-    if let Some(candidate_top) = best_top {
-        state.top_line = candidate_top;
-        state.clamp_scroll(plain_visible_lines);
-    }
 }
 
 #[derive(Clone, Debug)]

@@ -124,7 +124,7 @@ fn processed_anchor_page_top_for_state(
 
     let view = build_processed_view(
         &all_lines,
-        state.processed_top_line,
+        state.processed_top_visual,
         step_lines,
         view_capacity,
     );
@@ -152,7 +152,7 @@ fn set_zoom_preserving_processed_anchor(
 
 fn build_processed_view(
     all_lines: &[ProcessedVisualLine],
-    top_line: usize,
+    anchor_index: usize,
     page_step_lines: usize,
     max_visible: usize,
 ) -> ProcessedView {
@@ -163,8 +163,7 @@ fn build_processed_view(
         return ProcessedView::default();
     }
 
-    let anchor_index = first_visual_anchor_index_for_source_line(&all_lines, top_line)
-        .unwrap_or_else(|| all_lines.len().saturating_sub(1));
+    let anchor_index = anchor_index.min(all_lines.len().saturating_sub(1));
     let mut start_index = (anchor_index / page_step_lines) * page_step_lines;
 
     // Keep page-start anchoring near EOF by padding the view window.
@@ -685,28 +684,6 @@ fn ordered_list_content_start(chars: &[char]) -> Option<(String, usize)> {
 
     let prefix = chars[..=digits].iter().collect::<String>();
     Some((prefix, content_start))
-}
-
-fn first_visual_anchor_index_for_source_line(
-    lines: &[ProcessedVisualLine],
-    source_line: usize,
-) -> Option<usize> {
-    let Some(first_index) = lines.iter().position(|line| line.source_line >= source_line) else {
-        return lines.iter().rposition(|line| line.source_line <= source_line);
-    };
-
-    let first_line = &lines[first_index];
-    if first_line.source_line == source_line && first_line.is_spacer {
-        return lines
-            .iter()
-            .enumerate()
-            .skip(first_index)
-            .find(|(_, line)| line.source_line == source_line && !line.is_spacer)
-            .map(|(index, _)| index)
-            .or(Some(first_index));
-    }
-
-    Some(first_index)
 }
 
 fn first_visual_index_for_source_line(

@@ -265,6 +265,7 @@ struct EditorState {
     cursor: Cursor,
     top_line: usize,
     processed_top_line: usize,
+    processed_top_visual: usize,
     focused_panel: PanelKind,
     plain_horizontal_scroll: f32,
     processed_horizontal_scroll: f32,
@@ -298,6 +299,7 @@ struct EditorHistorySnapshot {
     cursor: Cursor,
     top_line: usize,
     processed_top_line: usize,
+    processed_top_visual: usize,
     plain_horizontal_scroll: f32,
     processed_horizontal_scroll: f32,
     processed_zoom_anchor_bias_px: f32,
@@ -439,6 +441,7 @@ impl FromWorld for EditorState {
             cursor: Cursor::default(),
             top_line: 0,
             processed_top_line: 0,
+            processed_top_visual: 0,
             focused_panel: PanelKind::Plain,
             plain_horizontal_scroll: 0.0,
             processed_horizontal_scroll: 0.0,
@@ -683,6 +686,7 @@ impl EditorState {
                 self.cursor = Cursor::default();
                 self.top_line = 0;
                 self.processed_top_line = 0;
+                self.processed_top_visual = 0;
                 self.plain_horizontal_scroll = 0.0;
                 self.processed_horizontal_scroll = 0.0;
                 self.processed_zoom_anchor_bias_px = 0.0;
@@ -709,6 +713,7 @@ impl EditorState {
             cursor: self.cursor,
             top_line: self.top_line,
             processed_top_line: self.processed_top_line,
+            processed_top_visual: self.processed_top_visual,
             plain_horizontal_scroll: self.plain_horizontal_scroll,
             processed_horizontal_scroll: self.processed_horizontal_scroll,
             processed_zoom_anchor_bias_px: self.processed_zoom_anchor_bias_px,
@@ -751,6 +756,7 @@ impl EditorState {
 
         self.top_line = snapshot.top_line;
         self.processed_top_line = snapshot.processed_top_line;
+        self.processed_top_visual = snapshot.processed_top_visual;
         self.plain_horizontal_scroll = snapshot.plain_horizontal_scroll;
         self.processed_horizontal_scroll = snapshot.processed_horizontal_scroll;
         self.processed_zoom_anchor_bias_px = snapshot.processed_zoom_anchor_bias_px;

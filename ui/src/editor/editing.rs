@@ -438,9 +438,16 @@ fn handle_mouse_click(
         processed_spacer_lines,
     )
     .to_vec();
+    if processed_all_lines.is_empty() {
+        state.processed_top_visual = 0;
+    } else {
+        state.processed_top_visual = state
+            .processed_top_visual
+            .min(processed_all_lines.len().saturating_sub(1));
+    }
     let processed_view = build_processed_view(
         &processed_all_lines,
-        state.processed_top_line,
+        state.processed_top_visual,
         processed_step_lines,
         processed_view_capacity,
     );
@@ -464,6 +471,9 @@ fn handle_mouse_click(
         let Some(normalized) = relative_cursor.normalized else {
             continue;
         };
+
+        // Clicking anywhere in a panel selects its scroll-anchor policy.
+        state.focused_panel = panel.kind;
 
         if state.document.is_empty() {
             state.set_cursor(Position::default(), true);
@@ -578,7 +588,6 @@ fn handle_mouse_click(
             let max_col = state.document.line_len_chars(line);
             let column = raw_column.min(max_col);
 
-            state.focused_panel = PanelKind::Processed;
             state.set_cursor(Position { line, column }, true);
             apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
             break;
@@ -619,7 +628,6 @@ fn handle_mouse_click(
         let max_col = state.document.line_len_chars(line);
         let column = raw_column.min(max_col);
 
-        state.focused_panel = PanelKind::Plain;
         state.set_cursor(Position { line, column }, true);
         apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
         break;
