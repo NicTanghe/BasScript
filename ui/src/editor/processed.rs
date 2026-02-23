@@ -122,7 +122,12 @@ fn processed_anchor_page_top_for_state(
         return Some(layout.geometry.paper_top + state.processed_zoom_anchor_bias_px);
     }
 
-    let view = build_processed_view(&all_lines, state.top_line, step_lines, view_capacity);
+    let view = build_processed_view(
+        &all_lines,
+        state.processed_top_line,
+        step_lines,
+        view_capacity,
+    );
     let anchor_line_in_page = processed_anchor_line_in_page(&view, step_lines);
     let anchor_offset_px = processed_anchor_scroll_offset_px(anchor_line_in_page, processed_line_height);
     let page_top =

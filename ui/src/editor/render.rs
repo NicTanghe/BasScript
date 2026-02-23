@@ -127,6 +127,7 @@ fn render_editor(
     let processed_page_step_lines = processed_layout_info.page_step_lines.max(1);
     let visible_lines = viewport_lines(&body_query, state.measured_line_step, plain_origin_y);
     state.clamp_scroll(visible_lines);
+    state.clamp_processed_top_line();
 
     let plain_lines = visible_plain_lines(&state, visible_lines);
     let processed_view_capacity = processed_page_step_lines
@@ -141,7 +142,7 @@ fn render_editor(
     .to_vec();
     let processed_view = build_processed_view(
         &processed_all_lines,
-        state.top_line,
+        state.processed_top_line,
         processed_page_step_lines,
         processed_view_capacity,
     );

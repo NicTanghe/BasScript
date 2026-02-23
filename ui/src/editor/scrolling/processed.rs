@@ -76,3 +76,25 @@ fn apply_processed_panel_vertical_scroll(
 
     actual_whole_lines != 0 || leftover_px.abs() > f32::EPSILON
 }
+
+fn apply_cursor_follow_scroll_policy(
+    state: &mut EditorState,
+    processed_panel_size: Option<Vec2>,
+    visible_lines: usize,
+) {
+    match state.focused_panel {
+        PanelKind::Plain => {
+            // Keep plain view anchored and move only processed.
+            let plain_top_line = state.top_line;
+            state.top_line = state.processed_top_line;
+            ensure_cursor_visible_in_processed_panel(state, processed_panel_size, visible_lines);
+            state.processed_top_line = state.top_line;
+            state.top_line = plain_top_line.min(state.max_top_line(visible_lines));
+        }
+        PanelKind::Processed => {
+            // Keep processed view anchored and move only plain.
+            state.ensure_cursor_visible(visible_lines);
+            state.clamp_processed_top_line();
+        }
+    }
+}

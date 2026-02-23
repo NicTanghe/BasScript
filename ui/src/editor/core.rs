@@ -264,6 +264,8 @@ struct EditorState {
     document_format: DocumentFormat,
     cursor: Cursor,
     top_line: usize,
+    processed_top_line: usize,
+    focused_panel: PanelKind,
     plain_horizontal_scroll: f32,
     processed_horizontal_scroll: f32,
     processed_zoom_anchor_bias_px: f32,
@@ -295,6 +297,7 @@ struct EditorHistorySnapshot {
     document: Document,
     cursor: Cursor,
     top_line: usize,
+    processed_top_line: usize,
     plain_horizontal_scroll: f32,
     processed_horizontal_scroll: f32,
     processed_zoom_anchor_bias_px: f32,
@@ -435,6 +438,8 @@ impl FromWorld for EditorState {
             document_format,
             cursor: Cursor::default(),
             top_line: 0,
+            processed_top_line: 0,
+            focused_panel: PanelKind::Plain,
             plain_horizontal_scroll: 0.0,
             processed_horizontal_scroll: 0.0,
             processed_zoom_anchor_bias_px: 0.0,
@@ -570,6 +575,11 @@ impl EditorState {
         self.top_line = self.top_line.min(max_top);
     }
 
+    fn clamp_processed_top_line(&mut self) {
+        let max_top = self.document.line_count().saturating_sub(1);
+        self.processed_top_line = self.processed_top_line.min(max_top);
+    }
+
     fn clamp_horizontal_scrolls(
         &mut self,
         plain_panel_size: Option<Vec2>,
@@ -589,6 +599,7 @@ impl EditorState {
         let max_top = self.max_top_line(visible_lines) as isize;
         let next = (self.top_line as isize + line_delta).clamp(0, max_top);
         self.top_line = next as usize;
+        self.processed_top_line = self.top_line;
     }
 
     fn ensure_cursor_visible(&mut self, visible_lines: usize) {
@@ -671,6 +682,7 @@ impl EditorState {
                 self.reparse();
                 self.cursor = Cursor::default();
                 self.top_line = 0;
+                self.processed_top_line = 0;
                 self.plain_horizontal_scroll = 0.0;
                 self.processed_horizontal_scroll = 0.0;
                 self.processed_zoom_anchor_bias_px = 0.0;
@@ -696,6 +708,7 @@ impl EditorState {
             document: self.document.clone(),
             cursor: self.cursor,
             top_line: self.top_line,
+            processed_top_line: self.processed_top_line,
             plain_horizontal_scroll: self.plain_horizontal_scroll,
             processed_horizontal_scroll: self.processed_horizontal_scroll,
             processed_zoom_anchor_bias_px: self.processed_zoom_anchor_bias_px,
@@ -737,10 +750,12 @@ impl EditorState {
             .min(self.document.line_len_chars(self.cursor.position.line));
 
         self.top_line = snapshot.top_line;
+        self.processed_top_line = snapshot.processed_top_line;
         self.plain_horizontal_scroll = snapshot.plain_horizontal_scroll;
         self.processed_horizontal_scroll = snapshot.processed_horizontal_scroll;
         self.processed_zoom_anchor_bias_px = snapshot.processed_zoom_anchor_bias_px;
         self.clamp_scroll(visible_lines);
+        self.clamp_processed_top_line();
         self.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
         self.reset_blink();
     }

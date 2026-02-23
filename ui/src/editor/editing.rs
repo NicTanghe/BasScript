@@ -101,8 +101,7 @@ fn handle_text_input(
             state.push_undo_snapshot(snapshot);
         }
         state.reparse_with_dirty_hint(dirty_from_line.unwrap_or(0));
-        state.ensure_cursor_visible(visible_lines);
-        ensure_cursor_visible_in_processed_panel(&mut state, processed_panel_size, visible_lines);
+        apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
     }
 }
 
@@ -142,12 +141,7 @@ fn handle_navigation_input(
                 } else {
                     "Undo".to_string()
                 };
-                state.ensure_cursor_visible(visible_lines);
-                ensure_cursor_visible_in_processed_panel(
-                    &mut state,
-                    processed_panel_size,
-                    visible_lines,
-                );
+                apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
             } else {
                 state.status_message = if redo {
                     "Nothing to redo.".to_string()
@@ -271,8 +265,7 @@ fn handle_navigation_input(
     }
 
     if moved {
-        state.ensure_cursor_visible(visible_lines);
-        ensure_cursor_visible_in_processed_panel(&mut state, processed_panel_size, visible_lines);
+        apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
     }
 }
 
@@ -447,7 +440,7 @@ fn handle_mouse_click(
     .to_vec();
     let processed_view = build_processed_view(
         &processed_all_lines,
-        state.top_line,
+        state.processed_top_line,
         processed_step_lines,
         processed_view_capacity,
     );
@@ -585,9 +578,9 @@ fn handle_mouse_click(
             let max_col = state.document.line_len_chars(line);
             let column = raw_column.min(max_col);
 
+            state.focused_panel = PanelKind::Processed;
             state.set_cursor(Position { line, column }, true);
-            state.ensure_cursor_visible(visible_lines);
-            ensure_cursor_visible_in_processed_panel(&mut state, processed_panel_size, visible_lines);
+            apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
             break;
         }
 
@@ -626,9 +619,9 @@ fn handle_mouse_click(
         let max_col = state.document.line_len_chars(line);
         let column = raw_column.min(max_col);
 
+        state.focused_panel = PanelKind::Plain;
         state.set_cursor(Position { line, column }, true);
-        state.ensure_cursor_visible(visible_lines);
-        ensure_cursor_visible_in_processed_panel(&mut state, processed_panel_size, visible_lines);
+        apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
         break;
     }
 }
