@@ -102,6 +102,7 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EditorState>()
             .init_resource::<DialogState>()
+            .init_resource::<MiddleAutoscrollState>()
             .init_state::<UiScreenState>()
             .insert_non_send_resource(DialogMainThreadMarker)
             .add_systems(Startup, (setup, setup_processed_papers.after(setup)))
@@ -135,7 +136,10 @@ impl Plugin for UiPlugin {
                     handle_text_input,
                     handle_navigation_input,
                     handle_mouse_scroll,
-                    handle_mouse_click,
+                    handle_ctrl_left_drag_scroll,
+                    handle_middle_mouse_autoscroll,
+                    handle_mouse_click.after(handle_middle_mouse_autoscroll),
+                    sync_middle_autoscroll_indicator.after(handle_middle_mouse_autoscroll),
                     blink_caret,
                     render_editor,
                 )
@@ -175,6 +179,9 @@ struct PanelPaper {
 struct PanelCanvas {
     kind: PanelKind,
 }
+
+#[derive(Component)]
+struct MiddleAutoscrollIndicator;
 
 #[derive(Component)]
 struct ProcessedPaperText {
@@ -313,6 +320,14 @@ struct DialogState {
     poll_count: u64,
 }
 
+#[derive(Resource, Default)]
+struct MiddleAutoscrollState {
+    panel: Option<PanelKind>,
+    anchor_cursor_position: Vec2,
+    plain_vertical_remainder_lines: f32,
+    suppress_next_left_click: bool,
+}
+
 enum PendingDialog {
     Workspace(Task<Option<PathBuf>>),
     Save(Task<Option<PathBuf>>),
@@ -389,6 +404,24 @@ impl DialogState {
         self.opened_at = None;
         self.last_watchdog_log_at = None;
         self.poll_count = 0;
+    }
+}
+
+impl MiddleAutoscrollState {
+    fn is_active(&self) -> bool {
+        self.panel.is_some()
+    }
+
+    fn start(&mut self, panel: PanelKind, anchor_cursor_position: Vec2) {
+        self.panel = Some(panel);
+        self.anchor_cursor_position = anchor_cursor_position;
+        self.plain_vertical_remainder_lines = 0.0;
+        self.suppress_next_left_click = false;
+    }
+
+    fn stop(&mut self) {
+        self.panel = None;
+        self.plain_vertical_remainder_lines = 0.0;
     }
 }
 

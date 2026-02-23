@@ -87,7 +87,7 @@ fn setup(
                         children![
                             (
                                 Text::new(
-                                    "Cmd/Ctrl+O open workspace | Cmd/Ctrl+S save | Cmd/Ctrl +/- or Ctrl+scroll zoom | arrows/home/end/page move cursor | mouse wheel scroll | click to place cursor",
+                                    "Cmd/Ctrl+O open workspace | Cmd/Ctrl+S save | Cmd/Ctrl +/- or Ctrl+scroll zoom | arrows/home/end/page move cursor | mouse wheel scroll | Ctrl+left-drag scroll | middle-click autoscroll | click to place cursor",
                                 ),
                                 TextFont {
                                     font: font.clone(),
@@ -227,7 +227,116 @@ fn setup(
                         SettingsAction::MarginBottomDecrease,
                         SettingsAction::MarginBottomIncrease,
                     ),
-                    settings_action_button(font, "Back to editor", SettingsAction::BackToEditor),
+                    settings_action_button(font.clone(), "Back to editor", SettingsAction::BackToEditor),
+                ],
+            ));
+
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(0.0),
+                    top: px(0.0),
+                    width: px(40.0),
+                    height: px(40.0),
+                    display: Display::None,
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    overflow: Overflow::visible(),
+                    ..default()
+                },
+                ZIndex(48),
+                MiddleAutoscrollIndicator,
+                children![
+                    (
+                        Text::new("◯"),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 34.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgba(0.10, 0.12, 0.15, 0.82)),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            top: px(-2.0),
+                            left: px(7.0),
+                            ..default()
+                        },
+                    ),
+                    (
+                        Text::new("•"),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 15.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgba(0.10, 0.12, 0.15, 0.95)),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            top: px(8.0),
+                            left: px(16.0),
+                            ..default()
+                        },
+                    ),
+                    (
+                        Text::new("↑"),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 11.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgba(0.96, 0.97, 0.99, 0.95)),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            top: px(-14.0),
+                            left: px(15.0),
+                            ..default()
+                        },
+                    ),
+                    (
+                        Text::new("↓"),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 11.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgba(0.96, 0.97, 0.99, 0.95)),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            top: px(42.0),
+                            left: px(15.0),
+                            ..default()
+                        },
+                    ),
+                    (
+                        Text::new("←"),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 11.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgba(0.96, 0.97, 0.99, 0.95)),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            top: px(14.0),
+                            left: px(-12.0),
+                            ..default()
+                        },
+                    ),
+                    (
+                        Text::new("→"),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 11.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgba(0.96, 0.97, 0.99, 0.95)),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            top: px(14.0),
+                            left: px(43.0),
+                            ..default()
+                        },
+                    ),
                 ],
             ));
         });
