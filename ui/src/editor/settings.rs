@@ -221,15 +221,5 @@ fn processed_horizontal_scroll_bounds(
     state: &EditorState,
     processed_panel_size: Option<Vec2>,
 ) -> (f32, f32) {
-    let Some(panel_size) = processed_panel_size else {
-        return (0.0, 0.0);
-    };
-
-    let geometry = processed_page_geometry(panel_size, state);
-    let base_left = geometry.paper_left;
-    let base_right = geometry.paper_left + geometry.paper_width;
-    let overflow_left = (-base_left).max(0.0);
-    let overflow_right = (base_right - panel_size.x).max(0.0);
-    (-overflow_left, overflow_right)
+    processed_horizontal_scroll_bounds_with_overscroll(state, processed_panel_size)
 }
-

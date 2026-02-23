@@ -561,10 +561,8 @@ impl EditorState {
         self.caret_visible = true;
     }
 
-    fn max_top_line(&self, visible_lines: usize) -> usize {
-        self.document
-            .line_count()
-            .saturating_sub(visible_lines.max(1))
+    fn max_top_line(&self, _visible_lines: usize) -> usize {
+        self.document.line_count().saturating_sub(1)
     }
 
     fn clamp_scroll(&mut self, visible_lines: usize) {
