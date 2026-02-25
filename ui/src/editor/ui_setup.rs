@@ -184,6 +184,7 @@ fn setup(
                         font.clone(),
                         SettingsAction::NonDialogueDoubleSpaceNewline,
                     ),
+                    settings_toggle_button(font.clone(), SettingsAction::ShowSystemTitlebar),
                     margin_setting_row(
                         font.clone(),
                         "Left margin (pt)",
@@ -1298,6 +1299,14 @@ fn handle_settings_buttons(
                     }
                 );
             }
+            SettingsAction::ShowSystemTitlebar => {
+                state.show_system_titlebar = !state.show_system_titlebar;
+                settings_changed = true;
+                state.status_message = format!(
+                    "System titlebar: {}",
+                    if state.show_system_titlebar { "ON" } else { "OFF" }
+                );
+            }
             SettingsAction::MarginLeftDecrease => {
                 adjust_page_margin(&mut state, MarginEdge::Left, -PAGE_MARGIN_STEP);
                 settings_changed = true;
@@ -1436,6 +1445,14 @@ fn sync_settings_ui(
             SettingsAction::NonDialogueDoubleSpaceNewline => format!(
                 "Double space as newline in non-dialogue (processed pane): {}",
                 if state.non_dialogue_double_space_newline {
+                    "ON"
+                } else {
+                    "OFF"
+                }
+            ),
+            SettingsAction::ShowSystemTitlebar => format!(
+                "Show system titlebar: {}",
+                if state.show_system_titlebar {
                     "ON"
                 } else {
                     "OFF"

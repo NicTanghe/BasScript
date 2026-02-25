@@ -25,6 +25,8 @@ fn load_persistent_settings() -> PersistentSettings {
         .unwrap_or(defaults.dialogue_double_space_newline);
     let non_dialogue_value = parse_toml_bool(&contents, "non_dialogue_double_space_newline")
         .unwrap_or(defaults.non_dialogue_double_space_newline);
+    let show_system_titlebar =
+        parse_toml_bool(&contents, "show_system_titlebar").unwrap_or(defaults.show_system_titlebar);
     let page_margin_left =
         parse_toml_f32(&contents, "page_margin_left").unwrap_or(defaults.page_margin_left);
     let page_margin_right =
@@ -38,6 +40,7 @@ fn load_persistent_settings() -> PersistentSettings {
     PersistentSettings {
         dialogue_double_space_newline: dialogue_value,
         non_dialogue_double_space_newline: non_dialogue_value,
+        show_system_titlebar,
         page_margin_left,
         page_margin_right,
         page_margin_top,
@@ -58,6 +61,8 @@ fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
          dialogue_double_space_newline = {}\n\
          # true: processed pane renders non-dialogue double spaces as new lines\n\
          non_dialogue_double_space_newline = {}\n\
+         # true: show OS window titlebar and border\n\
+         show_system_titlebar = {}\n\
          # processed page margins in typographic points\n\
          page_margin_left = {}\n\
          page_margin_right = {}\n\
@@ -65,6 +70,7 @@ fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
          page_margin_bottom = {}\n",
         settings.dialogue_double_space_newline,
         settings.non_dialogue_double_space_newline,
+        settings.show_system_titlebar,
         settings.page_margin_left,
         settings.page_margin_right,
         settings.page_margin_top,
@@ -126,6 +132,7 @@ fn persistent_settings_from_state(state: &EditorState) -> PersistentSettings {
     PersistentSettings {
         dialogue_double_space_newline: state.dialogue_double_space_newline,
         non_dialogue_double_space_newline: state.non_dialogue_double_space_newline,
+        show_system_titlebar: state.show_system_titlebar,
         page_margin_left: state.page_margin_left,
         page_margin_right: state.page_margin_right,
         page_margin_top: state.page_margin_top,

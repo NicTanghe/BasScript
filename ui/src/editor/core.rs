@@ -113,6 +113,7 @@ impl Plugin for UiPlugin {
                     style_toolbar_buttons,
                     style_workspace_file_entry_text,
                     handle_window_shortcuts,
+                    sync_window_chrome,
                     sync_top_menu_visibility,
                     sync_settings_ui,
                     sync_workspace_sidebar,
@@ -233,6 +234,7 @@ enum ToolbarAction {
 enum SettingsAction {
     DialogueDoubleSpaceNewline,
     NonDialogueDoubleSpaceNewline,
+    ShowSystemTitlebar,
     MarginLeftDecrease,
     MarginLeftIncrease,
     MarginRightDecrease,
@@ -292,6 +294,7 @@ struct EditorState {
     paths: DocumentPath,
     status_message: String,
     top_menu_collapsed: bool,
+    show_system_titlebar: bool,
     caret_blink: Timer,
     caret_visible: bool,
     dialogue_double_space_newline: bool,
@@ -352,6 +355,7 @@ struct DialogMainThreadMarker;
 struct PersistentSettings {
     dialogue_double_space_newline: bool,
     non_dialogue_double_space_newline: bool,
+    show_system_titlebar: bool,
     page_margin_left: f32,
     page_margin_right: f32,
     page_margin_top: f32,
@@ -363,6 +367,7 @@ impl Default for PersistentSettings {
         Self {
             dialogue_double_space_newline: false,
             non_dialogue_double_space_newline: false,
+            show_system_titlebar: false,
             page_margin_left: PAGE_TEXT_MARGIN_LEFT,
             page_margin_right: PAGE_TEXT_MARGIN_RIGHT,
             page_margin_top: PAGE_TEXT_MARGIN_TOP,
@@ -495,6 +500,7 @@ impl FromWorld for EditorState {
             paths,
             status_message,
             top_menu_collapsed: false,
+            show_system_titlebar: settings.show_system_titlebar,
             caret_blink: Timer::from_seconds(0.5, TimerMode::Repeating),
             caret_visible: true,
             dialogue_double_space_newline: settings.dialogue_double_space_newline,

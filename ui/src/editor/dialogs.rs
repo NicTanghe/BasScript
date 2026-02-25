@@ -35,6 +35,42 @@ fn handle_window_shortcuts(
     );
 }
 
+fn sync_window_chrome(
+    state: Res<EditorState>,
+    mut primary_window_query: Query<(Entity, &mut Window), With<PrimaryWindow>>,
+) {
+    let Ok((window_entity, mut primary_window)) = primary_window_query.single_mut() else {
+        return;
+    };
+
+    let state_changed = state.is_changed();
+    let show_system_titlebar = state.show_system_titlebar;
+    let decorations_changed = primary_window.decorations != show_system_titlebar;
+    if decorations_changed {
+        primary_window.decorations = show_system_titlebar;
+    }
+
+    #[cfg(target_os = "windows")]
+    if decorations_changed || state_changed {
+        apply_windows_chrome_preferences(window_entity, show_system_titlebar);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn apply_windows_chrome_preferences(window_entity: Entity, show_system_titlebar: bool) {
+    use bevy::winit::WINIT_WINDOWS;
+    use winit::platform::windows::{CornerPreference, WindowExtWindows};
+
+    WINIT_WINDOWS.with_borrow(|winit_windows| {
+        let Some(window) = winit_windows.get_window(window_entity) else {
+            return;
+        };
+
+        window.set_corner_preference(CornerPreference::Round);
+        window.set_undecorated_shadow(!show_system_titlebar);
+    });
+}
+
 fn handle_file_shortcuts(
     _dialog_main_thread: NonSend<DialogMainThreadMarker>,
     keys: Res<ButtonInput<KeyCode>>,

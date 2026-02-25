@@ -8,3 +8,4 @@ bevy = "0.18"
 basscript-core = { path = "../core" }
 rfd = "0.15"
 resvg = "0.45"
+winit = "0.30"
