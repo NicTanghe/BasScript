@@ -84,11 +84,10 @@ fn setup(
                             padding: UiRect::axes(px(12.0), px(8.0)),
                             ..default()
                         },
+                        TopMenuSection,
                         children![
                             (
-                                Text::new(
-                                    "Cmd/Ctrl+O open workspace | Cmd/Ctrl+S save | Cmd/Ctrl +/- or Ctrl+scroll zoom | arrows/home/end/page move cursor | mouse wheel scroll | Ctrl+left-drag scroll | middle-click autoscroll | click to place cursor",
-                                ),
+                                Text::new("BasScript"),
                                 TextFont {
                                     font: font.clone(),
                                     font_size: 14.0,
@@ -119,24 +118,10 @@ fn setup(
                     (
                         Node {
                             width: percent(100.0),
-                            padding: UiRect::axes(px(12.0), px(0.0)),
-                            ..default()
-                        },
-                        Text::new("Open Folder loads a workspace and shows files in the left sidebar. Save As opens a native save dialog."),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: 12.0,
-                            ..default()
-                        },
-                        TextColor(COLOR_TEXT_MUTED),
-                    ),
-                    (
-                        Node {
-                            width: percent(100.0),
                             flex_grow: 1.0,
                             flex_direction: FlexDirection::Row,
-                            column_gap: px(10.0),
-                            padding: UiRect::new(px(10.0), px(10.0), px(8.0), px(0.0)),
+                            column_gap: px(0.0),
+                            padding: UiRect::all(px(0.0)),
                             ..default()
                         },
                         children![
@@ -146,12 +131,12 @@ fn setup(
                                     flex_grow: 1.0,
                                     height: percent(100.0),
                                     flex_direction: FlexDirection::Row,
-                                    column_gap: px(10.0),
+                                    column_gap: px(0.0),
                                     ..default()
                                 },
                                 children![
-                                    panel_bundle(font.clone(), PanelKind::Plain, "Plain"),
-                                    panel_bundle(font.clone(), PanelKind::Processed, "Processed"),
+                                    panel_bundle(font.clone(), PanelKind::Plain),
+                                    panel_bundle(font.clone(), PanelKind::Processed),
                                 ],
                             )
                         ],
@@ -227,7 +212,102 @@ fn setup(
                         SettingsAction::MarginBottomDecrease,
                         SettingsAction::MarginBottomIncrease,
                     ),
+                    settings_action_button(font.clone(), "Keybinds", SettingsAction::OpenKeybinds),
                     settings_action_button(font.clone(), "Back to editor", SettingsAction::BackToEditor),
+                ],
+            ));
+
+            root.spawn((
+                Node {
+                    width: percent(100.0),
+                    height: percent(100.0),
+                    display: Display::None,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(10.0),
+                    padding: UiRect::axes(px(18.0), px(16.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.86, 0.88, 0.90)),
+                KeybindsScreenRoot,
+                children![
+                    (
+                        Text::new("Keybinds"),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MAIN),
+                    ),
+                    (
+                        Text::new("Keyboard shortcuts and mouse controls."),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MUTED),
+                    ),
+                    (
+                        Text::new("Keyboard"),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 16.0,
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MAIN),
+                    ),
+                    keybind_row(font.clone(), "Cmd/Ctrl+O", "Open workspace folder"),
+                    keybind_row(font.clone(), "Cmd/Ctrl+S", "Save As dialog"),
+                    keybind_row(font.clone(), "Cmd/Ctrl+Z", "Undo"),
+                    keybind_row(font.clone(), "Cmd/Ctrl+Shift+Z", "Redo"),
+                    keybind_row(font.clone(), "Cmd/Ctrl+=", "Zoom in"),
+                    keybind_row(font.clone(), "Cmd/Ctrl+-", "Zoom out"),
+                    keybind_row(font.clone(), "Cmd/Ctrl+Mouse wheel", "Zoom"),
+                    keybind_row(font.clone(), "Cmd/Ctrl+B", "Toggle top menu"),
+                    keybind_row(font.clone(), "Arrow keys", "Move cursor"),
+                    keybind_row(font.clone(), "Home / End", "Move to line start/end"),
+                    keybind_row(font.clone(), "Page Up / Page Down", "Move by viewport"),
+                    keybind_row(font.clone(), "Escape", "Cancel middle-click autoscroll"),
+                    (
+                        Text::new("Mouse"),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 16.0,
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MAIN),
+                    ),
+                    keybind_row(font.clone(), "Mouse wheel", "Scroll active pane vertically"),
+                    keybind_row(font.clone(), "Shift+Mouse wheel", "Scroll active pane horizontally"),
+                    keybind_row(font.clone(), "Ctrl+Left drag", "Scroll active pane"),
+                    keybind_row(
+                        font.clone(),
+                        "Middle click + hold",
+                        "Autoscroll (release middle button to stop)",
+                    ),
+                    keybind_row(font.clone(), "Left click", "Place cursor"),
+                    keybind_row(font.clone(), "Right click", "Cancel middle-click autoscroll"),
+                    (
+                        Node {
+                            flex_direction: FlexDirection::Row,
+                            column_gap: px(8.0),
+                            margin: UiRect::top(px(8.0)),
+                            ..default()
+                        },
+                        children![
+                            settings_action_button(
+                                font.clone(),
+                                "Back to settings",
+                                SettingsAction::BackToSettings,
+                            ),
+                            settings_action_button(
+                                font.clone(),
+                                "Back to editor",
+                                SettingsAction::BackToEditor,
+                            ),
+                        ],
+                    ),
                 ],
             ));
 
@@ -693,6 +773,40 @@ fn settings_action_button(font: Handle<Font>, label: &str, action: SettingsActio
     )
 }
 
+fn keybind_row(font: Handle<Font>, binding: &str, description: &str) -> impl Bundle {
+    (
+        Node {
+            flex_direction: FlexDirection::Row,
+            column_gap: px(10.0),
+            ..default()
+        },
+        children![
+            (
+                Text::new(binding),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MAIN),
+                Node {
+                    width: px(220.0),
+                    ..default()
+                },
+            ),
+            (
+                Text::new(description),
+                TextFont {
+                    font,
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MUTED),
+            ),
+        ],
+    )
+}
+
 fn margin_setting_row(
     font: Handle<Font>,
     label: &str,
@@ -746,15 +860,6 @@ fn workspace_sidebar_bundle(font: Handle<Font>) -> impl Bundle {
         BackgroundColor(Color::srgb(0.86, 0.87, 0.89)),
         children![
             (
-                Text::new("Workspace"),
-                TextFont {
-                    font: font.clone(),
-                    font_size: 15.0,
-                    ..default()
-                },
-                TextColor(COLOR_TEXT_MAIN),
-            ),
-            (
                 Text::new("No workspace opened."),
                 TextFont {
                     font: font.clone(),
@@ -779,7 +884,7 @@ fn workspace_sidebar_bundle(font: Handle<Font>) -> impl Bundle {
     )
 }
 
-fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle {
+fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
     let body_color = match kind {
         PanelKind::Plain => COLOR_PANEL_BODY_PLAIN,
         PanelKind::Processed => COLOR_PANEL_BODY_PROCESSED,
@@ -794,20 +899,6 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind, title: &str) -> impl Bundle
         },
         BackgroundColor(COLOR_PANEL_BG),
         children![
-            (
-                Node {
-                    width: percent(100.0),
-                    padding: UiRect::axes(px(14.0), px(6.0)),
-                    ..default()
-                },
-                Text::new(title),
-                TextFont {
-                    font: font.clone(),
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(COLOR_TEXT_MAIN),
-            ),
             (
                 Node {
                     width: percent(100.0),
@@ -1239,9 +1330,17 @@ fn handle_settings_buttons(
                 adjust_page_margin(&mut state, MarginEdge::Bottom, PAGE_MARGIN_STEP);
                 settings_changed = true;
             }
+            SettingsAction::OpenKeybinds => {
+                next_screen_state.set(UiScreenState::Keybinds);
+                state.status_message = "Opened keybinds.".to_string();
+            }
+            SettingsAction::BackToSettings => {
+                next_screen_state.set(UiScreenState::Settings);
+                state.status_message = "Opened settings.".to_string();
+            }
             SettingsAction::BackToEditor => {
                 next_screen_state.set(UiScreenState::Editor);
-                state.status_message = "Closed settings.".to_string();
+                state.status_message = "Returned to editor.".to_string();
             }
         }
 
@@ -1255,13 +1354,47 @@ fn handle_settings_buttons(
     }
 }
 
+fn sync_top_menu_visibility(
+    state: Res<EditorState>,
+    mut top_menu_query: Query<&mut Node, With<TopMenuSection>>,
+) {
+    let display = if state.top_menu_collapsed {
+        Display::None
+    } else {
+        Display::Flex
+    };
+
+    for mut node in top_menu_query.iter_mut() {
+        node.display = display;
+    }
+}
+
 fn sync_settings_ui(
     state: Res<EditorState>,
     screen_state: Res<State<UiScreenState>>,
-    mut editor_root_query: Query<&mut Node, (With<EditorScreenRoot>, Without<SettingsScreenRoot>)>,
+    mut editor_root_query: Query<
+        &mut Node,
+        (
+            With<EditorScreenRoot>,
+            Without<SettingsScreenRoot>,
+            Without<KeybindsScreenRoot>,
+        ),
+    >,
     mut settings_root_query: Query<
         &mut Node,
-        (With<SettingsScreenRoot>, Without<EditorScreenRoot>),
+        (
+            With<SettingsScreenRoot>,
+            Without<EditorScreenRoot>,
+            Without<KeybindsScreenRoot>,
+        ),
+    >,
+    mut keybinds_root_query: Query<
+        &mut Node,
+        (
+            With<KeybindsScreenRoot>,
+            Without<EditorScreenRoot>,
+            Without<SettingsScreenRoot>,
+        ),
     >,
     mut toggle_label_query: Query<(&SettingToggleLabel, &mut Text), Without<SettingMarginLabel>>,
     mut margin_label_query: Query<(&SettingMarginLabel, &mut Text), Without<SettingToggleLabel>>,
@@ -1276,6 +1409,14 @@ fn sync_settings_ui(
 
     if let Ok(mut settings_root) = settings_root_query.single_mut() {
         settings_root.display = if *screen_state.get() == UiScreenState::Settings {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
+    if let Ok(mut keybinds_root) = keybinds_root_query.single_mut() {
+        keybinds_root.display = if *screen_state.get() == UiScreenState::Keybinds {
             Display::Flex
         } else {
             Display::None

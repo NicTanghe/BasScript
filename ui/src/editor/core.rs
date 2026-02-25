@@ -96,6 +96,7 @@ enum UiScreenState {
     #[default]
     Editor,
     Settings,
+    Keybinds,
 }
 
 impl Plugin for UiPlugin {
@@ -111,6 +112,8 @@ impl Plugin for UiPlugin {
                 (
                     style_toolbar_buttons,
                     style_workspace_file_entry_text,
+                    handle_window_shortcuts,
+                    sync_top_menu_visibility,
                     sync_settings_ui,
                     sync_workspace_sidebar,
                 ),
@@ -126,7 +129,8 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 Update,
-                handle_settings_buttons.run_if(in_state(UiScreenState::Settings)),
+                handle_settings_buttons
+                    .run_if(in_state(UiScreenState::Settings).or(in_state(UiScreenState::Keybinds))),
             )
             .add_systems(
                 Update,
@@ -237,6 +241,8 @@ enum SettingsAction {
     MarginTopIncrease,
     MarginBottomDecrease,
     MarginBottomIncrease,
+    OpenKeybinds,
+    BackToSettings,
     BackToEditor,
 }
 
@@ -250,6 +256,12 @@ struct SettingToggleLabel {
 
 #[derive(Component)]
 struct SettingsScreenRoot;
+
+#[derive(Component)]
+struct KeybindsScreenRoot;
+
+#[derive(Component)]
+struct TopMenuSection;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 enum MarginEdge {
@@ -279,6 +291,7 @@ struct EditorState {
     processed_zoom_anchor_bias_px: f32,
     paths: DocumentPath,
     status_message: String,
+    top_menu_collapsed: bool,
     caret_blink: Timer,
     caret_visible: bool,
     dialogue_double_space_newline: bool,
@@ -481,6 +494,7 @@ impl FromWorld for EditorState {
             processed_zoom_anchor_bias_px: 0.0,
             paths,
             status_message,
+            top_menu_collapsed: false,
             caret_blink: Timer::from_seconds(0.5, TimerMode::Repeating),
             caret_visible: true,
             dialogue_double_space_newline: settings.dialogue_double_space_newline,

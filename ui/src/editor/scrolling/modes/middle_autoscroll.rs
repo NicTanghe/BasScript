@@ -46,10 +46,8 @@ fn handle_middle_mouse_autoscroll(
 
     if mouse_buttons.just_pressed(MouseButton::Middle) {
         if middle_autoscroll.is_active() {
-            middle_autoscroll.stop();
             return;
         }
-
         let (Some(panel), Some(cursor_position)) = (panel_context.hovered_panel, cursor_position)
         else {
             return;
@@ -61,6 +59,11 @@ fn handle_middle_mouse_autoscroll(
     }
 
     if !middle_autoscroll.is_active() {
+        return;
+    }
+
+    if mouse_buttons.just_released(MouseButton::Middle) {
+        middle_autoscroll.stop();
         return;
     }
 

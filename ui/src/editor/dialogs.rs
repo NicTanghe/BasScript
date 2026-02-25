@@ -7,6 +7,34 @@ fn shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
     ])
 }
 
+fn handle_window_shortcuts(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<EditorState>,
+) {
+    let shortcut_down = shortcut_modifier_pressed(&keys);
+    if !shortcut_down || !keys.just_pressed(KeyCode::KeyB) {
+        return;
+    }
+
+    state.top_menu_collapsed = !state.top_menu_collapsed;
+    state.status_message = format!(
+        "Top menu: {}",
+        if state.top_menu_collapsed {
+            "HIDDEN"
+        } else {
+            "VISIBLE"
+        }
+    );
+    info!(
+        "[ui] Shortcut Cmd/Ctrl+B toggled top menu to {}",
+        if state.top_menu_collapsed {
+            "HIDDEN"
+        } else {
+            "VISIBLE"
+        }
+    );
+}
+
 fn handle_file_shortcuts(
     _dialog_main_thread: NonSend<DialogMainThreadMarker>,
     keys: Res<ButtonInput<KeyCode>>,
