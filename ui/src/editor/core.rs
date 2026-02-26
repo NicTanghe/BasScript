@@ -172,6 +172,7 @@ enum DisplayMode {
     Split,
     Plain,
     Processed,
+    ProcessedRawCurrentLine,
 }
 
 impl DisplayMode {
@@ -180,6 +181,7 @@ impl DisplayMode {
             DisplayMode::Split => "Split",
             DisplayMode::Plain => "Plain",
             DisplayMode::Processed => "Processed",
+            DisplayMode::ProcessedRawCurrentLine => "Processed + Raw Line",
         }
     }
 
@@ -187,7 +189,9 @@ impl DisplayMode {
         match self {
             DisplayMode::Split => true,
             DisplayMode::Plain => panel == PanelKind::Plain,
-            DisplayMode::Processed => panel == PanelKind::Processed,
+            DisplayMode::Processed | DisplayMode::ProcessedRawCurrentLine => {
+                panel == PanelKind::Processed
+            }
         }
     }
 }
@@ -296,10 +300,11 @@ enum ShortcutAction {
     ZoomOut,
     PlainView,
     ProcessedView,
+    ProcessedRawCurrentLineView,
     ToggleTopMenu,
 }
 
-const SHORTCUT_ACTIONS: [ShortcutAction; 9] = [
+const SHORTCUT_ACTIONS: [ShortcutAction; 10] = [
     ShortcutAction::OpenWorkspace,
     ShortcutAction::SaveAs,
     ShortcutAction::Undo,
@@ -308,6 +313,7 @@ const SHORTCUT_ACTIONS: [ShortcutAction; 9] = [
     ShortcutAction::ZoomOut,
     ShortcutAction::PlainView,
     ShortcutAction::ProcessedView,
+    ShortcutAction::ProcessedRawCurrentLineView,
     ShortcutAction::ToggleTopMenu,
 ];
 
@@ -327,6 +333,7 @@ struct KeybindSettings {
     zoom_out: ShortcutBinding,
     plain_view: ShortcutBinding,
     processed_view: ShortcutBinding,
+    processed_raw_current_line_view: ShortcutBinding,
     toggle_top_menu: ShortcutBinding,
 }
 
@@ -365,6 +372,10 @@ impl Default for KeybindSettings {
                 key: KeyCode::KeyR,
                 shift: false,
             },
+            processed_raw_current_line_view: ShortcutBinding {
+                key: KeyCode::Digit1,
+                shift: false,
+            },
             toggle_top_menu: ShortcutBinding {
                 key: KeyCode::KeyB,
                 shift: false,
@@ -384,6 +395,7 @@ impl KeybindSettings {
             ShortcutAction::ZoomOut => self.zoom_out,
             ShortcutAction::PlainView => self.plain_view,
             ShortcutAction::ProcessedView => self.processed_view,
+            ShortcutAction::ProcessedRawCurrentLineView => self.processed_raw_current_line_view,
             ShortcutAction::ToggleTopMenu => self.toggle_top_menu,
         }
     }
@@ -398,6 +410,9 @@ impl KeybindSettings {
             ShortcutAction::ZoomOut => self.zoom_out = binding,
             ShortcutAction::PlainView => self.plain_view = binding,
             ShortcutAction::ProcessedView => self.processed_view = binding,
+            ShortcutAction::ProcessedRawCurrentLineView => {
+                self.processed_raw_current_line_view = binding
+            }
             ShortcutAction::ToggleTopMenu => self.toggle_top_menu = binding,
         }
     }
@@ -413,6 +428,7 @@ fn shortcut_action_label(action: ShortcutAction) -> &'static str {
         ShortcutAction::ZoomOut => "Zoom Out",
         ShortcutAction::PlainView => "Plain View Mode",
         ShortcutAction::ProcessedView => "Processed View Mode",
+        ShortcutAction::ProcessedRawCurrentLineView => "Processed + Raw Current Line Mode",
         ShortcutAction::ToggleTopMenu => "Toggle Top Menu",
     }
 }
@@ -427,6 +443,7 @@ fn shortcut_action_description(action: ShortcutAction) -> &'static str {
         ShortcutAction::ZoomOut => "Zoom out",
         ShortcutAction::PlainView => "Plain view mode",
         ShortcutAction::ProcessedView => "Processed view mode",
+        ShortcutAction::ProcessedRawCurrentLineView => "Processed + raw current line mode",
         ShortcutAction::ToggleTopMenu => "Toggle top menu",
     }
 }
@@ -441,6 +458,7 @@ fn shortcut_action_settings_key(action: ShortcutAction) -> &'static str {
         ShortcutAction::ZoomOut => "zoom_out",
         ShortcutAction::PlainView => "plain_view",
         ShortcutAction::ProcessedView => "processed_view",
+        ShortcutAction::ProcessedRawCurrentLineView => "processed_raw_current_line_view",
         ShortcutAction::ToggleTopMenu => "toggle_top_menu",
     }
 }
@@ -888,7 +906,7 @@ impl EditorState {
         match self.display_mode {
             DisplayMode::Split => self.focused_panel,
             DisplayMode::Plain => PanelKind::Plain,
-            DisplayMode::Processed => PanelKind::Processed,
+            DisplayMode::Processed | DisplayMode::ProcessedRawCurrentLine => PanelKind::Processed,
         }
     }
 

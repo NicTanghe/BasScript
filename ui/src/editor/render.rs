@@ -138,13 +138,12 @@ fn render_editor(
     let processed_view_capacity = processed_page_step_lines
         .saturating_mul(PROCESSED_PAPER_CAPACITY)
         .max(1);
-    let processed_all_lines = processed_cache_lines(
+    let processed_all_lines = processed_display_lines(
         &mut state,
         processed_wrap_columns,
         processed_lines_per_page,
         processed_spacer_lines,
-    )
-    .to_vec();
+    );
     if processed_all_lines.is_empty() {
         state.processed_top_visual = 0;
     } else {
@@ -471,7 +470,7 @@ fn viewport_lines(
     top_padding: f32,
 ) -> usize {
     let preferred_panel = match display_mode {
-        DisplayMode::Processed => PanelKind::Processed,
+        DisplayMode::Processed | DisplayMode::ProcessedRawCurrentLine => PanelKind::Processed,
         DisplayMode::Split | DisplayMode::Plain => PanelKind::Plain,
     };
     let Some((_, computed)) = body_query
@@ -495,7 +494,7 @@ fn viewport_lines_from_panels(
     top_padding: f32,
 ) -> usize {
     let preferred_panel = match display_mode {
-        DisplayMode::Processed => PanelKind::Processed,
+        DisplayMode::Processed | DisplayMode::ProcessedRawCurrentLine => PanelKind::Processed,
         DisplayMode::Split | DisplayMode::Plain => PanelKind::Plain,
     };
     let Some((_, _, computed)) = panel_query
@@ -532,6 +531,7 @@ fn visible_plain_lines(state: &EditorState, visible_lines: usize) -> Vec<String>
 struct ProcessedVisualLine {
     source_line: usize,
     text: String,
+    display_indent_width: usize,
     raw_start_column: usize,
     raw_end_column: usize,
     markdown_checklist_checked: Option<bool>,

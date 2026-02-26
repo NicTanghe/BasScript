@@ -52,13 +52,12 @@ fn apply_processed_panel_vertical_scroll(
     };
 
     let processed_layout = processed_page_layout(panel_size, state);
-    let all_lines = processed_cache_lines(
+    let all_lines = processed_display_lines(
         state,
         processed_layout.wrap_columns,
         processed_layout.lines_per_page,
         processed_layout.spacer_lines,
-    )
-    .to_vec();
+    );
     if all_lines.is_empty() {
         state.processed_top_visual = 0;
         state.processed_top_line = 0;
@@ -119,13 +118,12 @@ fn apply_cursor_follow_scroll_policy(
 
             if let Some(panel_size) = processed_panel_size {
                 let processed_layout = processed_page_layout(panel_size, state);
-                let all_lines = processed_cache_lines(
+                let all_lines = processed_display_lines(
                     state,
                     processed_layout.wrap_columns,
                     processed_layout.lines_per_page,
                     processed_layout.spacer_lines,
-                )
-                .to_vec();
+                );
                 if all_lines.is_empty() {
                     state.processed_top_visual = 0;
                 } else {

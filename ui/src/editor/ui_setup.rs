@@ -276,6 +276,10 @@ fn setup(
                     keybind_row(font.clone(), "Cmd/Ctrl+Mouse wheel", "Zoom"),
                     keybind_setting_row(font.clone(), ShortcutAction::PlainView),
                     keybind_setting_row(font.clone(), ShortcutAction::ProcessedView),
+                    keybind_setting_row(
+                        font.clone(),
+                        ShortcutAction::ProcessedRawCurrentLineView,
+                    ),
                     keybind_setting_row(font.clone(), ShortcutAction::ToggleTopMenu),
                     keybind_row(font.clone(), "Arrow keys", "Move cursor"),
                     keybind_row(font.clone(), "Home / End", "Move to line start/end"),
@@ -1341,7 +1345,7 @@ fn handle_settings_buttons(
                 state.dialogue_double_space_newline = !state.dialogue_double_space_newline;
                 settings_changed = true;
                 state.status_message = format!(
-                    "Dialogue double-space newline in processed pane: {}",
+                    "Dialogue double-space newline in processed modes: {}",
                     if state.dialogue_double_space_newline {
                         "ON"
                     } else {
@@ -1353,7 +1357,7 @@ fn handle_settings_buttons(
                 state.non_dialogue_double_space_newline = !state.non_dialogue_double_space_newline;
                 settings_changed = true;
                 state.status_message = format!(
-                    "Non-dialogue double-space newline in processed pane: {}",
+                    "Non-dialogue double-space newline in processed modes: {}",
                     if state.non_dialogue_double_space_newline {
                         "ON"
                     } else {
@@ -1616,7 +1620,7 @@ fn sync_settings_ui(
     for (label, mut text) in toggle_label_query.iter_mut() {
         **text = match label.action {
             SettingsAction::DialogueDoubleSpaceNewline => format!(
-                "Double space as newline in dialogue (processed pane): {}",
+                "Double space as newline in dialogue (processed modes): {}",
                 if state.dialogue_double_space_newline {
                     "ON"
                 } else {
@@ -1624,7 +1628,7 @@ fn sync_settings_ui(
                 }
             ),
             SettingsAction::NonDialogueDoubleSpaceNewline => format!(
-                "Double space as newline in non-dialogue (processed pane): {}",
+                "Double space as newline in non-dialogue (processed modes): {}",
                 if state.non_dialogue_double_space_newline {
                     "ON"
                 } else {

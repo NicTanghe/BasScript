@@ -141,6 +141,17 @@ fn handle_navigation_input(
             return;
         }
 
+        if shortcut_just_pressed(
+            &keys,
+            state
+                .keybinds
+                .binding(ShortcutAction::ProcessedRawCurrentLineView),
+        ) {
+            state.set_display_mode(DisplayMode::ProcessedRawCurrentLine);
+            state.status_message = format!("View mode: {}", state.display_mode.label());
+            return;
+        }
+
         if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::Redo)) {
             let changed = state.redo(visible_lines, plain_panel_size, processed_panel_size);
 
@@ -339,13 +350,12 @@ fn handle_mouse_click(
         .saturating_mul(PROCESSED_PAPER_CAPACITY)
         .max(1);
     let plain_lines = visible_plain_lines(&state, visible_lines);
-    let processed_all_lines = processed_cache_lines(
+    let processed_all_lines = processed_display_lines(
         &mut state,
         processed_wrap_columns,
         processed_lines_per_page,
         processed_spacer_lines,
-    )
-    .to_vec();
+    );
     if processed_all_lines.is_empty() {
         state.processed_top_visual = 0;
     } else {
@@ -494,7 +504,7 @@ fn handle_mouse_click(
             let Some(visual_line) = processed_all_lines.get(global_index) else {
                 continue;
             };
-            let raw_column = processed_raw_column_from_display(&state, visual_line, display_column);
+            let raw_column = processed_raw_column_from_display(visual_line, display_column);
             let line = visual_line.source_line;
             let max_col = state.document.line_len_chars(line);
             let column = raw_column.min(max_col);

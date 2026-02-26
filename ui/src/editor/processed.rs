@@ -111,13 +111,12 @@ fn processed_anchor_page_top_for_state(
     let step_px = processed_page_step_px(&layout.geometry, state.zoom);
     let view_capacity = step_lines.saturating_mul(PROCESSED_PAPER_CAPACITY).max(1);
     let processed_line_height = scaled_line_height(state).max(1.0);
-    let all_lines = processed_cache_lines(
+    let all_lines = processed_display_lines(
         state,
         layout.wrap_columns,
         layout.lines_per_page,
         layout.spacer_lines,
-    )
-    .to_vec();
+    );
     if all_lines.is_empty() {
         return Some(layout.geometry.paper_top + state.processed_zoom_anchor_bias_px);
     }
@@ -211,6 +210,7 @@ fn build_processed_segment_lines(
     wrap_columns: usize,
     lines_per_page: usize,
     spacer_lines: usize,
+    raw_override_line: Option<usize>,
 ) -> Vec<ProcessedVisualLine> {
     let lines_per_page = lines_per_page.max(1);
     let mut paged_lines = Vec::<ProcessedVisualLine>::new();
@@ -221,13 +221,25 @@ fn build_processed_segment_lines(
             continue;
         };
 
-        let indent_width = parsed_line.indent_width();
-        let uppercase = matches!(
-            parsed_line.kind,
-            LineKind::SceneHeading | LineKind::Transition | LineKind::Character
-        );
-        let (raw_column_base, rendered_raw, checklist_state) = markdown_visual_text(parsed_line)
-            .unwrap_or_else(|| (0, parsed_line.raw.clone(), None));
+        let raw_override_active = raw_override_line == Some(source_line);
+        let indent_width = if raw_override_active {
+            0
+        } else {
+            parsed_line.indent_width()
+        };
+        let uppercase = if raw_override_active {
+            false
+        } else {
+            matches!(
+                parsed_line.kind,
+                LineKind::SceneHeading | LineKind::Transition | LineKind::Character
+            )
+        };
+        let (raw_column_base, rendered_raw, checklist_state) = if raw_override_active {
+            (0, parsed_line.raw.clone(), None)
+        } else {
+            markdown_visual_text(parsed_line).unwrap_or_else(|| (0, parsed_line.raw.clone(), None))
+        };
         let mut wrapped = Vec::<ProcessedVisualLine>::new();
 
         if should_split_on_double_space(state, &parsed_line.kind) {
@@ -298,6 +310,7 @@ fn build_processed_cache(
             wrap_columns,
             lines_per_page,
             spacer_lines,
+            None,
         );
         lines.extend(segment_lines.iter().cloned());
         segments.push(ProcessedSegment {
@@ -339,6 +352,7 @@ fn rebuild_processed_cache_segment(
         cache.wrap_columns,
         cache.lines_per_page,
         cache.spacer_lines,
+        None,
     );
     cache.segments[segment_index].lines = updated_lines;
     cache.lines.clear();
@@ -427,6 +441,40 @@ fn processed_cache_lines<'a>(
         .map_or(&[], |cache| cache.lines.as_slice())
 }
 
+fn processed_display_lines(
+    state: &mut EditorState,
+    wrap_columns: usize,
+    lines_per_page: usize,
+    spacer_lines: usize,
+) -> Vec<ProcessedVisualLine> {
+    if state.display_mode != DisplayMode::ProcessedRawCurrentLine {
+        return processed_cache_lines(state, wrap_columns, lines_per_page, spacer_lines).to_vec();
+    }
+
+    let raw_override_line = Some(
+        state
+            .cursor
+            .position
+            .line
+            .min(state.parsed.len().saturating_sub(1)),
+    );
+    let mut lines = Vec::<ProcessedVisualLine>::new();
+    for (start_line, end_line_exclusive, ends_with_hard_break) in processed_segment_ranges(state) {
+        let segment_lines = build_processed_segment_lines(
+            state,
+            start_line,
+            end_line_exclusive,
+            ends_with_hard_break,
+            wrap_columns,
+            lines_per_page,
+            spacer_lines,
+            raw_override_line,
+        );
+        lines.extend(segment_lines);
+    }
+    lines
+}
+
 fn push_wrapped_visual_lines(
     out: &mut Vec<ProcessedVisualLine>,
     source_line: usize,
@@ -445,6 +493,7 @@ fn push_wrapped_visual_lines(
         out.push(ProcessedVisualLine {
             source_line,
             text: " ".repeat(blank_columns),
+            display_indent_width: indent_width,
             raw_start_column,
             raw_end_column: raw_start_column,
             markdown_checklist_checked: None,
@@ -477,6 +526,7 @@ fn push_wrapped_visual_lines(
         out.push(ProcessedVisualLine {
             source_line,
             text: format!("{}{}", " ".repeat(indent_width), display_chunk),
+            display_indent_width: indent_width,
             raw_start_column: raw_start_column.saturating_add(start),
             raw_end_column: raw_start_column.saturating_add(split),
             markdown_checklist_checked: None,
@@ -496,6 +546,7 @@ fn push_page_spacers(out: &mut Vec<ProcessedVisualLine>, source_line: usize, cou
         out.push(ProcessedVisualLine {
             source_line,
             text: " ".to_owned(),
+            display_indent_width: 0,
             raw_start_column: 0,
             raw_end_column: 0,
             markdown_checklist_checked: None,
@@ -729,19 +780,15 @@ fn double_space_segments(input: &str) -> Vec<(usize, String)> {
 }
 
 fn processed_raw_column_from_display(
-    state: &EditorState,
     visual_line: &ProcessedVisualLine,
     display_column: usize,
 ) -> usize {
-    let indent = state
-        .parsed
-        .get(visual_line.source_line)
-        .map_or(0, ParsedLine::indent_width);
-
     let segment_len = visual_line
         .raw_end_column
         .saturating_sub(visual_line.raw_start_column);
-    let local_column = display_column.saturating_sub(indent).min(segment_len);
+    let local_column = display_column
+        .saturating_sub(visual_line.display_indent_width)
+        .min(segment_len);
     visual_line.raw_start_column.saturating_add(local_column)
 }
 
@@ -758,10 +805,6 @@ fn processed_cursor_visual_from_lines<'a>(
 ) -> Option<(usize, usize, &'a str)> {
     let source_line = state.cursor.position.line;
     let raw_column = state.cursor.position.column;
-    let indent = state
-        .parsed
-        .get(source_line)
-        .map_or(0, ParsedLine::indent_width);
 
     let relevant = lines
         .iter()
@@ -788,7 +831,7 @@ fn processed_cursor_visual_from_lines<'a>(
         {
             return Some((
                 *visual_index,
-                indent.saturating_add(local_column),
+                visual_line.display_indent_width.saturating_add(local_column),
                 &visual_line.text,
             ));
         }
@@ -799,7 +842,7 @@ fn processed_cursor_visual_from_lines<'a>(
         .saturating_sub(default_line.raw_start_column);
     Some((
         default_index,
-        indent.saturating_add(default_len),
+        default_line.display_indent_width.saturating_add(default_len),
         &default_line.text,
     ))
 }
@@ -904,6 +947,18 @@ fn apply_processed_styles(
             text_color.0 = COLOR_ACTION;
             continue;
         };
+
+        let raw_current_line_mode_active =
+            state.display_mode == DisplayMode::ProcessedRawCurrentLine
+                && visual_line.source_line == state.cursor.position.line;
+        if raw_current_line_mode_active {
+            text_font.font =
+                font_for_variant_with_format(fonts, FontVariant::Regular, state.document_format);
+            text_font.font_size = font_size;
+            *text_line_height = LineHeight::Px(line_height);
+            text_color.0 = COLOR_ACTION;
+            continue;
+        }
 
         let (font_variant, color, font_scale, line_height_scale) =
             style_for_line_kind(&parsed_line.kind);
