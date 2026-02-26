@@ -33,7 +33,9 @@ const FONT_MARKDOWN_ITALIC_PATH: &str = "fonts/SegoeUIVF.ttf";
 const FONT_MARKDOWN_BOLD_ITALIC_PATH: &str = "fonts/SegoeUIVF.ttf";
 const DEFAULT_LOAD_PATH: &str = "docs/humanDOC.md";
 const DEFAULT_SAVE_PATH: &str = "scripts/session.fountain";
-const SETTINGS_PATH: &str = "scripts/settings.toml";
+const EDITOR_SETTINGS_PATH: &str = "scripts/editor_settings.ron";
+const KEYBINDS_SETTINGS_PATH: &str = "scripts/keybinds.ron";
+const LEGACY_SETTINGS_PATH: &str = "scripts/settings.toml";
 const PROCESSED_PAPER_CAPACITY: usize = 16;
 
 const FONT_SIZE: f32 = 12.0;
@@ -115,6 +117,7 @@ impl Plugin for UiPlugin {
                     handle_window_shortcuts,
                     sync_window_chrome,
                     sync_top_menu_visibility,
+                    sync_panel_display_mode,
                     sync_settings_ui,
                     sync_workspace_sidebar,
                 ),
@@ -132,6 +135,11 @@ impl Plugin for UiPlugin {
                 Update,
                 handle_settings_buttons
                     .run_if(in_state(UiScreenState::Settings).or(in_state(UiScreenState::Keybinds))),
+            )
+            .add_systems(
+                Update,
+                (handle_keybind_buttons, capture_keybind_input)
+                    .run_if(in_state(UiScreenState::Keybinds)),
             )
             .add_systems(
                 Update,
@@ -157,6 +165,36 @@ impl Plugin for UiPlugin {
 enum PanelKind {
     Plain,
     Processed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DisplayMode {
+    Split,
+    Plain,
+    Processed,
+}
+
+impl DisplayMode {
+    fn label(self) -> &'static str {
+        match self {
+            DisplayMode::Split => "Split",
+            DisplayMode::Plain => "Plain",
+            DisplayMode::Processed => "Processed",
+        }
+    }
+
+    fn panel_visible(self, panel: PanelKind) -> bool {
+        match self {
+            DisplayMode::Split => true,
+            DisplayMode::Plain => panel == PanelKind::Plain,
+            DisplayMode::Processed => panel == PanelKind::Processed,
+        }
+    }
+}
+
+#[derive(Component)]
+struct PanelRoot {
+    kind: PanelKind,
 }
 
 #[derive(Component)]
@@ -248,6 +286,300 @@ enum SettingsAction {
     BackToEditor,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum ShortcutAction {
+    OpenWorkspace,
+    SaveAs,
+    Undo,
+    Redo,
+    ZoomIn,
+    ZoomOut,
+    PlainView,
+    ProcessedView,
+    ToggleTopMenu,
+}
+
+const SHORTCUT_ACTIONS: [ShortcutAction; 9] = [
+    ShortcutAction::OpenWorkspace,
+    ShortcutAction::SaveAs,
+    ShortcutAction::Undo,
+    ShortcutAction::Redo,
+    ShortcutAction::ZoomIn,
+    ShortcutAction::ZoomOut,
+    ShortcutAction::PlainView,
+    ShortcutAction::ProcessedView,
+    ShortcutAction::ToggleTopMenu,
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ShortcutBinding {
+    key: KeyCode,
+    shift: bool,
+}
+
+#[derive(Clone, Debug)]
+struct KeybindSettings {
+    open_workspace: ShortcutBinding,
+    save_as: ShortcutBinding,
+    undo: ShortcutBinding,
+    redo: ShortcutBinding,
+    zoom_in: ShortcutBinding,
+    zoom_out: ShortcutBinding,
+    plain_view: ShortcutBinding,
+    processed_view: ShortcutBinding,
+    toggle_top_menu: ShortcutBinding,
+}
+
+impl Default for KeybindSettings {
+    fn default() -> Self {
+        Self {
+            open_workspace: ShortcutBinding {
+                key: KeyCode::KeyO,
+                shift: false,
+            },
+            save_as: ShortcutBinding {
+                key: KeyCode::KeyS,
+                shift: false,
+            },
+            undo: ShortcutBinding {
+                key: KeyCode::KeyZ,
+                shift: false,
+            },
+            redo: ShortcutBinding {
+                key: KeyCode::KeyZ,
+                shift: true,
+            },
+            zoom_in: ShortcutBinding {
+                key: KeyCode::Equal,
+                shift: false,
+            },
+            zoom_out: ShortcutBinding {
+                key: KeyCode::Minus,
+                shift: false,
+            },
+            plain_view: ShortcutBinding {
+                key: KeyCode::KeyT,
+                shift: false,
+            },
+            processed_view: ShortcutBinding {
+                key: KeyCode::KeyR,
+                shift: false,
+            },
+            toggle_top_menu: ShortcutBinding {
+                key: KeyCode::KeyB,
+                shift: false,
+            },
+        }
+    }
+}
+
+impl KeybindSettings {
+    fn binding(&self, action: ShortcutAction) -> ShortcutBinding {
+        match action {
+            ShortcutAction::OpenWorkspace => self.open_workspace,
+            ShortcutAction::SaveAs => self.save_as,
+            ShortcutAction::Undo => self.undo,
+            ShortcutAction::Redo => self.redo,
+            ShortcutAction::ZoomIn => self.zoom_in,
+            ShortcutAction::ZoomOut => self.zoom_out,
+            ShortcutAction::PlainView => self.plain_view,
+            ShortcutAction::ProcessedView => self.processed_view,
+            ShortcutAction::ToggleTopMenu => self.toggle_top_menu,
+        }
+    }
+
+    fn set_binding(&mut self, action: ShortcutAction, binding: ShortcutBinding) {
+        match action {
+            ShortcutAction::OpenWorkspace => self.open_workspace = binding,
+            ShortcutAction::SaveAs => self.save_as = binding,
+            ShortcutAction::Undo => self.undo = binding,
+            ShortcutAction::Redo => self.redo = binding,
+            ShortcutAction::ZoomIn => self.zoom_in = binding,
+            ShortcutAction::ZoomOut => self.zoom_out = binding,
+            ShortcutAction::PlainView => self.plain_view = binding,
+            ShortcutAction::ProcessedView => self.processed_view = binding,
+            ShortcutAction::ToggleTopMenu => self.toggle_top_menu = binding,
+        }
+    }
+}
+
+fn shortcut_action_label(action: ShortcutAction) -> &'static str {
+    match action {
+        ShortcutAction::OpenWorkspace => "Open Workspace Folder",
+        ShortcutAction::SaveAs => "Save As Dialog",
+        ShortcutAction::Undo => "Undo",
+        ShortcutAction::Redo => "Redo",
+        ShortcutAction::ZoomIn => "Zoom In",
+        ShortcutAction::ZoomOut => "Zoom Out",
+        ShortcutAction::PlainView => "Plain View Mode",
+        ShortcutAction::ProcessedView => "Processed View Mode",
+        ShortcutAction::ToggleTopMenu => "Toggle Top Menu",
+    }
+}
+
+fn shortcut_action_description(action: ShortcutAction) -> &'static str {
+    match action {
+        ShortcutAction::OpenWorkspace => "Open workspace folder",
+        ShortcutAction::SaveAs => "Save As dialog",
+        ShortcutAction::Undo => "Undo",
+        ShortcutAction::Redo => "Redo",
+        ShortcutAction::ZoomIn => "Zoom in",
+        ShortcutAction::ZoomOut => "Zoom out",
+        ShortcutAction::PlainView => "Plain view mode",
+        ShortcutAction::ProcessedView => "Processed view mode",
+        ShortcutAction::ToggleTopMenu => "Toggle top menu",
+    }
+}
+
+fn shortcut_action_settings_key(action: ShortcutAction) -> &'static str {
+    match action {
+        ShortcutAction::OpenWorkspace => "open_workspace",
+        ShortcutAction::SaveAs => "save_as",
+        ShortcutAction::Undo => "undo",
+        ShortcutAction::Redo => "redo",
+        ShortcutAction::ZoomIn => "zoom_in",
+        ShortcutAction::ZoomOut => "zoom_out",
+        ShortcutAction::PlainView => "plain_view",
+        ShortcutAction::ProcessedView => "processed_view",
+        ShortcutAction::ToggleTopMenu => "toggle_top_menu",
+    }
+}
+
+fn binding_key_name(key: KeyCode) -> Option<&'static str> {
+    match key {
+        KeyCode::KeyA => Some("A"),
+        KeyCode::KeyB => Some("B"),
+        KeyCode::KeyC => Some("C"),
+        KeyCode::KeyD => Some("D"),
+        KeyCode::KeyE => Some("E"),
+        KeyCode::KeyF => Some("F"),
+        KeyCode::KeyG => Some("G"),
+        KeyCode::KeyH => Some("H"),
+        KeyCode::KeyI => Some("I"),
+        KeyCode::KeyJ => Some("J"),
+        KeyCode::KeyK => Some("K"),
+        KeyCode::KeyL => Some("L"),
+        KeyCode::KeyM => Some("M"),
+        KeyCode::KeyN => Some("N"),
+        KeyCode::KeyO => Some("O"),
+        KeyCode::KeyP => Some("P"),
+        KeyCode::KeyQ => Some("Q"),
+        KeyCode::KeyR => Some("R"),
+        KeyCode::KeyS => Some("S"),
+        KeyCode::KeyT => Some("T"),
+        KeyCode::KeyU => Some("U"),
+        KeyCode::KeyV => Some("V"),
+        KeyCode::KeyW => Some("W"),
+        KeyCode::KeyX => Some("X"),
+        KeyCode::KeyY => Some("Y"),
+        KeyCode::KeyZ => Some("Z"),
+        KeyCode::Digit0 | KeyCode::Numpad0 => Some("0"),
+        KeyCode::Digit1 | KeyCode::Numpad1 => Some("1"),
+        KeyCode::Digit2 | KeyCode::Numpad2 => Some("2"),
+        KeyCode::Digit3 | KeyCode::Numpad3 => Some("3"),
+        KeyCode::Digit4 | KeyCode::Numpad4 => Some("4"),
+        KeyCode::Digit5 | KeyCode::Numpad5 => Some("5"),
+        KeyCode::Digit6 | KeyCode::Numpad6 => Some("6"),
+        KeyCode::Digit7 | KeyCode::Numpad7 => Some("7"),
+        KeyCode::Digit8 | KeyCode::Numpad8 => Some("8"),
+        KeyCode::Digit9 | KeyCode::Numpad9 => Some("9"),
+        KeyCode::Equal => Some("="),
+        KeyCode::Minus => Some("-"),
+        _ => None,
+    }
+}
+
+fn binding_key_from_name(name: &str) -> Option<KeyCode> {
+    match name.trim().to_ascii_uppercase().as_str() {
+        "A" => Some(KeyCode::KeyA),
+        "B" => Some(KeyCode::KeyB),
+        "C" => Some(KeyCode::KeyC),
+        "D" => Some(KeyCode::KeyD),
+        "E" => Some(KeyCode::KeyE),
+        "F" => Some(KeyCode::KeyF),
+        "G" => Some(KeyCode::KeyG),
+        "H" => Some(KeyCode::KeyH),
+        "I" => Some(KeyCode::KeyI),
+        "J" => Some(KeyCode::KeyJ),
+        "K" => Some(KeyCode::KeyK),
+        "L" => Some(KeyCode::KeyL),
+        "M" => Some(KeyCode::KeyM),
+        "N" => Some(KeyCode::KeyN),
+        "O" => Some(KeyCode::KeyO),
+        "P" => Some(KeyCode::KeyP),
+        "Q" => Some(KeyCode::KeyQ),
+        "R" => Some(KeyCode::KeyR),
+        "S" => Some(KeyCode::KeyS),
+        "T" => Some(KeyCode::KeyT),
+        "U" => Some(KeyCode::KeyU),
+        "V" => Some(KeyCode::KeyV),
+        "W" => Some(KeyCode::KeyW),
+        "X" => Some(KeyCode::KeyX),
+        "Y" => Some(KeyCode::KeyY),
+        "Z" => Some(KeyCode::KeyZ),
+        "0" => Some(KeyCode::Digit0),
+        "1" => Some(KeyCode::Digit1),
+        "2" => Some(KeyCode::Digit2),
+        "3" => Some(KeyCode::Digit3),
+        "4" => Some(KeyCode::Digit4),
+        "5" => Some(KeyCode::Digit5),
+        "6" => Some(KeyCode::Digit6),
+        "7" => Some(KeyCode::Digit7),
+        "8" => Some(KeyCode::Digit8),
+        "9" => Some(KeyCode::Digit9),
+        "=" => Some(KeyCode::Equal),
+        "-" => Some(KeyCode::Minus),
+        _ => None,
+    }
+}
+
+fn parse_binding_spec(spec: &str) -> Option<ShortcutBinding> {
+    let trimmed = spec.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let (shift, key_name) = if trimmed
+        .to_ascii_uppercase()
+        .starts_with("SHIFT+")
+        && trimmed.len() > "SHIFT+".len()
+    {
+        (true, &trimmed["SHIFT+".len()..])
+    } else {
+        (false, trimmed)
+    };
+    let key = binding_key_from_name(key_name)?;
+    Some(ShortcutBinding { key, shift })
+}
+
+fn binding_spec(binding: ShortcutBinding) -> String {
+    let key_name = binding_key_name(binding.key).unwrap_or("?");
+    if binding.shift {
+        format!("Shift+{key_name}")
+    } else {
+        key_name.to_string()
+    }
+}
+
+fn binding_display(binding: ShortcutBinding) -> String {
+    let mut text = String::from("Cmd/Ctrl+");
+    if binding.shift {
+        text.push_str("Shift+");
+    }
+    text.push_str(binding_key_name(binding.key).unwrap_or("?"));
+    text
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct KeybindRebindButton {
+    action: ShortcutAction,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct KeybindBindingLabel {
+    action: ShortcutAction,
+}
+
 #[derive(Component)]
 struct EditorScreenRoot;
 
@@ -287,12 +619,15 @@ struct EditorState {
     top_line: usize,
     processed_top_line: usize,
     processed_top_visual: usize,
+    display_mode: DisplayMode,
     focused_panel: PanelKind,
     plain_horizontal_scroll: f32,
     processed_horizontal_scroll: f32,
     processed_zoom_anchor_bias_px: f32,
     paths: DocumentPath,
     status_message: String,
+    keybinds: KeybindSettings,
+    pending_keybind_capture: Option<ShortcutAction>,
     top_menu_collapsed: bool,
     show_system_titlebar: bool,
     caret_blink: Timer,
@@ -456,6 +791,7 @@ impl FromWorld for EditorState {
     fn from_world(_world: &mut World) -> Self {
         let paths = DocumentPath::new(DEFAULT_LOAD_PATH, DEFAULT_SAVE_PATH);
         let settings = load_persistent_settings();
+        let keybinds = load_keybind_settings();
         let (document, document_format, status_message) = match Document::load(&paths.load_path) {
             Ok(doc) => {
                 let format = detect_document_format(&paths.load_path, &doc);
@@ -493,12 +829,15 @@ impl FromWorld for EditorState {
             top_line: 0,
             processed_top_line: 0,
             processed_top_visual: 0,
+            display_mode: DisplayMode::Split,
             focused_panel: PanelKind::Plain,
             plain_horizontal_scroll: 0.0,
             processed_horizontal_scroll: 0.0,
             processed_zoom_anchor_bias_px: 0.0,
             paths,
             status_message,
+            keybinds,
+            pending_keybind_capture: None,
             top_menu_collapsed: false,
             show_system_titlebar: settings.show_system_titlebar,
             caret_blink: Timer::from_seconds(0.5, TimerMode::Repeating),
@@ -532,6 +871,31 @@ impl FromWorld for EditorState {
 }
 
 impl EditorState {
+    fn set_display_mode(&mut self, mode: DisplayMode) -> bool {
+        if self.display_mode == mode {
+            return false;
+        }
+
+        self.display_mode = mode;
+        if !self.panel_visible(self.focused_panel) {
+            self.focused_panel = self.active_panel_for_display_mode();
+        }
+        self.reset_blink();
+        true
+    }
+
+    fn active_panel_for_display_mode(&self) -> PanelKind {
+        match self.display_mode {
+            DisplayMode::Split => self.focused_panel,
+            DisplayMode::Plain => PanelKind::Plain,
+            DisplayMode::Processed => PanelKind::Processed,
+        }
+    }
+
+    fn panel_visible(&self, panel: PanelKind) -> bool {
+        self.display_mode.panel_visible(panel)
+    }
+
     fn set_zoom(&mut self, zoom: f32) {
         self.zoom = zoom.clamp(ZOOM_MIN, ZOOM_MAX);
         self.measured_line_step = scaled_line_height(self);

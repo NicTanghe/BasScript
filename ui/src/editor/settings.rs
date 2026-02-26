@@ -1,14 +1,24 @@
 fn load_persistent_settings() -> PersistentSettings {
-    let path = PathBuf::from(SETTINGS_PATH);
+    let path = PathBuf::from(EDITOR_SETTINGS_PATH);
     let defaults = PersistentSettings::default();
     let contents = match fs::read_to_string(&path) {
         Ok(contents) => contents,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            if let Some(legacy) = load_legacy_toml_settings() {
+                info!(
+                    "[settings] Loaded legacy settings from {}; using as defaults",
+                    LEGACY_SETTINGS_PATH
+                );
+                let _ = save_persistent_settings(&legacy);
+                return legacy;
+            }
             info!(
                 "[settings] No settings file found at {}; using defaults",
                 path.display()
             );
-            return PersistentSettings::default();
+            let defaults = PersistentSettings::default();
+            let _ = save_persistent_settings(&defaults);
+            return defaults;
         }
         Err(error) => {
             warn!(
@@ -20,21 +30,20 @@ fn load_persistent_settings() -> PersistentSettings {
         }
     };
 
-    let dialogue_value = parse_toml_bool(&contents, "dialogue_double_space_newline")
-        .or_else(|| parse_toml_bool(&contents, "parenthetical_double_space_newline"))
+    let dialogue_value = parse_ron_bool(&contents, "dialogue_double_space_newline")
         .unwrap_or(defaults.dialogue_double_space_newline);
-    let non_dialogue_value = parse_toml_bool(&contents, "non_dialogue_double_space_newline")
+    let non_dialogue_value = parse_ron_bool(&contents, "non_dialogue_double_space_newline")
         .unwrap_or(defaults.non_dialogue_double_space_newline);
-    let show_system_titlebar =
-        parse_toml_bool(&contents, "show_system_titlebar").unwrap_or(defaults.show_system_titlebar);
+    let show_system_titlebar = parse_ron_bool(&contents, "show_system_titlebar")
+        .unwrap_or(defaults.show_system_titlebar);
     let page_margin_left =
-        parse_toml_f32(&contents, "page_margin_left").unwrap_or(defaults.page_margin_left);
+        parse_ron_f32(&contents, "page_margin_left").unwrap_or(defaults.page_margin_left);
     let page_margin_right =
-        parse_toml_f32(&contents, "page_margin_right").unwrap_or(defaults.page_margin_right);
+        parse_ron_f32(&contents, "page_margin_right").unwrap_or(defaults.page_margin_right);
     let page_margin_top =
-        parse_toml_f32(&contents, "page_margin_top").unwrap_or(defaults.page_margin_top);
+        parse_ron_f32(&contents, "page_margin_top").unwrap_or(defaults.page_margin_top);
     let page_margin_bottom =
-        parse_toml_f32(&contents, "page_margin_bottom").unwrap_or(defaults.page_margin_bottom);
+        parse_ron_f32(&contents, "page_margin_bottom").unwrap_or(defaults.page_margin_bottom);
 
     info!("[settings] Loaded settings from {}", path.display());
     PersistentSettings {
@@ -48,26 +57,62 @@ fn load_persistent_settings() -> PersistentSettings {
     }
 }
 
+fn load_keybind_settings() -> KeybindSettings {
+    let path = PathBuf::from(KEYBINDS_SETTINGS_PATH);
+    let mut keybinds = KeybindSettings::default();
+    let contents = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            info!(
+                "[keybinds] No keybind file found at {}; using defaults",
+                path.display()
+            );
+            let _ = save_keybind_settings(&keybinds);
+            return keybinds;
+        }
+        Err(error) => {
+            warn!(
+                "[keybinds] Failed reading {}: {}; using defaults",
+                path.display(),
+                error
+            );
+            return keybinds;
+        }
+    };
+
+    for action in SHORTCUT_ACTIONS {
+        let key = shortcut_action_settings_key(action);
+        let Some(raw) = parse_ron_string(&contents, key) else {
+            continue;
+        };
+        let Some(binding) = parse_binding_spec(&raw) else {
+            warn!("[keybinds] Invalid binding for {key}: {raw}");
+            continue;
+        };
+        keybinds.set_binding(action, binding);
+    }
+
+    info!("[keybinds] Loaded keybinds from {}", path.display());
+    keybinds
+}
+
 fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
-    let path = PathBuf::from(SETTINGS_PATH);
+    let path = PathBuf::from(EDITOR_SETTINGS_PATH);
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
 
     let contents = format!(
-        "# BasScript settings\n\
-         # true: processed pane renders dialogue double spaces as new lines\n\
-         dialogue_double_space_newline = {}\n\
-         # true: processed pane renders non-dialogue double spaces as new lines\n\
-         non_dialogue_double_space_newline = {}\n\
-         # true: show OS window titlebar and border\n\
-         show_system_titlebar = {}\n\
-         # processed page margins in typographic points\n\
-         page_margin_left = {}\n\
-         page_margin_right = {}\n\
-         page_margin_top = {}\n\
-         page_margin_bottom = {}\n",
+        "(\n\
+         \tdialogue_double_space_newline: {},\n\
+         \tnon_dialogue_double_space_newline: {},\n\
+         \tshow_system_titlebar: {},\n\
+         \tpage_margin_left: {:.3},\n\
+         \tpage_margin_right: {:.3},\n\
+         \tpage_margin_top: {:.3},\n\
+         \tpage_margin_bottom: {:.3},\n\
+         )\n",
         settings.dialogue_double_space_newline,
         settings.non_dialogue_double_space_newline,
         settings.show_system_titlebar,
@@ -82,10 +127,97 @@ fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
     Ok(())
 }
 
-fn parse_toml_bool(contents: &str, key: &str) -> Option<bool> {
+fn save_keybind_settings(keybinds: &KeybindSettings) -> io::Result<()> {
+    let path = PathBuf::from(KEYBINDS_SETTINGS_PATH);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut rows = Vec::new();
+    for action in SHORTCUT_ACTIONS {
+        rows.push(format!(
+            "\t{}: \"{}\",",
+            shortcut_action_settings_key(action),
+            binding_spec(keybinds.binding(action))
+        ));
+    }
+
+    let contents = format!("(\n{}\n)\n", rows.join("\n"));
+    fs::write(&path, contents)?;
+    info!("[keybinds] Saved keybinds to {}", path.display());
+    Ok(())
+}
+
+fn parse_ron_value(contents: &str, key: &str) -> Option<String> {
     for line in contents.lines() {
         let line = line.trim();
 
+        if line.is_empty() || line.starts_with("//") || line == "(" || line == ")" {
+            continue;
+        }
+
+        let Some((lhs, rhs)) = line.split_once(':') else {
+            continue;
+        };
+        if lhs.trim() != key {
+            continue;
+        }
+
+        return Some(rhs.trim().trim_end_matches(',').trim().to_string());
+    }
+
+    None
+}
+
+fn parse_ron_bool(contents: &str, key: &str) -> Option<bool> {
+    match parse_ron_value(contents, key)?.as_str() {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        }
+}
+
+fn parse_ron_f32(contents: &str, key: &str) -> Option<f32> {
+    parse_ron_value(contents, key)?.parse::<f32>().ok()
+}
+
+fn parse_ron_string(contents: &str, key: &str) -> Option<String> {
+    let value = parse_ron_value(contents, key)?;
+    if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
+        return Some(value[1..value.len().saturating_sub(1)].to_string());
+    }
+    None
+}
+
+fn load_legacy_toml_settings() -> Option<PersistentSettings> {
+    let path = PathBuf::from(LEGACY_SETTINGS_PATH);
+    let contents = fs::read_to_string(&path).ok()?;
+    let defaults = PersistentSettings::default();
+    Some(PersistentSettings {
+        dialogue_double_space_newline: parse_toml_bool(&contents, "dialogue_double_space_newline")
+            .or_else(|| parse_toml_bool(&contents, "parenthetical_double_space_newline"))
+            .unwrap_or(defaults.dialogue_double_space_newline),
+        non_dialogue_double_space_newline: parse_toml_bool(
+            &contents,
+            "non_dialogue_double_space_newline",
+        )
+        .unwrap_or(defaults.non_dialogue_double_space_newline),
+        show_system_titlebar: parse_toml_bool(&contents, "show_system_titlebar")
+            .unwrap_or(defaults.show_system_titlebar),
+        page_margin_left: parse_toml_f32(&contents, "page_margin_left")
+            .unwrap_or(defaults.page_margin_left),
+        page_margin_right: parse_toml_f32(&contents, "page_margin_right")
+            .unwrap_or(defaults.page_margin_right),
+        page_margin_top: parse_toml_f32(&contents, "page_margin_top")
+            .unwrap_or(defaults.page_margin_top),
+        page_margin_bottom: parse_toml_f32(&contents, "page_margin_bottom")
+            .unwrap_or(defaults.page_margin_bottom),
+    })
+}
+
+fn parse_toml_bool(contents: &str, key: &str) -> Option<bool> {
+    for line in contents.lines() {
+        let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
@@ -93,24 +225,20 @@ fn parse_toml_bool(contents: &str, key: &str) -> Option<bool> {
         let Some((lhs, rhs)) = line.split_once('=') else {
             continue;
         };
-        if lhs.trim() != key {
-            continue;
+        if lhs.trim() == key {
+            return match rhs.trim() {
+                "true" => Some(true),
+                "false" => Some(false),
+                _ => None,
+            };
         }
-
-        return match rhs.trim() {
-            "true" => Some(true),
-            "false" => Some(false),
-            _ => None,
-        };
     }
-
     None
 }
 
 fn parse_toml_f32(contents: &str, key: &str) -> Option<f32> {
     for line in contents.lines() {
         let line = line.trim();
-
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
@@ -118,13 +246,10 @@ fn parse_toml_f32(contents: &str, key: &str) -> Option<f32> {
         let Some((lhs, rhs)) = line.split_once('=') else {
             continue;
         };
-        if lhs.trim() != key {
-            continue;
+        if lhs.trim() == key {
+            return rhs.trim().parse::<f32>().ok();
         }
-
-        return rhs.trim().parse::<f32>().ok();
     }
-
     None
 }
 

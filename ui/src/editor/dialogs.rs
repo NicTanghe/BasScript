@@ -7,12 +7,32 @@ fn shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
     ])
 }
 
+fn shift_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+    keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight])
+}
+
+fn shortcut_just_pressed(keys: &ButtonInput<KeyCode>, binding: ShortcutBinding) -> bool {
+    if !shortcut_modifier_pressed(keys) {
+        return false;
+    }
+
+    let shift_pressed = shift_modifier_pressed(keys);
+    if binding.shift && !shift_pressed {
+        return false;
+    }
+    if !binding.shift && shift_pressed {
+        return false;
+    }
+
+    keys.just_pressed(binding.key)
+}
+
 fn handle_window_shortcuts(
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<EditorState>,
 ) {
-    let shortcut_down = shortcut_modifier_pressed(&keys);
-    if !shortcut_down || !keys.just_pressed(KeyCode::KeyB) {
+    let binding = state.keybinds.binding(ShortcutAction::ToggleTopMenu);
+    if !shortcut_just_pressed(&keys, binding) {
         return;
     }
 
@@ -26,7 +46,7 @@ fn handle_window_shortcuts(
         }
     );
     info!(
-        "[ui] Shortcut Cmd/Ctrl+B toggled top menu to {}",
+        "[ui] Top-menu shortcut toggled top menu to {}",
         if state.top_menu_collapsed {
             "HIDDEN"
         } else {
@@ -79,23 +99,19 @@ fn handle_file_shortcuts(
     mut dialogs: ResMut<DialogState>,
 ) {
     let parent_handle = primary_window_query.iter().next();
-    let shortcut_down = shortcut_modifier_pressed(&keys);
-    if !shortcut_down {
-        return;
-    }
 
-    if keys.just_pressed(KeyCode::KeyO) {
+    if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::OpenWorkspace)) {
         info!(
-            "[dialog] Shortcut Cmd/Ctrl+O detected for workspace picker (parent_handle: {}, has_pending: {})",
+            "[dialog] Open-workspace shortcut detected (parent_handle: {}, has_pending: {})",
             parent_handle.is_some(),
             dialogs.pending.is_some()
         );
         open_workspace_dialog(&mut state, &mut dialogs, parent_handle);
     }
 
-    if keys.just_pressed(KeyCode::KeyS) {
+    if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::SaveAs)) {
         info!(
-            "[dialog] Shortcut Cmd/Ctrl+S detected (parent_handle: {}, has_pending: {})",
+            "[dialog] Save shortcut detected (parent_handle: {}, has_pending: {})",
             parent_handle.is_some(),
             dialogs.pending.is_some()
         );

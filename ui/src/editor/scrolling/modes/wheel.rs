@@ -5,7 +5,7 @@ fn handle_mouse_scroll(
     mut state: ResMut<EditorState>,
 ) {
     let shift_horizontal = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    let panel_context = gather_scroll_panels_context(&panel_query);
+    let panel_context = gather_scroll_panels_context(&panel_query, &state);
     state.clamp_horizontal_scrolls(
         panel_context.plain_panel_size,
         panel_context.processed_panel_size,
@@ -32,6 +32,7 @@ fn handle_mouse_scroll(
             state.status_message = format!("Zoom: {}%", state.zoom_percent());
             let visible_lines = viewport_lines_from_panels(
                 &panel_query,
+                state.display_mode,
                 state.measured_line_step,
                 scaled_text_padding_y(&state),
             );
@@ -46,6 +47,7 @@ fn handle_mouse_scroll(
 
     let visible_lines = viewport_lines_from_panels(
         &panel_query,
+        state.display_mode,
         state.measured_line_step,
         scaled_text_padding_y(&state),
     );
@@ -77,7 +79,10 @@ fn handle_mouse_scroll(
         }
     }
 
-    let active_panel = panel_context.hovered_panel.unwrap_or(PanelKind::Plain);
+    let active_panel = panel_context
+        .hovered_panel
+        .unwrap_or_else(|| state.active_panel_for_display_mode());
+    state.focused_panel = active_panel;
     let mut scrolled = false;
 
     if horizontal_delta_px.abs() > f32::EPSILON {

@@ -10,6 +10,7 @@ fn handle_text_input(
 
     let visible_lines = viewport_lines(
         &body_query,
+        state.display_mode,
         state.measured_line_step,
         scaled_text_padding_y(&state),
     );
@@ -112,6 +113,7 @@ fn handle_navigation_input(
 ) {
     let visible_lines = viewport_lines(
         &body_query,
+        state.display_mode,
         state.measured_line_step,
         scaled_text_padding_y(&state),
     );
@@ -127,37 +129,49 @@ fn handle_navigation_input(
     let mut moved = false;
 
     if shortcut_modifier_pressed(&keys) {
-        if keys.just_pressed(KeyCode::KeyZ) {
-            let redo = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-            let changed = if redo {
-                state.redo(visible_lines, plain_panel_size, processed_panel_size)
-            } else {
-                state.undo(visible_lines, plain_panel_size, processed_panel_size)
-            };
+        if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::PlainView)) {
+            state.set_display_mode(DisplayMode::Plain);
+            state.status_message = format!("View mode: {}", state.display_mode.label());
+            return;
+        }
+
+        if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::ProcessedView)) {
+            state.set_display_mode(DisplayMode::Processed);
+            state.status_message = format!("View mode: {}", state.display_mode.label());
+            return;
+        }
+
+        if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::Redo)) {
+            let changed = state.redo(visible_lines, plain_panel_size, processed_panel_size);
 
             if changed {
-                state.status_message = if redo {
-                    "Redo".to_string()
-                } else {
-                    "Undo".to_string()
-                };
+                state.status_message = "Redo".to_string();
                 apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
             } else {
-                state.status_message = if redo {
-                    "Nothing to redo.".to_string()
-                } else {
-                    "Nothing to undo.".to_string()
-                };
+                state.status_message = "Nothing to redo.".to_string();
             }
             return;
         }
 
-        if keys.just_pressed(KeyCode::Equal) {
+        if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::Undo)) {
+            let changed = state.undo(visible_lines, plain_panel_size, processed_panel_size);
+
+            if changed {
+                state.status_message = "Undo".to_string();
+                apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
+            } else {
+                state.status_message = "Nothing to undo.".to_string();
+            }
+            return;
+        }
+
+        if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::ZoomIn)) {
             let next_zoom = state.zoom + ZOOM_STEP;
             set_zoom_preserving_processed_anchor(&mut state, processed_panel_size, next_zoom);
             state.status_message = format!("Zoom: {}%", state.zoom_percent());
             let zoom_visible_lines = viewport_lines(
                 &body_query,
+                state.display_mode,
                 state.measured_line_step,
                 scaled_text_padding_y(&state),
             );
@@ -166,12 +180,13 @@ fn handle_navigation_input(
             return;
         }
 
-        if keys.just_pressed(KeyCode::Minus) {
+        if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::ZoomOut)) {
             let next_zoom = state.zoom - ZOOM_STEP;
             set_zoom_preserving_processed_anchor(&mut state, processed_panel_size, next_zoom);
             state.status_message = format!("Zoom: {}%", state.zoom_percent());
             let zoom_visible_lines = viewport_lines(
                 &body_query,
+                state.display_mode,
                 state.measured_line_step,
                 scaled_text_padding_y(&state),
             );
@@ -299,6 +314,7 @@ fn handle_mouse_click(
     }
     let visible_lines = viewport_lines_from_panels(
         &panel_query,
+        state.display_mode,
         state.measured_line_step,
         scaled_text_padding_y(&state),
     );
@@ -356,6 +372,9 @@ fn handle_mouse_click(
         processed_anchor_scroll_offset_px(anchor_line_in_page, processed_line_height);
     let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
     for (panel, relative_cursor, computed) in panel_query.iter() {
+        if !state.panel_visible(panel.kind) {
+            continue;
+        }
         if !relative_cursor.cursor_over() {
             continue;
         }

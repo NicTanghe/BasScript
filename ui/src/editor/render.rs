@@ -125,7 +125,12 @@ fn render_editor(
     let processed_lines_per_page = processed_layout_info.lines_per_page;
     let processed_spacer_lines = processed_layout_info.spacer_lines;
     let processed_page_step_lines = processed_layout_info.page_step_lines.max(1);
-    let visible_lines = viewport_lines(&body_query, state.measured_line_step, plain_origin_y);
+    let visible_lines = viewport_lines(
+        &body_query,
+        state.display_mode,
+        state.measured_line_step,
+        plain_origin_y,
+    );
     state.clamp_scroll(visible_lines);
     state.clamp_processed_top_line();
 
@@ -461,12 +466,17 @@ fn render_editor(
 
 fn viewport_lines(
     body_query: &Query<(&PanelBody, &ComputedNode)>,
+    display_mode: DisplayMode,
     line_step: f32,
     top_padding: f32,
 ) -> usize {
+    let preferred_panel = match display_mode {
+        DisplayMode::Processed => PanelKind::Processed,
+        DisplayMode::Split | DisplayMode::Plain => PanelKind::Plain,
+    };
     let Some((_, computed)) = body_query
         .iter()
-        .find(|(panel, _)| panel.kind == PanelKind::Plain)
+        .find(|(panel, _)| panel.kind == preferred_panel)
         .or_else(|| body_query.iter().next())
     else {
         return 24;
@@ -480,12 +490,17 @@ fn viewport_lines(
 
 fn viewport_lines_from_panels(
     panel_query: &Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
+    display_mode: DisplayMode,
     line_step: f32,
     top_padding: f32,
 ) -> usize {
+    let preferred_panel = match display_mode {
+        DisplayMode::Processed => PanelKind::Processed,
+        DisplayMode::Split | DisplayMode::Plain => PanelKind::Plain,
+    };
     let Some((_, _, computed)) = panel_query
         .iter()
-        .find(|(panel, _, _)| panel.kind == PanelKind::Plain)
+        .find(|(panel, _, _)| panel.kind == preferred_panel)
         .or_else(|| panel_query.iter().next())
     else {
         return 24;

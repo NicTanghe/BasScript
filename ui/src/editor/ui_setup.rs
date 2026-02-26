@@ -258,14 +258,25 @@ fn setup(
                         },
                         TextColor(COLOR_TEXT_MAIN),
                     ),
-                    keybind_row(font.clone(), "Cmd/Ctrl+O", "Open workspace folder"),
-                    keybind_row(font.clone(), "Cmd/Ctrl+S", "Save As dialog"),
-                    keybind_row(font.clone(), "Cmd/Ctrl+Z", "Undo"),
-                    keybind_row(font.clone(), "Cmd/Ctrl+Shift+Z", "Redo"),
-                    keybind_row(font.clone(), "Cmd/Ctrl+=", "Zoom in"),
-                    keybind_row(font.clone(), "Cmd/Ctrl+-", "Zoom out"),
+                    (
+                        Text::new("Click a binding button, then press a key (Esc cancels)."),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 12.0,
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MUTED),
+                    ),
+                    keybind_setting_row(font.clone(), ShortcutAction::OpenWorkspace),
+                    keybind_setting_row(font.clone(), ShortcutAction::SaveAs),
+                    keybind_setting_row(font.clone(), ShortcutAction::Undo),
+                    keybind_setting_row(font.clone(), ShortcutAction::Redo),
+                    keybind_setting_row(font.clone(), ShortcutAction::ZoomIn),
+                    keybind_setting_row(font.clone(), ShortcutAction::ZoomOut),
                     keybind_row(font.clone(), "Cmd/Ctrl+Mouse wheel", "Zoom"),
-                    keybind_row(font.clone(), "Cmd/Ctrl+B", "Toggle top menu"),
+                    keybind_setting_row(font.clone(), ShortcutAction::PlainView),
+                    keybind_setting_row(font.clone(), ShortcutAction::ProcessedView),
+                    keybind_setting_row(font.clone(), ShortcutAction::ToggleTopMenu),
                     keybind_row(font.clone(), "Arrow keys", "Move cursor"),
                     keybind_row(font.clone(), "Home / End", "Move to line start/end"),
                     keybind_row(font.clone(), "Page Up / Page Down", "Move by viewport"),
@@ -774,6 +785,52 @@ fn settings_action_button(font: Handle<Font>, label: &str, action: SettingsActio
     )
 }
 
+fn keybind_setting_row(font: Handle<Font>, action: ShortcutAction) -> impl Bundle {
+    (
+        Node {
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            column_gap: px(10.0),
+            ..default()
+        },
+        children![
+            (
+                Text::new(shortcut_action_description(action)),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MUTED),
+                Node {
+                    width: px(260.0),
+                    ..default()
+                },
+            ),
+            (
+                Button,
+                KeybindRebindButton { action },
+                Node {
+                    padding: UiRect::axes(px(12.0), px(6.0)),
+                    min_width: px(170.0),
+                    ..default()
+                },
+                BackgroundColor(BUTTON_NORMAL),
+                children![(
+                    Text::new(""),
+                    TextFont {
+                        font,
+                        font_size: 13.0,
+                        ..default()
+                    },
+                    TextColor(COLOR_TEXT_MAIN),
+                    KeybindBindingLabel { action },
+                )],
+            ),
+        ],
+    )
+}
+
 fn keybind_row(font: Handle<Font>, binding: &str, description: &str) -> impl Bundle {
     (
         Node {
@@ -898,6 +955,7 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
             flex_direction: FlexDirection::Column,
             ..default()
         },
+        PanelRoot { kind },
         BackgroundColor(COLOR_PANEL_BG),
         children![
             (
@@ -1250,7 +1308,11 @@ fn style_toolbar_buttons(
         (
             Changed<Interaction>,
             With<Button>,
-            Or<(With<ToolbarAction>, With<SettingsAction>)>,
+            Or<(
+                With<ToolbarAction>,
+                With<SettingsAction>,
+                With<KeybindRebindButton>,
+            )>,
         ),
     >,
 ) {
@@ -1340,14 +1402,17 @@ fn handle_settings_buttons(
                 settings_changed = true;
             }
             SettingsAction::OpenKeybinds => {
+                state.pending_keybind_capture = None;
                 next_screen_state.set(UiScreenState::Keybinds);
                 state.status_message = "Opened keybinds.".to_string();
             }
             SettingsAction::BackToSettings => {
+                state.pending_keybind_capture = None;
                 next_screen_state.set(UiScreenState::Settings);
                 state.status_message = "Opened settings.".to_string();
             }
             SettingsAction::BackToEditor => {
+                state.pending_keybind_capture = None;
                 next_screen_state.set(UiScreenState::Editor);
                 state.status_message = "Returned to editor.".to_string();
             }
@@ -1363,6 +1428,105 @@ fn handle_settings_buttons(
     }
 }
 
+fn handle_keybind_buttons(
+    interaction_query: Query<
+        (&Interaction, &KeybindRebindButton),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut state: ResMut<EditorState>,
+) {
+    for (interaction, button) in interaction_query.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        state.pending_keybind_capture = Some(button.action);
+        state.status_message = format!(
+            "Press a key for {} (Esc to cancel).",
+            shortcut_action_label(button.action)
+        );
+    }
+}
+
+fn capture_keybind_input(
+    mut keyboard_inputs: MessageReader<KeyboardInput>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<EditorState>,
+) {
+    let Some(action) = state.pending_keybind_capture else {
+        return;
+    };
+
+    for input in keyboard_inputs.read() {
+        if !input.state.is_pressed() {
+            continue;
+        }
+
+        let key_code = input.key_code;
+        if key_code == KeyCode::Escape {
+            state.pending_keybind_capture = None;
+            state.status_message = format!(
+                "Canceled keybind change for {}.",
+                shortcut_action_label(action)
+            );
+            return;
+        }
+
+        if matches!(
+            key_code,
+            KeyCode::ControlLeft
+                | KeyCode::ControlRight
+                | KeyCode::ShiftLeft
+                | KeyCode::ShiftRight
+                | KeyCode::AltLeft
+                | KeyCode::AltRight
+                | KeyCode::SuperLeft
+                | KeyCode::SuperRight
+        ) {
+            continue;
+        }
+
+        if binding_key_name(key_code).is_none() {
+            state.status_message = format!(
+                "Unsupported key for {}. Use letters, digits, '=' or '-'.",
+                shortcut_action_label(action)
+            );
+            continue;
+        }
+
+        let binding = ShortcutBinding {
+            key: key_code,
+            shift: shift_modifier_pressed(&keys),
+        };
+        let conflict = SHORTCUT_ACTIONS.iter().copied().find(|candidate| {
+            *candidate != action && state.keybinds.binding(*candidate) == binding
+        });
+
+        state.keybinds.set_binding(action, binding);
+        state.pending_keybind_capture = None;
+        if let Err(error) = save_keybind_settings(&state.keybinds) {
+            state.status_message = format!("Keybind save failed: {error}");
+            return;
+        }
+
+        state.status_message = if let Some(conflict_action) = conflict {
+            format!(
+                "Updated {} to {} (also used by {}).",
+                shortcut_action_label(action),
+                binding_display(binding),
+                shortcut_action_label(conflict_action)
+            )
+        } else {
+            format!(
+                "Updated {} to {}.",
+                shortcut_action_label(action),
+                binding_display(binding)
+            )
+        };
+        return;
+    }
+}
+
 fn sync_top_menu_visibility(
     state: Res<EditorState>,
     mut top_menu_query: Query<&mut Node, With<TopMenuSection>>,
@@ -1375,6 +1539,19 @@ fn sync_top_menu_visibility(
 
     for mut node in top_menu_query.iter_mut() {
         node.display = display;
+    }
+}
+
+fn sync_panel_display_mode(
+    state: Res<EditorState>,
+    mut panel_root_query: Query<(&PanelRoot, &mut Node)>,
+) {
+    for (panel_root, mut node) in panel_root_query.iter_mut() {
+        node.display = if state.panel_visible(panel_root.kind) {
+            Display::Flex
+        } else {
+            Display::None
+        };
     }
 }
 
@@ -1407,6 +1584,10 @@ fn sync_settings_ui(
     >,
     mut toggle_label_query: Query<(&SettingToggleLabel, &mut Text), Without<SettingMarginLabel>>,
     mut margin_label_query: Query<(&SettingMarginLabel, &mut Text), Without<SettingToggleLabel>>,
+    mut keybind_label_query: Query<
+        (&KeybindBindingLabel, &mut Text),
+        (Without<SettingToggleLabel>, Without<SettingMarginLabel>),
+    >,
 ) {
     if let Ok(mut editor_root) = editor_root_query.single_mut() {
         editor_root.display = if *screen_state.get() == UiScreenState::Editor {
@@ -1470,5 +1651,13 @@ fn sync_settings_ui(
             MarginEdge::Bottom => state.page_margin_bottom,
         };
         **text = format!("{value:.1} pt");
+    }
+
+    for (label, mut text) in keybind_label_query.iter_mut() {
+        **text = if state.pending_keybind_capture == Some(label.action) {
+            "Press key...".to_string()
+        } else {
+            binding_display(state.keybinds.binding(label.action))
+        };
     }
 }

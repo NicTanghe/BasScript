@@ -17,7 +17,7 @@ fn handle_ctrl_left_drag_scroll(
         .iter()
         .next()
         .and_then(Window::cursor_position);
-    let panel_context = gather_scroll_panels_context(&panel_query);
+    let panel_context = gather_scroll_panels_context(&panel_query, &state);
     state.clamp_horizontal_scrolls(
         panel_context.plain_panel_size,
         panel_context.processed_panel_size,
@@ -63,6 +63,7 @@ fn handle_ctrl_left_drag_scroll(
 
     let visible_lines = viewport_lines_from_panels(
         &panel_query,
+        state.display_mode,
         state.measured_line_step,
         scaled_text_padding_y(&state),
     );

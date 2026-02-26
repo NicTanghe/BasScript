@@ -38,7 +38,7 @@ fn handle_middle_mouse_autoscroll(
         .iter()
         .next()
         .and_then(Window::cursor_position);
-    let panel_context = gather_scroll_panels_context(&panel_query);
+    let panel_context = gather_scroll_panels_context(&panel_query, &state);
     state.clamp_horizontal_scrolls(
         panel_context.plain_panel_size,
         panel_context.processed_panel_size,
@@ -84,6 +84,10 @@ fn handle_middle_mouse_autoscroll(
     let Some(active_panel) = middle_autoscroll.panel else {
         return;
     };
+    if !state.panel_visible(active_panel) {
+        middle_autoscroll.stop();
+        return;
+    }
     let dt = time.delta_secs();
     if dt <= f32::EPSILON {
         return;
@@ -119,6 +123,7 @@ fn handle_middle_mouse_autoscroll(
 
     let visible_lines = viewport_lines_from_panels(
         &panel_query,
+        state.display_mode,
         state.measured_line_step,
         scaled_text_padding_y(&state),
     );

@@ -1,0 +1,11 @@
+(
+	open_workspace: "O",
+	save_as: "S",
+	undo: "Z",
+	redo: "Shift+Z",
+	zoom_in: "=",
+	zoom_out: "-",
+	plain_view: "T",
+	processed_view: "R",
+	toggle_top_menu: "B",
+)
