@@ -4,6 +4,8 @@ include!("core.rs");
 include!("status_line.rs");
 // Processed pane pagination/cache/styling and text layout helpers.
 include!("processed.rs");
+// Caret component, blink timer, and caret placement logic.
+include!("caret.rs");
 // UI hierarchy and toolbar/settings widgets.
 include!("ui_setup.rs");
 // Persistent settings I/O and margin/scale helpers.
@@ -20,5 +22,5 @@ include!("scrolling/modes/middle_autoscroll.rs");
 include!("dialogs.rs");
 // Text editing/navigation/mouse interaction systems.
 include!("editing.rs");
-// Rendering + caret systems.
+// Rendering systems.
 include!("render.rs");

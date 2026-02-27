@@ -43,9 +43,6 @@ const LINE_HEIGHT: f32 = 12.0;
 const DEFAULT_CHAR_WIDTH: f32 = 7.2;
 const TEXT_PADDING_X: f32 = 14.0;
 const TEXT_PADDING_Y: f32 = 10.0;
-const CARET_WIDTH: f32 = 2.0;
-const CARET_X_OFFSET: f32 = -1.0;
-const CARET_Y_OFFSET_FACTOR: f32 = -0.12;
 const ZOOM_MIN: f32 = 0.6;
 const ZOOM_MAX: f32 = 1.8;
 const ZOOM_STEP: f32 = 0.1;
@@ -208,11 +205,6 @@ struct PanelBody {
 
 #[derive(Component)]
 struct PanelText {
-    kind: PanelKind,
-}
-
-#[derive(Component)]
-struct PanelCaret {
     kind: PanelKind,
 }
 
