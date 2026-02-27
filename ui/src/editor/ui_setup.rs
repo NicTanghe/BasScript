@@ -125,6 +125,7 @@ fn setup(
                             ..default()
                         },
                         EditorBodyRow,
+                        RelativeCursorPosition::default(),
                         children![
                             workspace_sidebar_bundle(font.clone()),
                             panel_splitter_bundle(PanelSplitter::Workspace),

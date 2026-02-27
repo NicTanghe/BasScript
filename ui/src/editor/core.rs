@@ -62,7 +62,8 @@ const PAGE_GAP: f32 = 24.0;
 const PAGE_MARGIN_STEP: f32 = 8.0;
 const MIN_TEXT_BOX_WIDTH: f32 = 120.0;
 const MIN_TEXT_BOX_HEIGHT: f32 = 120.0;
-const PANEL_SPLITTER_WIDTH: f32 = 8.0;
+const PANEL_SPLITTER_WIDTH: f32 = 0.0;
+const PANEL_SPLITTER_PICK_RADIUS: f32 = 18.0;
 const WORKSPACE_WIDTH_DEFAULT: f32 = 280.0;
 const WORKSPACE_WIDTH_MIN: f32 = 180.0;
 const EDITOR_PANEL_MIN_WIDTH: f32 = 220.0;
@@ -91,9 +92,9 @@ const COLOR_TEXT_MUTED: Color = Color::srgb(0.34, 0.36, 0.39);
 const COLOR_WORKSPACE_FILE: Color = Color::srgb(0.18, 0.19, 0.20);
 const COLOR_WORKSPACE_FILE_HOVER: Color = Color::srgb(0.10, 0.35, 0.62);
 const COLOR_WORKSPACE_FILE_SELECTED: Color = Color::srgb(0.69, 0.28, 0.22);
-const COLOR_SPLITTER_IDLE: Color = Color::srgba(0.31, 0.34, 0.38, 0.34);
-const COLOR_SPLITTER_HOVER: Color = Color::srgba(0.25, 0.43, 0.65, 0.70);
-const COLOR_SPLITTER_ACTIVE: Color = Color::srgba(0.20, 0.51, 0.79, 0.90);
+const COLOR_SPLITTER_IDLE: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
+const COLOR_SPLITTER_HOVER: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
+const COLOR_SPLITTER_ACTIVE: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
 
 pub struct UiPlugin;
 

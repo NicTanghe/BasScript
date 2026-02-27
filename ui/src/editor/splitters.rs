@@ -82,8 +82,7 @@ fn handle_panel_splitter_drag(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
-    splitter_query: Query<(&PanelSplitter, &RelativeCursorPosition)>,
-    body_row_query: Query<&ComputedNode, With<EditorBodyRow>>,
+    body_row_query: Query<(&ComputedNode, &RelativeCursorPosition), With<EditorBodyRow>>,
     state: Res<EditorState>,
     mut layout: ResMut<PanelLayoutState>,
     mut drag_state: ResMut<PanelSplitterDragState>,
@@ -95,13 +94,22 @@ fn handle_panel_splitter_drag(
     if mouse_buttons.just_pressed(MouseButton::Left)
         && !keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
     {
-        let hovered_splitter = splitter_query
-            .iter()
-            .find(|(splitter, relative_cursor)| {
-                splitter_visible_for_mode(**splitter, state.display_mode)
-                    && relative_cursor.cursor_over()
-            })
-            .map(|(splitter, _)| *splitter);
+        let hovered_splitter =
+            body_row_query
+                .iter()
+                .next()
+                .and_then(|(computed, relative_cursor)| {
+                    if !relative_cursor.cursor_over() {
+                        return None;
+                    }
+                    let normalized = relative_cursor.normalized?;
+                    let total_width = computed.size().x * computed.inverse_scale_factor();
+                    if total_width <= 0.0 {
+                        return None;
+                    }
+                    let local_x = (normalized.x + 0.5) * total_width;
+                    splitter_from_cursor_x(local_x, total_width, state.display_mode, &mut layout)
+                });
 
         if let Some(splitter) = hovered_splitter {
             drag_state.active = Some(splitter);
@@ -130,7 +138,7 @@ fn handle_panel_splitter_drag(
         return;
     }
 
-    let Some(body_row) = body_row_query.iter().next() else {
+    let Some((body_row, _)) = body_row_query.iter().next() else {
         return;
     };
     let total_width = body_row.size().x * body_row.inverse_scale_factor();
@@ -240,4 +248,35 @@ fn clamp_plain_width_from_ratio(layout: &mut PanelLayoutState, split_available: 
     };
     layout.plain_ratio = (width / split_available).clamp(0.0, 1.0);
     width
+}
+
+fn splitter_from_cursor_x(
+    local_x: f32,
+    total_width: f32,
+    display_mode: DisplayMode,
+    layout: &mut PanelLayoutState,
+) -> Option<PanelSplitter> {
+    let workspace_width = clamp_workspace_width(layout, total_width, display_mode);
+    let workspace_center = workspace_width + PANEL_SPLITTER_WIDTH * 0.5;
+    let mut closest = (local_x - workspace_center).abs();
+    let mut result = PanelSplitter::Workspace;
+
+    if display_mode == DisplayMode::Split {
+        let editor_width = (total_width - PANEL_SPLITTER_WIDTH - workspace_width).max(0.0);
+        let split_available = (editor_width - PANEL_SPLITTER_WIDTH).max(0.0);
+        let plain_width = clamp_plain_width_from_ratio(layout, split_available);
+        let panels_center =
+            workspace_width + PANEL_SPLITTER_WIDTH + plain_width + PANEL_SPLITTER_WIDTH * 0.5;
+        let panel_distance = (local_x - panels_center).abs();
+        if panel_distance < closest {
+            closest = panel_distance;
+            result = PanelSplitter::Panels;
+        }
+    }
+
+    if closest <= PANEL_SPLITTER_PICK_RADIUS {
+        Some(result)
+    } else {
+        None
+    }
 }
