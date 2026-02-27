@@ -434,10 +434,7 @@ fn render_editor(
             })
             .unwrap_or(display_column as f32 * panel_char_width);
         let caret_top = panel_layout
-            .and_then(|layout| {
-                caret_top_from_layout(layout, line_offset, byte_index, panel_inverse_scale)
-                    .or_else(|| line_top_from_layout(layout, line_offset, panel_inverse_scale))
-            })
+            .and_then(|layout| line_top_from_layout(layout, line_offset, panel_inverse_scale))
             .unwrap_or(line_offset as f32 * panel_line_height);
 
         let local_caret_left = if clamp_local_position_to_origin {

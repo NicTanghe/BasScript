@@ -5,7 +5,8 @@
 	redo: "Shift+Z",
 	zoom_in: "=",
 	zoom_out: "-",
-	plain_view: "T",
-	processed_view: "R",
+	plain_view: "3",
+	processed_view: "2",
+	processed_raw_current_line_view: "1",
 	toggle_top_menu: "B",
 )

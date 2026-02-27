@@ -1150,46 +1150,6 @@ fn line_index_from_layout_y(
     Some(best_line)
 }
 
-fn caret_top_from_layout(
-    layout: &TextLayoutInfo,
-    line_index: usize,
-    byte_index: usize,
-    inverse_scale: f32,
-) -> Option<f32> {
-    let mut line_glyphs = layout
-        .glyphs
-        .iter()
-        .filter(|glyph| glyph.line_index == line_index)
-        .collect::<Vec<_>>();
-    if line_glyphs.is_empty() {
-        return None;
-    }
-
-    line_glyphs.sort_by_key(|glyph| (glyph.byte_index, glyph.byte_length));
-
-    line_glyphs
-        .iter()
-        .min_by(|left, right| {
-            byte_distance(byte_index, left.byte_index, left.byte_length).cmp(&byte_distance(
-                byte_index,
-                right.byte_index,
-                right.byte_length,
-            ))
-        })
-        .map(|glyph| glyph.position.y * inverse_scale)
-}
-
-fn byte_distance(target: usize, start: usize, len: usize) -> usize {
-    let end = start.saturating_add(len);
-    if target < start {
-        start.saturating_sub(target)
-    } else if target > end {
-        target.saturating_sub(end)
-    } else {
-        0
-    }
-}
-
 fn line_boundaries(
     layout: &TextLayoutInfo,
     line_index: usize,

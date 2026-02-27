@@ -1,7 +1,7 @@
 (
 	dialogue_double_space_newline: true,
 	non_dialogue_double_space_newline: true,
-	show_system_titlebar: false,
+	show_system_titlebar: true,
 	page_margin_left: 98.000,
 	page_margin_right: 74.000,
 	page_margin_top: 104.000,
