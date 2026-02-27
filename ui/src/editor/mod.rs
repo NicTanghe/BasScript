@@ -8,6 +8,8 @@ include!("processed.rs");
 include!("caret.rs");
 // UI hierarchy and toolbar/settings widgets.
 include!("ui_setup.rs");
+// Draggable panel splitters and pane sizing.
+include!("splitters.rs");
 // Persistent settings I/O and margin/scale helpers.
 include!("settings.rs");
 // Scroll primitives shared across modes.

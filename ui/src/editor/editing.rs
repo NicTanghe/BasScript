@@ -299,6 +299,7 @@ fn handle_mouse_click(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     mut middle_autoscroll: ResMut<MiddleAutoscrollState>,
+    mut splitter_drag: ResMut<PanelSplitterDragState>,
     panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
     text_layout_query: Query<(&PanelText, &TextLayoutInfo)>,
     processed_text_layout_query: Query<
@@ -307,6 +308,13 @@ fn handle_mouse_click(
     >,
     mut state: ResMut<EditorState>,
 ) {
+    if splitter_drag.suppress_next_left_click && !mouse_buttons.pressed(MouseButton::Left) {
+        splitter_drag.suppress_next_left_click = false;
+    }
+    if splitter_drag.suppress_next_left_click || splitter_drag.active.is_some() {
+        return;
+    }
+
     if middle_autoscroll.suppress_next_left_click && !mouse_buttons.pressed(MouseButton::Left) {
         middle_autoscroll.suppress_next_left_click = false;
     }

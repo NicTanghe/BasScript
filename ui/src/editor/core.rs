@@ -62,6 +62,10 @@ const PAGE_GAP: f32 = 24.0;
 const PAGE_MARGIN_STEP: f32 = 8.0;
 const MIN_TEXT_BOX_WIDTH: f32 = 120.0;
 const MIN_TEXT_BOX_HEIGHT: f32 = 120.0;
+const PANEL_SPLITTER_WIDTH: f32 = 8.0;
+const WORKSPACE_WIDTH_DEFAULT: f32 = 280.0;
+const WORKSPACE_WIDTH_MIN: f32 = 180.0;
+const EDITOR_PANEL_MIN_WIDTH: f32 = 220.0;
 
 const BUTTON_NORMAL: Color = Color::srgb(0.80, 0.82, 0.84);
 const BUTTON_HOVER: Color = Color::srgb(0.74, 0.77, 0.80);
@@ -87,6 +91,9 @@ const COLOR_TEXT_MUTED: Color = Color::srgb(0.34, 0.36, 0.39);
 const COLOR_WORKSPACE_FILE: Color = Color::srgb(0.18, 0.19, 0.20);
 const COLOR_WORKSPACE_FILE_HOVER: Color = Color::srgb(0.10, 0.35, 0.62);
 const COLOR_WORKSPACE_FILE_SELECTED: Color = Color::srgb(0.69, 0.28, 0.22);
+const COLOR_SPLITTER_IDLE: Color = Color::srgba(0.31, 0.34, 0.38, 0.34);
+const COLOR_SPLITTER_HOVER: Color = Color::srgba(0.25, 0.43, 0.65, 0.70);
+const COLOR_SPLITTER_ACTIVE: Color = Color::srgba(0.20, 0.51, 0.79, 0.90);
 
 pub struct UiPlugin;
 
@@ -103,6 +110,8 @@ impl Plugin for UiPlugin {
         app.init_resource::<EditorState>()
             .init_resource::<DialogState>()
             .init_resource::<MiddleAutoscrollState>()
+            .init_resource::<PanelLayoutState>()
+            .init_resource::<PanelSplitterDragState>()
             .init_state::<UiScreenState>()
             .insert_non_send_resource(DialogMainThreadMarker)
             .add_systems(Startup, (setup, setup_processed_papers.after(setup)))
@@ -115,6 +124,7 @@ impl Plugin for UiPlugin {
                     sync_window_chrome,
                     sync_top_menu_visibility,
                     sync_panel_display_mode,
+                    sync_panel_split_layout,
                     sync_settings_ui,
                     sync_workspace_sidebar,
                 ),
@@ -148,8 +158,12 @@ impl Plugin for UiPlugin {
                     handle_mouse_scroll,
                     handle_ctrl_left_drag_scroll,
                     handle_middle_mouse_autoscroll,
-                    handle_mouse_click.after(handle_middle_mouse_autoscroll),
+                    handle_panel_splitter_drag.after(handle_middle_mouse_autoscroll),
+                    handle_mouse_click
+                        .after(handle_middle_mouse_autoscroll)
+                        .after(handle_panel_splitter_drag),
                     sync_middle_autoscroll_indicator.after(handle_middle_mouse_autoscroll),
+                    style_panel_splitters,
                     blink_caret,
                     render_editor,
                 )
@@ -201,6 +215,26 @@ struct PanelRoot {
 #[derive(Component)]
 struct PanelBody {
     kind: PanelKind,
+}
+
+#[derive(Component)]
+struct EditorBodyRow;
+
+#[derive(Component)]
+struct WorkspaceSidebarPane;
+
+#[derive(Component)]
+struct EditorPanelsContainer;
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct PanelPaneSlot {
+    kind: PanelKind,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+enum PanelSplitter {
+    Workspace,
+    Panels,
 }
 
 #[derive(Component)]
@@ -686,6 +720,28 @@ struct MiddleAutoscrollState {
     panel: Option<PanelKind>,
     anchor_cursor_position: Vec2,
     plain_vertical_remainder_lines: f32,
+    suppress_next_left_click: bool,
+}
+
+#[derive(Resource, Clone, Copy, Debug)]
+struct PanelLayoutState {
+    workspace_width_px: f32,
+    plain_ratio: f32,
+}
+
+impl Default for PanelLayoutState {
+    fn default() -> Self {
+        Self {
+            workspace_width_px: WORKSPACE_WIDTH_DEFAULT,
+            plain_ratio: 0.5,
+        }
+    }
+}
+
+#[derive(Resource, Default, Clone, Copy, Debug)]
+struct PanelSplitterDragState {
+    active: Option<PanelSplitter>,
+    last_cursor_x: Option<f32>,
     suppress_next_left_click: bool,
 }
 

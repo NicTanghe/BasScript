@@ -124,8 +124,10 @@ fn setup(
                             padding: UiRect::all(px(0.0)),
                             ..default()
                         },
+                        EditorBodyRow,
                         children![
                             workspace_sidebar_bundle(font.clone()),
+                            panel_splitter_bundle(PanelSplitter::Workspace),
                             (
                                 Node {
                                     flex_grow: 1.0,
@@ -134,9 +136,29 @@ fn setup(
                                     column_gap: px(0.0),
                                     ..default()
                                 },
+                                EditorPanelsContainer,
                                 children![
-                                    panel_bundle(font.clone(), PanelKind::Plain),
-                                    panel_bundle(font.clone(), PanelKind::Processed),
+                                    (
+                                        Node {
+                                            height: percent(100.0),
+                                            ..default()
+                                        },
+                                        PanelPaneSlot {
+                                            kind: PanelKind::Plain,
+                                        },
+                                        children![panel_bundle(font.clone(), PanelKind::Plain)],
+                                    ),
+                                    panel_splitter_bundle(PanelSplitter::Panels),
+                                    (
+                                        Node {
+                                            height: percent(100.0),
+                                            ..default()
+                                        },
+                                        PanelPaneSlot {
+                                            kind: PanelKind::Processed,
+                                        },
+                                        children![panel_bundle(font.clone(), PanelKind::Processed)],
+                                    ),
                                 ],
                             )
                         ],
@@ -912,13 +934,14 @@ fn margin_setting_row(
 fn workspace_sidebar_bundle(font: Handle<Font>) -> impl Bundle {
     (
         Node {
-            width: px(280.0),
+            width: px(WORKSPACE_WIDTH_DEFAULT),
             height: percent(100.0),
             flex_direction: FlexDirection::Column,
             row_gap: px(8.0),
             padding: UiRect::axes(px(10.0), px(10.0)),
             ..default()
         },
+        WorkspaceSidebarPane,
         BackgroundColor(Color::srgb(0.86, 0.87, 0.89)),
         children![
             (
@@ -943,6 +966,19 @@ fn workspace_sidebar_bundle(font: Handle<Font>) -> impl Bundle {
                 WorkspaceFileList,
             ),
         ],
+    )
+}
+
+fn panel_splitter_bundle(kind: PanelSplitter) -> impl Bundle {
+    (
+        Node {
+            width: px(PANEL_SPLITTER_WIDTH),
+            height: percent(100.0),
+            ..default()
+        },
+        RelativeCursorPosition::default(),
+        BackgroundColor(COLOR_SPLITTER_IDLE),
+        kind,
     )
 }
 
