@@ -31,28 +31,57 @@ fn handle_window_shortcuts(
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<EditorState>,
 ) {
-    let binding = state.keybinds.binding(ShortcutAction::ToggleTopMenu);
-    if !shortcut_just_pressed(&keys, binding) {
-        return;
+    let mut handled = false;
+
+    let explorer_binding = state.keybinds.binding(ShortcutAction::ToggleExplorer);
+    if shortcut_just_pressed(&keys, explorer_binding) {
+        state.workspace_sidebar_visible = !state.workspace_sidebar_visible;
+        let visibility = if state.workspace_sidebar_visible {
+            "VISIBLE"
+        } else {
+            "HIDDEN"
+        };
+        state.status_message = format!(
+            "Explorer: {}",
+            visibility
+        );
+        if let Err(error) = save_editor_ui_state(&state) {
+            warn!("[state] Failed saving UI state: {error}");
+            state.status_message = format!("Explorer: {visibility} (state save failed: {error})");
+        }
+        info!(
+            "[ui] Explorer shortcut toggled explorer to {}",
+            visibility
+        );
+        handled = true;
     }
 
-    state.top_menu_collapsed = !state.top_menu_collapsed;
-    state.status_message = format!(
-        "Top menu: {}",
-        if state.top_menu_collapsed {
+    let top_menu_binding = state.keybinds.binding(ShortcutAction::ToggleTopMenu);
+    if shortcut_just_pressed(&keys, top_menu_binding) {
+        state.top_menu_collapsed = !state.top_menu_collapsed;
+        let visibility = if state.top_menu_collapsed {
             "HIDDEN"
         } else {
             "VISIBLE"
+        };
+        state.status_message = format!(
+            "Top menu: {}",
+            visibility
+        );
+        if let Err(error) = save_editor_ui_state(&state) {
+            warn!("[state] Failed saving UI state: {error}");
+            state.status_message = format!("Top menu: {visibility} (state save failed: {error})");
         }
-    );
-    info!(
-        "[ui] Top-menu shortcut toggled top menu to {}",
-        if state.top_menu_collapsed {
-            "HIDDEN"
-        } else {
-            "VISIBLE"
-        }
-    );
+        info!(
+            "[ui] Top-menu shortcut toggled top menu to {}",
+            visibility
+        );
+        handled = true;
+    }
+
+    if !handled {
+        return;
+    }
 }
 
 fn sync_window_chrome(

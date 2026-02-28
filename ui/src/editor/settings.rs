@@ -4,6 +4,15 @@ fn load_persistent_settings() -> PersistentSettings {
     let contents = match fs::read_to_string(&path) {
         Ok(contents) => contents,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            if let Some(legacy) = load_legacy_persistent_settings_ron() {
+                info!(
+                    "[settings] Loaded legacy settings from {}; migrating to {}",
+                    LEGACY_EDITOR_SETTINGS_PATH,
+                    path.display()
+                );
+                let _ = save_persistent_settings(&legacy);
+                return legacy;
+            }
             if let Some(legacy) = load_legacy_toml_settings() {
                 info!(
                     "[settings] Loaded legacy settings from {}; using as defaults",
@@ -30,31 +39,8 @@ fn load_persistent_settings() -> PersistentSettings {
         }
     };
 
-    let dialogue_value = parse_ron_bool(&contents, "dialogue_double_space_newline")
-        .unwrap_or(defaults.dialogue_double_space_newline);
-    let non_dialogue_value = parse_ron_bool(&contents, "non_dialogue_double_space_newline")
-        .unwrap_or(defaults.non_dialogue_double_space_newline);
-    let show_system_titlebar = parse_ron_bool(&contents, "show_system_titlebar")
-        .unwrap_or(defaults.show_system_titlebar);
-    let page_margin_left =
-        parse_ron_f32(&contents, "page_margin_left").unwrap_or(defaults.page_margin_left);
-    let page_margin_right =
-        parse_ron_f32(&contents, "page_margin_right").unwrap_or(defaults.page_margin_right);
-    let page_margin_top =
-        parse_ron_f32(&contents, "page_margin_top").unwrap_or(defaults.page_margin_top);
-    let page_margin_bottom =
-        parse_ron_f32(&contents, "page_margin_bottom").unwrap_or(defaults.page_margin_bottom);
-
     info!("[settings] Loaded settings from {}", path.display());
-    PersistentSettings {
-        dialogue_double_space_newline: dialogue_value,
-        non_dialogue_double_space_newline: non_dialogue_value,
-        show_system_titlebar,
-        page_margin_left,
-        page_margin_right,
-        page_margin_top,
-        page_margin_bottom,
-    }
+    persistent_settings_from_ron(&contents, &defaults)
 }
 
 fn load_keybind_settings() -> KeybindSettings {
@@ -63,6 +49,15 @@ fn load_keybind_settings() -> KeybindSettings {
     let contents = match fs::read_to_string(&path) {
         Ok(contents) => contents,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            if let Some(legacy) = load_legacy_keybind_settings_ron() {
+                info!(
+                    "[keybinds] Loaded legacy keybinds from {}; migrating to {}",
+                    LEGACY_KEYBINDS_SETTINGS_PATH,
+                    path.display()
+                );
+                let _ = save_keybind_settings(&legacy);
+                return legacy;
+            }
             info!(
                 "[keybinds] No keybind file found at {}; using defaults",
                 path.display()
@@ -80,24 +75,47 @@ fn load_keybind_settings() -> KeybindSettings {
         }
     };
 
-    for action in SHORTCUT_ACTIONS {
-        let key = shortcut_action_settings_key(action);
-        let Some(raw) = parse_ron_string(&contents, key) else {
-            continue;
-        };
-        let Some(binding) = parse_binding_spec(&raw) else {
-            warn!("[keybinds] Invalid binding for {key}: {raw}");
-            continue;
-        };
-        keybinds.set_binding(action, binding);
-    }
+    apply_keybind_settings_from_ron(&contents, &mut keybinds);
 
     info!("[keybinds] Loaded keybinds from {}", path.display());
     keybinds
 }
 
+fn load_persistent_ui_state() -> PersistentUiState {
+    let path = PathBuf::from(UI_STATE_PATH);
+    let defaults = PersistentUiState::default();
+    let contents = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            info!(
+                "[state] No UI state file found at {}; using defaults",
+                path.display()
+            );
+            let defaults = PersistentUiState::default();
+            let _ = save_persistent_ui_state(&defaults);
+            return defaults;
+        }
+        Err(error) => {
+            warn!(
+                "[state] Failed reading {}: {}; using defaults",
+                path.display(),
+                error
+            );
+            return PersistentUiState::default();
+        }
+    };
+
+    info!("[state] Loaded UI state from {}", path.display());
+    persistent_ui_state_from_ron(&contents, &defaults)
+}
+
 fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
     let path = PathBuf::from(EDITOR_SETTINGS_PATH);
+    let workspace_root_path = settings
+        .workspace_root_path
+        .as_deref()
+        .unwrap_or("")
+        .replace('\\', "/");
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -112,6 +130,7 @@ fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
          \tpage_margin_right: {:.3},\n\
          \tpage_margin_top: {:.3},\n\
          \tpage_margin_bottom: {:.3},\n\
+         \tworkspace_root_path: \"{}\",\n\
          )\n",
         settings.dialogue_double_space_newline,
         settings.non_dialogue_double_space_newline,
@@ -120,6 +139,7 @@ fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
         settings.page_margin_right,
         settings.page_margin_top,
         settings.page_margin_bottom,
+        workspace_root_path,
     );
 
     fs::write(&path, contents)?;
@@ -145,6 +165,26 @@ fn save_keybind_settings(keybinds: &KeybindSettings) -> io::Result<()> {
     let contents = format!("(\n{}\n)\n", rows.join("\n"));
     fs::write(&path, contents)?;
     info!("[keybinds] Saved keybinds to {}", path.display());
+    Ok(())
+}
+
+fn save_persistent_ui_state(ui_state: &PersistentUiState) -> io::Result<()> {
+    let path = PathBuf::from(UI_STATE_PATH);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let contents = format!(
+        "(\n\
+         \tworkspace_sidebar_visible: {},\n\
+         \ttop_menu_collapsed: {},\n\
+         )\n",
+        ui_state.workspace_sidebar_visible,
+        ui_state.top_menu_collapsed
+    );
+
+    fs::write(&path, contents)?;
+    info!("[state] Saved UI state to {}", path.display());
     Ok(())
 }
 
@@ -189,6 +229,79 @@ fn parse_ron_string(contents: &str, key: &str) -> Option<String> {
     None
 }
 
+fn persistent_settings_from_ron(contents: &str, defaults: &PersistentSettings) -> PersistentSettings {
+    let dialogue_value = parse_ron_bool(contents, "dialogue_double_space_newline")
+        .unwrap_or(defaults.dialogue_double_space_newline);
+    let non_dialogue_value = parse_ron_bool(contents, "non_dialogue_double_space_newline")
+        .unwrap_or(defaults.non_dialogue_double_space_newline);
+    let show_system_titlebar =
+        parse_ron_bool(contents, "show_system_titlebar").unwrap_or(defaults.show_system_titlebar);
+    let page_margin_left = parse_ron_f32(contents, "page_margin_left").unwrap_or(defaults.page_margin_left);
+    let page_margin_right =
+        parse_ron_f32(contents, "page_margin_right").unwrap_or(defaults.page_margin_right);
+    let page_margin_top = parse_ron_f32(contents, "page_margin_top").unwrap_or(defaults.page_margin_top);
+    let page_margin_bottom =
+        parse_ron_f32(contents, "page_margin_bottom").unwrap_or(defaults.page_margin_bottom);
+    let workspace_root_path = parse_ron_string(contents, "workspace_root_path")
+        .and_then(|value| if value.trim().is_empty() { None } else { Some(value) })
+        .or_else(|| defaults.workspace_root_path.clone());
+
+    PersistentSettings {
+        dialogue_double_space_newline: dialogue_value,
+        non_dialogue_double_space_newline: non_dialogue_value,
+        show_system_titlebar,
+        page_margin_left,
+        page_margin_right,
+        page_margin_top,
+        page_margin_bottom,
+        workspace_root_path,
+    }
+}
+
+fn persistent_ui_state_from_ron(
+    contents: &str,
+    defaults: &PersistentUiState,
+) -> PersistentUiState {
+    let workspace_sidebar_visible = parse_ron_bool(contents, "workspace_sidebar_visible")
+        .unwrap_or(defaults.workspace_sidebar_visible);
+    let top_menu_collapsed =
+        parse_ron_bool(contents, "top_menu_collapsed").unwrap_or(defaults.top_menu_collapsed);
+
+    PersistentUiState {
+        workspace_sidebar_visible,
+        top_menu_collapsed,
+    }
+}
+
+fn apply_keybind_settings_from_ron(contents: &str, keybinds: &mut KeybindSettings) {
+    for action in SHORTCUT_ACTIONS {
+        let key = shortcut_action_settings_key(action);
+        let Some(raw) = parse_ron_string(contents, key) else {
+            continue;
+        };
+        let Some(binding) = parse_binding_spec(&raw) else {
+            warn!("[keybinds] Invalid binding for {key}: {raw}");
+            continue;
+        };
+        keybinds.set_binding(action, binding);
+    }
+}
+
+fn load_legacy_persistent_settings_ron() -> Option<PersistentSettings> {
+    let path = PathBuf::from(LEGACY_EDITOR_SETTINGS_PATH);
+    let contents = fs::read_to_string(path).ok()?;
+    let defaults = PersistentSettings::default();
+    Some(persistent_settings_from_ron(&contents, &defaults))
+}
+
+fn load_legacy_keybind_settings_ron() -> Option<KeybindSettings> {
+    let path = PathBuf::from(LEGACY_KEYBINDS_SETTINGS_PATH);
+    let contents = fs::read_to_string(path).ok()?;
+    let mut keybinds = KeybindSettings::default();
+    apply_keybind_settings_from_ron(&contents, &mut keybinds);
+    Some(keybinds)
+}
+
 fn load_legacy_toml_settings() -> Option<PersistentSettings> {
     let path = PathBuf::from(LEGACY_SETTINGS_PATH);
     let contents = fs::read_to_string(&path).ok()?;
@@ -212,6 +325,7 @@ fn load_legacy_toml_settings() -> Option<PersistentSettings> {
             .unwrap_or(defaults.page_margin_top),
         page_margin_bottom: parse_toml_f32(&contents, "page_margin_bottom")
             .unwrap_or(defaults.page_margin_bottom),
+        workspace_root_path: None,
     })
 }
 
@@ -262,7 +376,22 @@ fn persistent_settings_from_state(state: &EditorState) -> PersistentSettings {
         page_margin_right: state.page_margin_right,
         page_margin_top: state.page_margin_top,
         page_margin_bottom: state.page_margin_bottom,
+        workspace_root_path: state
+            .workspace_root
+            .as_ref()
+            .map(|path| path.to_string_lossy().replace('\\', "/")),
     }
+}
+
+fn persistent_ui_state_from_state(state: &EditorState) -> PersistentUiState {
+    PersistentUiState {
+        workspace_sidebar_visible: state.workspace_sidebar_visible,
+        top_menu_collapsed: state.top_menu_collapsed,
+    }
+}
+
+fn save_editor_ui_state(state: &EditorState) -> io::Result<()> {
+    save_persistent_ui_state(&persistent_ui_state_from_state(state))
 }
 
 fn normalize_page_margins(state: &mut EditorState) {

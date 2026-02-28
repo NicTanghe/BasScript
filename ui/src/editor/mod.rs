@@ -12,14 +12,15 @@ include!("ui_setup.rs");
 include!("splitters.rs");
 // Persistent settings I/O and margin/scale helpers.
 include!("settings.rs");
-// Scroll primitives shared across modes.
-include!("scrolling/panels/plain.rs");
-include!("scrolling/panels/processed.rs");
+// Text panel-specific logic.
+include!("../pannels/text/explorer.rs");
+include!("../pannels/text/plain.rs");
+include!("../pannels/text/processed.rs");
 // Scroll mode input handlers and overlays.
-include!("scrolling/modes/shared.rs");
-include!("scrolling/modes/wheel.rs");
-include!("scrolling/modes/ctrl_left_drag.rs");
-include!("scrolling/modes/middle_autoscroll.rs");
+include!("../pannels/text/scrolling/modes/shared.rs");
+include!("../pannels/text/scrolling/modes/wheel.rs");
+include!("../pannels/text/scrolling/modes/ctrl_left_drag.rs");
+include!("../pannels/text/scrolling/modes/middle_autoscroll.rs");
 // Native file dialog and shortcut handling.
 include!("dialogs.rs");
 // Text editing/navigation/mouse interaction systems.

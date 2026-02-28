@@ -17,8 +17,18 @@ fn sync_panel_split_layout(
         return;
     }
 
-    let workspace_width = clamp_workspace_width(&mut layout, total_width, state.display_mode);
-    let editor_width = (total_width - PANEL_SPLITTER_WIDTH - workspace_width).max(0.0);
+    let workspace_width = effective_workspace_width(
+        &mut layout,
+        total_width,
+        state.display_mode,
+        state.workspace_sidebar_visible,
+    );
+    let workspace_splitter_width = if state.workspace_sidebar_visible {
+        PANEL_SPLITTER_WIDTH
+    } else {
+        0.0
+    };
+    let editor_width = (total_width - workspace_splitter_width - workspace_width).max(0.0);
 
     let split_available = (editor_width - PANEL_SPLITTER_WIDTH).max(0.0);
     let split_is_visible = state.display_mode == DisplayMode::Split;
@@ -35,7 +45,11 @@ fn sync_panel_split_layout(
 
     for mut node in node_queries.p0().iter_mut() {
         node.width = px(workspace_width);
-        node.display = Display::Flex;
+        node.display = if state.workspace_sidebar_visible {
+            Display::Flex
+        } else {
+            Display::None
+        };
     }
 
     for mut node in node_queries.p1().iter_mut() {
@@ -70,7 +84,11 @@ fn sync_panel_split_layout(
 
     for (splitter, mut node) in node_queries.p3().iter_mut() {
         node.width = px(PANEL_SPLITTER_WIDTH);
-        node.display = if splitter_visible_for_mode(*splitter, state.display_mode) {
+        node.display = if splitter_visible_for_mode(
+            *splitter,
+            state.display_mode,
+            state.workspace_sidebar_visible,
+        ) {
             Display::Flex
         } else {
             Display::None
@@ -94,6 +112,7 @@ fn handle_panel_splitter_drag(
     if mouse_buttons.just_pressed(MouseButton::Left)
         && !keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
     {
+        let workspace_sidebar_visible = state.workspace_sidebar_visible;
         let hovered_splitter =
             body_row_query
                 .iter()
@@ -108,7 +127,13 @@ fn handle_panel_splitter_drag(
                         return None;
                     }
                     let local_x = (normalized.x + 0.5) * total_width;
-                    splitter_from_cursor_x(local_x, total_width, state.display_mode, &mut layout)
+                    splitter_from_cursor_x(
+                        local_x,
+                        total_width,
+                        state.display_mode,
+                        workspace_sidebar_visible,
+                        &mut layout,
+                    )
                 });
 
         if let Some(splitter) = hovered_splitter {
@@ -148,8 +173,16 @@ fn handle_panel_splitter_drag(
 
     match active_splitter {
         PanelSplitter::Workspace => {
+            if !state.workspace_sidebar_visible {
+                return;
+            }
             let workspace_width =
-                clamp_workspace_width(&mut layout, total_width, state.display_mode) + delta_x;
+                effective_workspace_width(
+                    &mut layout,
+                    total_width,
+                    state.display_mode,
+                    state.workspace_sidebar_visible,
+                ) + delta_x;
             let min_editor_width = min_editor_content_width(state.display_mode);
             let max_workspace_width = (total_width - PANEL_SPLITTER_WIDTH - min_editor_width).max(0.0);
             let min_workspace_width = WORKSPACE_WIDTH_MIN.min(max_workspace_width);
@@ -159,8 +192,18 @@ fn handle_panel_splitter_drag(
             if state.display_mode != DisplayMode::Split {
                 return;
             }
-            let workspace_width = clamp_workspace_width(&mut layout, total_width, state.display_mode);
-            let editor_width = (total_width - PANEL_SPLITTER_WIDTH - workspace_width).max(0.0);
+            let workspace_width = effective_workspace_width(
+                &mut layout,
+                total_width,
+                state.display_mode,
+                state.workspace_sidebar_visible,
+            );
+            let workspace_splitter_width = if state.workspace_sidebar_visible {
+                PANEL_SPLITTER_WIDTH
+            } else {
+                0.0
+            };
+            let editor_width = (total_width - workspace_splitter_width - workspace_width).max(0.0);
             let split_available = (editor_width - PANEL_SPLITTER_WIDTH).max(0.0);
             if split_available <= 0.0 {
                 layout.plain_ratio = 0.5;
@@ -185,7 +228,11 @@ fn style_panel_splitters(
     mut splitter_query: Query<(&PanelSplitter, &RelativeCursorPosition, &mut BackgroundColor)>,
 ) {
     for (splitter, relative_cursor, mut color) in splitter_query.iter_mut() {
-        color.0 = if !splitter_visible_for_mode(*splitter, state.display_mode) {
+        color.0 = if !splitter_visible_for_mode(
+            *splitter,
+            state.display_mode,
+            state.workspace_sidebar_visible,
+        ) {
             Color::srgba(0.0, 0.0, 0.0, 0.0)
         } else if drag_state.active == Some(*splitter) {
             COLOR_SPLITTER_ACTIVE
@@ -205,9 +252,13 @@ fn primary_cursor_x(window_query: &Query<&Window, With<PrimaryWindow>>) -> Optio
         .map(|position| position.x)
 }
 
-fn splitter_visible_for_mode(splitter: PanelSplitter, display_mode: DisplayMode) -> bool {
+fn splitter_visible_for_mode(
+    splitter: PanelSplitter,
+    display_mode: DisplayMode,
+    workspace_sidebar_visible: bool,
+) -> bool {
     match splitter {
-        PanelSplitter::Workspace => true,
+        PanelSplitter::Workspace => workspace_sidebar_visible,
         PanelSplitter::Panels => display_mode == DisplayMode::Split,
     }
 }
@@ -254,19 +305,33 @@ fn splitter_from_cursor_x(
     local_x: f32,
     total_width: f32,
     display_mode: DisplayMode,
+    workspace_sidebar_visible: bool,
     layout: &mut PanelLayoutState,
 ) -> Option<PanelSplitter> {
-    let workspace_width = clamp_workspace_width(layout, total_width, display_mode);
-    let workspace_center = workspace_width + PANEL_SPLITTER_WIDTH * 0.5;
-    let mut closest = (local_x - workspace_center).abs();
-    let mut result = PanelSplitter::Workspace;
+    let workspace_width =
+        effective_workspace_width(layout, total_width, display_mode, workspace_sidebar_visible);
+    let mut closest = f32::INFINITY;
+    let mut result = PanelSplitter::Panels;
+
+    if workspace_sidebar_visible {
+        let workspace_center = workspace_width + PANEL_SPLITTER_WIDTH * 0.5;
+        closest = (local_x - workspace_center).abs();
+        result = PanelSplitter::Workspace;
+    }
 
     if display_mode == DisplayMode::Split {
-        let editor_width = (total_width - PANEL_SPLITTER_WIDTH - workspace_width).max(0.0);
+        let workspace_splitter_width = if workspace_sidebar_visible {
+            PANEL_SPLITTER_WIDTH
+        } else {
+            0.0
+        };
+        let editor_width = (total_width - workspace_splitter_width - workspace_width).max(0.0);
         let split_available = (editor_width - PANEL_SPLITTER_WIDTH).max(0.0);
         let plain_width = clamp_plain_width_from_ratio(layout, split_available);
-        let panels_center =
-            workspace_width + PANEL_SPLITTER_WIDTH + plain_width + PANEL_SPLITTER_WIDTH * 0.5;
+        let panels_center = workspace_width
+            + workspace_splitter_width
+            + plain_width
+            + PANEL_SPLITTER_WIDTH * 0.5;
         let panel_distance = (local_x - panels_center).abs();
         if panel_distance < closest {
             closest = panel_distance;
@@ -278,5 +343,18 @@ fn splitter_from_cursor_x(
         Some(result)
     } else {
         None
+    }
+}
+
+fn effective_workspace_width(
+    layout: &mut PanelLayoutState,
+    total_width: f32,
+    display_mode: DisplayMode,
+    workspace_sidebar_visible: bool,
+) -> f32 {
+    if workspace_sidebar_visible {
+        clamp_workspace_width(layout, total_width, display_mode)
+    } else {
+        0.0
     }
 }

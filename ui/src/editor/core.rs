@@ -33,8 +33,11 @@ const FONT_MARKDOWN_ITALIC_PATH: &str = "fonts/SegoeUIVF.ttf";
 const FONT_MARKDOWN_BOLD_ITALIC_PATH: &str = "fonts/SegoeUIVF.ttf";
 const DEFAULT_LOAD_PATH: &str = "docs/humanDOC.md";
 const DEFAULT_SAVE_PATH: &str = "scripts/session.fountain";
-const EDITOR_SETTINGS_PATH: &str = "scripts/editor_settings.ron";
-const KEYBINDS_SETTINGS_PATH: &str = "scripts/keybinds.ron";
+const EDITOR_SETTINGS_PATH: &str = "settings/editor_settings.ron";
+const KEYBINDS_SETTINGS_PATH: &str = "settings/keybinds.ron";
+const UI_STATE_PATH: &str = "settings/state.ron";
+const LEGACY_EDITOR_SETTINGS_PATH: &str = "scripts/editor_settings.ron";
+const LEGACY_KEYBINDS_SETTINGS_PATH: &str = "scripts/keybinds.ron";
 const LEGACY_SETTINGS_PATH: &str = "scripts/settings.toml";
 const PROCESSED_PAPER_CAPACITY: usize = 16;
 
@@ -274,22 +277,6 @@ struct ProcessedChecklistIcon {
     line_offset: usize,
 }
 
-#[derive(Component)]
-struct WorkspaceRootLabel;
-
-#[derive(Component)]
-struct WorkspaceFileList;
-
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct WorkspaceFileButton {
-    index: usize,
-}
-
-#[derive(Component, Clone, Debug, PartialEq, Eq)]
-struct WorkspaceFolderToggleButton {
-    folder_key: String,
-}
-
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 enum ToolbarAction {
     OpenWorkspace,
@@ -328,10 +315,11 @@ enum ShortcutAction {
     PlainView,
     ProcessedView,
     ProcessedRawCurrentLineView,
+    ToggleExplorer,
     ToggleTopMenu,
 }
 
-const SHORTCUT_ACTIONS: [ShortcutAction; 10] = [
+const SHORTCUT_ACTIONS: [ShortcutAction; 11] = [
     ShortcutAction::OpenWorkspace,
     ShortcutAction::SaveAs,
     ShortcutAction::Undo,
@@ -341,6 +329,7 @@ const SHORTCUT_ACTIONS: [ShortcutAction; 10] = [
     ShortcutAction::PlainView,
     ShortcutAction::ProcessedView,
     ShortcutAction::ProcessedRawCurrentLineView,
+    ShortcutAction::ToggleExplorer,
     ShortcutAction::ToggleTopMenu,
 ];
 
@@ -361,6 +350,7 @@ struct KeybindSettings {
     plain_view: ShortcutBinding,
     processed_view: ShortcutBinding,
     processed_raw_current_line_view: ShortcutBinding,
+    toggle_explorer: ShortcutBinding,
     toggle_top_menu: ShortcutBinding,
 }
 
@@ -403,6 +393,10 @@ impl Default for KeybindSettings {
                 key: KeyCode::Digit1,
                 shift: false,
             },
+            toggle_explorer: ShortcutBinding {
+                key: KeyCode::KeyE,
+                shift: false,
+            },
             toggle_top_menu: ShortcutBinding {
                 key: KeyCode::KeyB,
                 shift: false,
@@ -423,6 +417,7 @@ impl KeybindSettings {
             ShortcutAction::PlainView => self.plain_view,
             ShortcutAction::ProcessedView => self.processed_view,
             ShortcutAction::ProcessedRawCurrentLineView => self.processed_raw_current_line_view,
+            ShortcutAction::ToggleExplorer => self.toggle_explorer,
             ShortcutAction::ToggleTopMenu => self.toggle_top_menu,
         }
     }
@@ -440,6 +435,7 @@ impl KeybindSettings {
             ShortcutAction::ProcessedRawCurrentLineView => {
                 self.processed_raw_current_line_view = binding
             }
+            ShortcutAction::ToggleExplorer => self.toggle_explorer = binding,
             ShortcutAction::ToggleTopMenu => self.toggle_top_menu = binding,
         }
     }
@@ -456,6 +452,7 @@ fn shortcut_action_label(action: ShortcutAction) -> &'static str {
         ShortcutAction::PlainView => "Plain View Mode",
         ShortcutAction::ProcessedView => "Processed View Mode",
         ShortcutAction::ProcessedRawCurrentLineView => "Processed + Raw Current Line Mode",
+        ShortcutAction::ToggleExplorer => "Toggle Explorer",
         ShortcutAction::ToggleTopMenu => "Toggle Top Menu",
     }
 }
@@ -471,6 +468,7 @@ fn shortcut_action_description(action: ShortcutAction) -> &'static str {
         ShortcutAction::PlainView => "Plain view mode",
         ShortcutAction::ProcessedView => "Processed view mode",
         ShortcutAction::ProcessedRawCurrentLineView => "Processed + raw current line mode",
+        ShortcutAction::ToggleExplorer => "Toggle explorer",
         ShortcutAction::ToggleTopMenu => "Toggle top menu",
     }
 }
@@ -486,6 +484,7 @@ fn shortcut_action_settings_key(action: ShortcutAction) -> &'static str {
         ShortcutAction::PlainView => "plain_view",
         ShortcutAction::ProcessedView => "processed_view",
         ShortcutAction::ProcessedRawCurrentLineView => "processed_raw_current_line_view",
+        ShortcutAction::ToggleExplorer => "toggle_explorer",
         ShortcutAction::ToggleTopMenu => "toggle_top_menu",
     }
 }
@@ -673,6 +672,7 @@ struct EditorState {
     status_message: String,
     keybinds: KeybindSettings,
     pending_keybind_capture: Option<ShortcutAction>,
+    workspace_sidebar_visible: bool,
     top_menu_collapsed: bool,
     show_system_titlebar: bool,
     caret_blink: Timer,
@@ -753,7 +753,7 @@ enum PendingDialog {
 
 struct DialogMainThreadMarker;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct PersistentSettings {
     dialogue_double_space_newline: bool,
     non_dialogue_double_space_newline: bool,
@@ -762,6 +762,7 @@ struct PersistentSettings {
     page_margin_right: f32,
     page_margin_top: f32,
     page_margin_bottom: f32,
+    workspace_root_path: Option<String>,
 }
 
 impl Default for PersistentSettings {
@@ -774,6 +775,22 @@ impl Default for PersistentSettings {
             page_margin_right: PAGE_TEXT_MARGIN_RIGHT,
             page_margin_top: PAGE_TEXT_MARGIN_TOP,
             page_margin_bottom: PAGE_TEXT_MARGIN_BOTTOM,
+            workspace_root_path: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct PersistentUiState {
+    workspace_sidebar_visible: bool,
+    top_menu_collapsed: bool,
+}
+
+impl Default for PersistentUiState {
+    fn default() -> Self {
+        Self {
+            workspace_sidebar_visible: true,
+            top_menu_collapsed: false,
         }
     }
 }
@@ -788,12 +805,6 @@ struct EditorFonts {
     markdown_bold: Handle<Font>,
     markdown_italic: Handle<Font>,
     markdown_bold_italic: Handle<Font>,
-}
-
-#[derive(Resource, Clone)]
-struct WorkspaceIcons {
-    folder_closed: Handle<Image>,
-    folder_open: Handle<Image>,
 }
 
 #[derive(Resource, Clone)]
@@ -858,6 +869,8 @@ impl FromWorld for EditorState {
     fn from_world(_world: &mut World) -> Self {
         let paths = DocumentPath::new(DEFAULT_LOAD_PATH, DEFAULT_SAVE_PATH);
         let settings = load_persistent_settings();
+        let ui_state = load_persistent_ui_state();
+        let saved_workspace_root = settings.workspace_root_path.clone();
         let keybinds = load_keybind_settings();
         let (document, document_format, status_message) = match Document::load(&paths.load_path) {
             Ok(doc) => {
@@ -905,7 +918,8 @@ impl FromWorld for EditorState {
             status_message,
             keybinds,
             pending_keybind_capture: None,
-            top_menu_collapsed: false,
+            workspace_sidebar_visible: ui_state.workspace_sidebar_visible,
+            top_menu_collapsed: ui_state.top_menu_collapsed,
             show_system_titlebar: settings.show_system_titlebar,
             caret_blink: Timer::from_seconds(0.5, TimerMode::Repeating),
             caret_visible: true,
@@ -929,10 +943,7 @@ impl FromWorld for EditorState {
         };
         normalize_page_margins(&mut next);
         let initial_status = next.status_message.clone();
-        if let Some(workspace_root) = next.paths.load_path.parent().map(|path| path.to_path_buf()) {
-            next.set_workspace_root(workspace_root);
-            next.status_message = initial_status;
-        }
+        apply_initial_workspace_root(&mut next, &initial_status, saved_workspace_root.as_deref());
         next
     }
 }
@@ -971,63 +982,6 @@ impl EditorState {
 
     fn zoom_percent(&self) -> u32 {
         (self.zoom * 100.0).round() as u32
-    }
-
-    fn set_workspace_root(&mut self, root: PathBuf) {
-        let normalized_root = root.canonicalize().unwrap_or(root);
-        self.workspace_root = Some(normalized_root.clone());
-
-        match collect_workspace_files(&normalized_root) {
-            Ok(files) => {
-                self.workspace_files = files;
-                self.workspace_expanded_folders =
-                    default_expanded_workspace_folders(&self.workspace_files);
-                self.sync_workspace_selection();
-                self.status_message = format!(
-                    "Opened workspace {} ({} files).",
-                    normalized_root.display(),
-                    self.workspace_files.len()
-                );
-            }
-            Err(error) => {
-                self.workspace_files.clear();
-                self.workspace_selected = None;
-                self.workspace_expanded_folders.clear();
-                self.status_message = format!(
-                    "Workspace scan failed for {}: {error}",
-                    normalized_root.display()
-                );
-            }
-        }
-
-        self.workspace_ui_dirty = true;
-    }
-
-    fn open_workspace_file(&mut self, index: usize) {
-        let Some(entry) = self.workspace_files.get(index) else {
-            self.status_message = "Workspace file selection is out of range.".to_string();
-            return;
-        };
-
-        self.load_from_path(entry.path.clone());
-    }
-
-    fn toggle_workspace_folder(&mut self, folder_key: &str) {
-        if self.workspace_expanded_folders.contains(folder_key) {
-            self.workspace_expanded_folders.remove(folder_key);
-        } else {
-            self.workspace_expanded_folders
-                .insert(folder_key.to_owned());
-        }
-        self.workspace_ui_dirty = true;
-    }
-
-    fn sync_workspace_selection(&mut self) {
-        self.workspace_selected = self
-            .workspace_files
-            .iter()
-            .position(|entry| entry.path == self.paths.load_path);
-        self.workspace_ui_dirty = true;
     }
 
     fn reparse(&mut self) {
@@ -1319,148 +1273,6 @@ struct ProcessedPageLayout {
     page_step_lines: usize,
 }
 
-#[derive(Clone, Debug)]
-struct WorkspaceFileEntry {
-    path: PathBuf,
-    relative_display: String,
-}
-
-#[derive(Clone, Debug)]
-enum WorkspaceSidebarRow {
-    Folder {
-        folder_key: String,
-        folder_name: String,
-        depth: usize,
-        expanded: bool,
-    },
-    File {
-        file_index: usize,
-        file_name: String,
-        depth: usize,
-    },
-}
-
-fn workspace_sidebar_rows(state: &EditorState) -> Vec<WorkspaceSidebarRow> {
-    let mut folders_by_parent = BTreeMap::<String, Vec<(String, String)>>::new();
-    let mut files_by_parent = BTreeMap::<String, Vec<(usize, String)>>::new();
-
-    for (index, file) in state.workspace_files.iter().enumerate() {
-        let parent_key = workspace_parent_key(&file.relative_display);
-        let file_name = workspace_base_name(&file.relative_display);
-        files_by_parent
-            .entry(parent_key)
-            .or_default()
-            .push((index, file_name));
-
-        let components = file.relative_display.split('/').collect::<Vec<_>>();
-        if components.len() <= 1 {
-            continue;
-        }
-
-        let mut parent = String::new();
-        for component in components.iter().take(components.len().saturating_sub(1)) {
-            let folder_key = if parent.is_empty() {
-                (*component).to_owned()
-            } else {
-                format!("{parent}/{component}")
-            };
-
-            let siblings = folders_by_parent.entry(parent.clone()).or_default();
-            if !siblings
-                .iter()
-                .any(|(existing_key, _)| *existing_key == folder_key)
-            {
-                siblings.push((folder_key.clone(), (*component).to_owned()));
-            }
-
-            parent = folder_key;
-        }
-    }
-
-    for folders in folders_by_parent.values_mut() {
-        folders.sort_by(|left, right| left.1.cmp(&right.1));
-    }
-    for files in files_by_parent.values_mut() {
-        files.sort_by(|left, right| left.1.cmp(&right.1));
-    }
-
-    let mut rows = Vec::<WorkspaceSidebarRow>::new();
-    append_workspace_sidebar_rows(
-        "",
-        0,
-        &state.workspace_expanded_folders,
-        &folders_by_parent,
-        &files_by_parent,
-        &mut rows,
-    );
-    rows
-}
-
-fn append_workspace_sidebar_rows(
-    parent_key: &str,
-    depth: usize,
-    expanded_folders: &BTreeSet<String>,
-    folders_by_parent: &BTreeMap<String, Vec<(String, String)>>,
-    files_by_parent: &BTreeMap<String, Vec<(usize, String)>>,
-    out: &mut Vec<WorkspaceSidebarRow>,
-) {
-    if let Some(folders) = folders_by_parent.get(parent_key) {
-        for (folder_key, folder_name) in folders {
-            let expanded = expanded_folders.contains(folder_key);
-            out.push(WorkspaceSidebarRow::Folder {
-                folder_key: folder_key.clone(),
-                folder_name: folder_name.clone(),
-                depth,
-                expanded,
-            });
-            if expanded {
-                append_workspace_sidebar_rows(
-                    folder_key,
-                    depth.saturating_add(1),
-                    expanded_folders,
-                    folders_by_parent,
-                    files_by_parent,
-                    out,
-                );
-            }
-        }
-    }
-
-    if let Some(files) = files_by_parent.get(parent_key) {
-        for (file_index, file_name) in files {
-            out.push(WorkspaceSidebarRow::File {
-                file_index: *file_index,
-                file_name: file_name.clone(),
-                depth,
-            });
-        }
-    }
-}
-
-fn workspace_parent_key(relative_display: &str) -> String {
-    relative_display
-        .rsplit_once('/')
-        .map_or_else(String::new, |(parent, _)| parent.to_owned())
-}
-
-fn workspace_base_name(relative_display: &str) -> String {
-    relative_display
-        .rsplit('/')
-        .next()
-        .map_or_else(String::new, str::to_owned)
-}
-
-fn default_expanded_workspace_folders(files: &[WorkspaceFileEntry]) -> BTreeSet<String> {
-    let mut expanded = BTreeSet::<String>::new();
-    for file in files {
-        let Some((top_level, _)) = file.relative_display.split_once('/') else {
-            continue;
-        };
-        expanded.insert(top_level.to_owned());
-    }
-    expanded
-}
-
 fn document_format_label(format: DocumentFormat) -> &'static str {
     match format {
         DocumentFormat::Fountain => "Fountain",
@@ -1597,60 +1409,3 @@ fn is_fountain_hint(trimmed: &str) -> bool {
         .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || " .()'-".contains(ch))
 }
 
-fn collect_workspace_files(root: &Path) -> io::Result<Vec<WorkspaceFileEntry>> {
-    let mut files = Vec::<WorkspaceFileEntry>::new();
-    let mut stack = vec![root.to_path_buf()];
-
-    while let Some(directory) = stack.pop() {
-        for entry in fs::read_dir(&directory)? {
-            let entry = entry?;
-            let path = entry.path();
-            let file_type = entry.file_type()?;
-
-            if file_type.is_dir() {
-                if should_skip_workspace_dir(&path) {
-                    continue;
-                }
-                stack.push(path);
-                continue;
-            }
-
-            if !file_type.is_file() || !is_workspace_file_candidate(&path) {
-                continue;
-            }
-
-            let relative = path
-                .strip_prefix(root)
-                .unwrap_or(path.as_path())
-                .to_string_lossy()
-                .replace('\\', "/");
-
-            files.push(WorkspaceFileEntry {
-                path,
-                relative_display: relative,
-            });
-        }
-    }
-
-    files.sort_by(|left, right| left.relative_display.cmp(&right.relative_display));
-    Ok(files)
-}
-
-fn should_skip_workspace_dir(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-
-    name.starts_with('.') || matches!(name, "target" | "node_modules")
-}
-
-fn is_workspace_file_candidate(path: &Path) -> bool {
-    let extension = path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| ext.to_ascii_lowercase());
-    matches!(
-        extension.as_deref(),
-        Some("fountain") | Some("txt") | Some("md") | Some("markdown")
-    )
-}
