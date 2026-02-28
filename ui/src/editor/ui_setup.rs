@@ -388,48 +388,65 @@ fn setup(
                         },
                         TextColor(COLOR_TEXT_MUTED),
                     ),
-                    theme_selection_background_row(font.clone()),
                     (
                         Node {
-                            display: Display::None,
-                            flex_direction: FlexDirection::Column,
-                            row_gap: px(8.0),
-                            padding: UiRect::all(px(10.0)),
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Start,
+                            column_gap: px(12.0),
                             ..default()
                         },
-                        BackgroundColor(Color::srgb(0.82, 0.84, 0.86)),
-                        ThemeColorPickerPanel,
                         children![
-                            theme_visual_picker(font.clone(), hue_sat_wheel.clone()),
                             (
-                                Text::new(""),
-                                TextFont {
-                                    font: font.clone(),
-                                    font_size: 12.0,
+                                Node {
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(8.0),
                                     ..default()
                                 },
-                                TextColor(COLOR_TEXT_MAIN),
-                                ThemeSelectionRgbLabel,
+                                children![theme_selection_background_row(font.clone())],
                             ),
                             (
-                                Text::new(""),
-                                TextFont {
-                                    font: font.clone(),
-                                    font_size: 12.0,
+                                Node {
+                                    display: Display::None,
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: px(8.0),
+                                    padding: UiRect::all(px(10.0)),
                                     ..default()
                                 },
-                                TextColor(COLOR_TEXT_MAIN),
-                                ThemeSelectionHsvLabel,
-                            ),
-                            (
-                                Text::new(""),
-                                TextFont {
-                                    font: font.clone(),
-                                    font_size: 12.0,
-                                    ..default()
-                                },
-                                TextColor(COLOR_TEXT_MAIN),
-                                ThemeSelectionHexLabel,
+                                BackgroundColor(Color::srgb(0.82, 0.84, 0.86)),
+                                ThemeColorPickerPanel,
+                                children![
+                                    theme_visual_picker(font.clone(), hue_sat_wheel.clone()),
+                                    (
+                                        Text::new(""),
+                                        TextFont {
+                                            font: font.clone(),
+                                            font_size: 12.0,
+                                            ..default()
+                                        },
+                                        TextColor(COLOR_TEXT_MAIN),
+                                        ThemeSelectionRgbLabel,
+                                    ),
+                                    (
+                                        Text::new(""),
+                                        TextFont {
+                                            font: font.clone(),
+                                            font_size: 12.0,
+                                            ..default()
+                                        },
+                                        TextColor(COLOR_TEXT_MAIN),
+                                        ThemeSelectionHsvLabel,
+                                    ),
+                                    (
+                                        Text::new(""),
+                                        TextFont {
+                                            font: font.clone(),
+                                            font_size: 12.0,
+                                            ..default()
+                                        },
+                                        TextColor(COLOR_TEXT_MAIN),
+                                        ThemeSelectionHexLabel,
+                                    ),
+                                ],
                             ),
                         ],
                     ),
@@ -1604,7 +1621,7 @@ fn handle_settings_buttons(
 fn handle_theme_color_picker_input(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mut state: ResMut<EditorState>,
-    wheel_query: Query<&RelativeCursorPosition, With<ThemeHueSatWheel>>,
+    wheel_query: Query<(&RelativeCursorPosition, &ComputedNode), With<ThemeHueSatWheel>>,
     slider_query: Query<(&ThemeColorSlider, &RelativeCursorPosition, &ComputedNode)>,
 ) {
     if !state.theme_color_picker_open || !mouse_buttons.pressed(MouseButton::Left) {
@@ -1612,7 +1629,7 @@ fn handle_theme_color_picker_input(
     }
 
     let mut theme_changed = false;
-    for relative_cursor in wheel_query.iter() {
+    for (relative_cursor, computed) in wheel_query.iter() {
         if !relative_cursor.cursor_over() {
             continue;
         }
@@ -1620,8 +1637,20 @@ fn handle_theme_color_picker_input(
             continue;
         };
 
-        let dx = (normalized.x - 0.5) * 2.0;
-        let dy = (0.5 - normalized.y) * 2.0;
+        let width = computed.size().x * computed.inverse_scale_factor();
+        let height = computed.size().y * computed.inverse_scale_factor();
+        if width <= 0.0 || height <= 0.0 {
+            continue;
+        }
+        let local_x = (normalized.x + 0.5).clamp(0.0, 1.0) * width;
+        let local_y = (normalized.y + 0.5).clamp(0.0, 1.0) * height;
+        let radius_px = width.min(height) * 0.5;
+        if radius_px <= 0.0 {
+            continue;
+        }
+
+        let dx = (local_x - width * 0.5) / radius_px;
+        let dy = (height * 0.5 - local_y) / radius_px;
         let radius = (dx * dx + dy * dy).sqrt();
         if radius > 1.0 {
             continue;
@@ -1652,9 +1681,10 @@ fn handle_theme_color_picker_input(
         let Some(normalized) = relative_cursor.normalized else {
             continue;
         };
-        let track_width = computed.size().x.max(THEME_COLOR_SLIDER_KNOB_WIDTH + 1.0);
+        let track_width = (computed.size().x * computed.inverse_scale_factor())
+            .max(THEME_COLOR_SLIDER_KNOB_WIDTH + 1.0);
         let usable_width = (track_width - THEME_COLOR_SLIDER_KNOB_WIDTH).max(1.0);
-        let cursor_x = normalized.x.clamp(0.0, 1.0) * track_width;
+        let cursor_x = (normalized.x + 0.5).clamp(0.0, 1.0) * track_width;
         let next = ((cursor_x - THEME_COLOR_SLIDER_KNOB_WIDTH * 0.5) / usable_width).clamp(0.0, 1.0);
         match slider.channel {
             ThemeSliderChannel::Hue => {
@@ -2019,6 +2049,7 @@ fn sync_theme_picker_ui(
             With<ThemeSelectionHexLabel>,
         )>,
     >,
+    wheel_size_query: Query<&ComputedNode, With<ThemeHueSatWheel>>,
 ) {
     if let Ok(mut picker_panel) = node_queries.p0().single_mut() {
         picker_panel.display =
@@ -2115,6 +2146,17 @@ fn sync_theme_picker_ui(
         };
     }
 
+    let wheel_size = wheel_size_query
+        .iter()
+        .next()
+        .map(|computed| {
+            Vec2::new(
+                computed.size().x * computed.inverse_scale_factor(),
+                computed.size().y * computed.inverse_scale_factor(),
+            )
+        })
+        .unwrap_or(Vec2::splat(THEME_COLOR_WHEEL_SIZE));
+    let wheel_radius = wheel_size.x.min(wheel_size.y) * 0.5;
     let cursor_half = 5.0;
     let angle = hue * std::f32::consts::TAU;
     let cursor_x = angle.cos() * saturation;
@@ -2137,8 +2179,8 @@ fn sync_theme_picker_ui(
         }
 
         if wheel_cursor.is_some() {
-            node.left = px((cursor_x * 0.5 + 0.5) * THEME_COLOR_WHEEL_SIZE - cursor_half);
-            node.top = px((-cursor_y * 0.5 + 0.5) * THEME_COLOR_WHEEL_SIZE - cursor_half);
+            node.left = px(wheel_size.x * 0.5 + cursor_x * wheel_radius - cursor_half);
+            node.top = px(wheel_size.y * 0.5 - cursor_y * wheel_radius - cursor_half);
         }
     }
 }
