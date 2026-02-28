@@ -341,7 +341,7 @@ fn handle_mouse_selection(
     apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
 }
 
-fn render_plain_selection_rects(
+fn render_selection_rects(
     selection_rect_query: &mut Query<
         (
             &PanelSelectionRect,
@@ -366,8 +366,23 @@ fn render_plain_selection_rects(
     plain_origin_y: f32,
     plain_char_width: f32,
     plain_line_height: f32,
+    processed_view: &ProcessedView,
+    first_visible_page: usize,
+    processed_page_step_lines: usize,
+    processed_lines_per_page: usize,
+    processed_text_layout_query: &Query<
+        (&ProcessedPaperText, &TextLayoutInfo, &ComputedNode),
+        (Without<PanelText>, Without<PanelPaper>, Without<PanelCaret>, Without<PanelCanvas>),
+    >,
+    processed_geometry: &ProcessedPageGeometry,
+    processed_page_step_pixels: f32,
+    processed_anchor_offset_px: f32,
+    processed_zoom_bias_px: f32,
+    processed_char_width: f32,
+    processed_line_height: f32,
 ) {
-    let mut rects = Vec::<(f32, f32, f32, f32)>::new();
+    let mut plain_rects = Vec::<(f32, f32, f32, f32)>::new();
+    let mut processed_rects = Vec::<(f32, f32, f32, f32)>::new();
     if let Some((start, end)) = state.selection_bounds() {
         let visible_first_line = state.top_line;
         let visible_last_line = visible_first_line
@@ -377,7 +392,7 @@ fn render_plain_selection_rects(
 
         if range_start_line <= range_end_line {
             for line in range_start_line..=range_end_line {
-                if rects.len() >= SELECTION_RECT_CAPACITY {
+                if plain_rects.len() >= SELECTION_RECT_CAPACITY {
                     break;
                 }
 
@@ -434,7 +449,7 @@ fn render_plain_selection_rects(
                     })
                     .unwrap_or(visible_offset as f32 * plain_line_height);
 
-                rects.push((
+                plain_rects.push((
                     plain_origin_x + left_x.min(right_x),
                     plain_origin_y + line_top,
                     (right_x - left_x).abs().max(1.0),
@@ -442,15 +457,123 @@ fn render_plain_selection_rects(
                 ));
             }
         }
+
+        for (visual_index, visual_line) in processed_view.lines.iter().enumerate() {
+            if processed_rects.len() >= SELECTION_RECT_CAPACITY || visual_line.is_spacer {
+                continue;
+            }
+
+            let source_line = visual_line.source_line;
+            if source_line < start.line || source_line > end.line {
+                continue;
+            }
+
+            let line_len = state.document.line_len_chars(source_line);
+            let selected_start_raw = if source_line == start.line {
+                start.column.min(line_len)
+            } else {
+                0
+            };
+            let selected_end_raw = if source_line == end.line {
+                end.column.min(line_len)
+            } else {
+                line_len
+            };
+            if selected_end_raw <= selected_start_raw {
+                continue;
+            }
+
+            let seg_start_raw = visual_line.raw_start_column;
+            let seg_end_raw = visual_line.raw_end_column;
+            let slice_start_raw = selected_start_raw.max(seg_start_raw);
+            let slice_end_raw = selected_end_raw.min(seg_end_raw);
+            if slice_end_raw <= slice_start_raw {
+                continue;
+            }
+
+            let display_start = visual_line
+                .display_indent_width
+                .saturating_add(slice_start_raw.saturating_sub(seg_start_raw));
+            let display_end = visual_line
+                .display_indent_width
+                .saturating_add(slice_end_raw.saturating_sub(seg_start_raw));
+
+            let global_index = processed_view.start_index.saturating_add(visual_index);
+            let page_index = global_index / processed_page_step_lines.max(1);
+            let line_in_page = global_index % processed_page_step_lines.max(1);
+            if line_in_page >= processed_lines_per_page.max(1) {
+                continue;
+            }
+            let slot = page_index.saturating_sub(first_visible_page);
+            if slot >= PROCESSED_PAPER_CAPACITY {
+                continue;
+            }
+
+            let text_left = processed_geometry.text_left - state.processed_horizontal_scroll;
+            let text_top = processed_text_top_for_slot(
+                processed_geometry,
+                slot,
+                processed_page_step_pixels,
+                processed_anchor_offset_px,
+            ) + processed_zoom_bias_px;
+
+            let line_text = visual_line.text.as_str();
+            let display_len = line_text.chars().count();
+            let start_byte = char_to_byte_index(line_text, display_start.min(display_len));
+            let end_byte = char_to_byte_index(line_text, display_end.min(display_len));
+
+            let mut left_x = display_start as f32 * processed_char_width;
+            let mut right_x = display_end as f32 * processed_char_width;
+            let mut line_top = line_in_page as f32 * processed_line_height;
+            let mut line_height = processed_line_height;
+
+            if let Some((_, layout, text_computed)) = processed_text_layout_query
+                .iter()
+                .find(|(paper_text, _, _)| paper_text.slot == slot)
+            {
+                let inverse_scale = text_computed.inverse_scale_factor();
+                left_x = caret_x_from_layout(
+                    layout,
+                    line_in_page,
+                    line_text,
+                    start_byte,
+                    inverse_scale,
+                    processed_char_width,
+                )
+                .unwrap_or(left_x);
+                right_x = caret_x_from_layout(
+                    layout,
+                    line_in_page,
+                    line_text,
+                    end_byte,
+                    inverse_scale,
+                    processed_char_width,
+                )
+                .unwrap_or(right_x);
+                line_top = line_top_from_layout(layout, line_in_page, inverse_scale).unwrap_or(line_top);
+                if let Some((_, top, bottom)) = layout_line_bounds(layout, inverse_scale)
+                    .into_iter()
+                    .find(|(index, _, _)| *index == line_in_page)
+                {
+                    line_height = (bottom - top).max(1.0);
+                }
+            }
+
+            processed_rects.push((
+                text_left + left_x.min(right_x),
+                text_top + line_top,
+                (right_x - left_x).abs().max(1.0),
+                line_height.max(1.0),
+            ));
+        }
     }
 
     for (selection_rect, mut node, mut color, mut visibility) in selection_rect_query.iter_mut() {
-        if selection_rect.kind != PanelKind::Plain {
-            *visibility = Visibility::Hidden;
-            continue;
-        }
-
-        let Some((left, top, width, height)) = rects.get(selection_rect.index).copied() else {
+        let rect = match selection_rect.kind {
+            PanelKind::Plain => plain_rects.get(selection_rect.index).copied(),
+            PanelKind::Processed => processed_rects.get(selection_rect.index).copied(),
+        };
+        let Some((left, top, width, height)) = rect else {
             *visibility = Visibility::Hidden;
             continue;
         };

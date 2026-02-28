@@ -324,7 +324,7 @@ fn render_editor(
 
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
     state.measured_line_step = scaled_line_height(&state);
-    render_plain_selection_rects(
+    render_selection_rects(
         &mut selection_rect_query,
         &state,
         &plain_lines,
@@ -334,6 +334,17 @@ fn render_editor(
         plain_origin_y,
         plain_char_width,
         plain_line_height,
+        &processed_view,
+        first_visible_page,
+        processed_page_step_lines,
+        processed_lines_per_page,
+        &processed_text_layout_query,
+        &processed_geometry,
+        processed_page_step_pixels,
+        processed_anchor_offset_px,
+        processed_zoom_bias_px,
+        processed_char_width,
+        processed_line_height,
     );
 
     render_panel_carets(
