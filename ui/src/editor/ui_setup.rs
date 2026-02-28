@@ -796,6 +796,7 @@ fn setup_processed_papers(
                                 },
                                 UiTransform::default(),
                                 ZIndex(1),
+                                GlobalZIndex(1),
                                 ProcessedPaperText { slot },
                             ))
                             .with_children(|text_parent| {
@@ -827,6 +828,7 @@ fn setup_processed_papers(
                                 },
                                 Visibility::Hidden,
                                 ZIndex(3),
+                                GlobalZIndex(1),
                                 ProcessedChecklistIcon { slot, line_offset },
                             ));
                         }
@@ -872,6 +874,7 @@ fn setup_processed_papers(
                     },
                     UiTransform::default(),
                     ZIndex(1),
+                    GlobalZIndex(1),
                     ProcessedPaperText { slot },
                 ))
                 .with_children(|text_parent| {
@@ -903,6 +906,7 @@ fn setup_processed_papers(
                     },
                     Visibility::Hidden,
                     ZIndex(3),
+                    GlobalZIndex(1),
                     ProcessedChecklistIcon { slot, line_offset },
                 ));
             }
