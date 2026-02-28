@@ -68,7 +68,11 @@ const PAGE_TEXT_MARGIN_TOP: f32 = 30.0;
 const PAGE_TEXT_MARGIN_BOTTOM: f32 = 30.0;
 const PAGE_GAP: f32 = 24.0;
 const PAGE_MARGIN_STEP: f32 = 8.0;
-const THEME_COLOR_STEP: f32 = 0.02;
+const THEME_COLOR_WHEEL_SIZE_PX: u32 = 192;
+const THEME_COLOR_WHEEL_SIZE: f32 = THEME_COLOR_WHEEL_SIZE_PX as f32;
+const THEME_COLOR_SLIDER_WIDTH: f32 = 180.0;
+const THEME_COLOR_SLIDER_HEIGHT: f32 = 14.0;
+const THEME_COLOR_SLIDER_KNOB_WIDTH: f32 = 8.0;
 const MIN_TEXT_BOX_WIDTH: f32 = 120.0;
 const MIN_TEXT_BOX_HEIGHT: f32 = 120.0;
 const PANEL_SPLITTER_WIDTH: f32 = 0.0;
@@ -146,6 +150,7 @@ impl Plugin for UiPlugin {
                     sync_panel_display_mode,
                     sync_panel_split_layout,
                     sync_settings_ui,
+                    sync_theme_picker_ui,
                     sync_workspace_sidebar,
                 ),
             )
@@ -166,6 +171,10 @@ impl Plugin for UiPlugin {
                             .or(in_state(UiScreenState::Keybinds))
                             .or(in_state(UiScreenState::Theme)),
                     ),
+            )
+            .add_systems(
+                Update,
+                handle_theme_color_picker_input.run_if(in_state(UiScreenState::Theme)),
             )
             .add_systems(
                 Update,
@@ -332,14 +341,6 @@ enum SettingsAction {
     MarginBottomIncrease,
     OpenTheme,
     ToggleThemeColorPicker,
-    SelectionBackgroundRedDecrease,
-    SelectionBackgroundRedIncrease,
-    SelectionBackgroundGreenDecrease,
-    SelectionBackgroundGreenIncrease,
-    SelectionBackgroundBlueDecrease,
-    SelectionBackgroundBlueIncrease,
-    SelectionBackgroundAlphaDecrease,
-    SelectionBackgroundAlphaIncrease,
     OpenKeybinds,
     BackToSettings,
     BackToEditor,
@@ -700,9 +701,12 @@ struct SettingMarginLabel {
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 enum ThemeColorChannel {
+    Hue,
+    Saturation,
     Red,
     Green,
     Blue,
+    Value,
     Alpha,
 }
 
@@ -719,6 +723,42 @@ struct ThemeColorPickerPanel;
 
 #[derive(Component)]
 struct ThemeColorPreviewSwatch;
+
+#[derive(Component)]
+struct ThemeHueSatWheel;
+
+#[derive(Component)]
+struct ThemeHueSatCursor;
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+enum ThemeSliderChannel {
+    Hue,
+    Saturation,
+    Red,
+    Green,
+    Blue,
+    Value,
+    Alpha,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct ThemeColorSlider {
+    channel: ThemeSliderChannel,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct ThemeColorSliderKnob {
+    channel: ThemeSliderChannel,
+}
+
+#[derive(Component)]
+struct ThemeSelectionHsvLabel;
+
+#[derive(Component)]
+struct ThemeSelectionRgbLabel;
+
+#[derive(Component)]
+struct ThemeSelectionHexLabel;
 
 #[derive(Resource)]
 struct EditorState {
@@ -921,6 +961,11 @@ struct EditorFonts {
 struct ChecklistIcons {
     unchecked: Handle<Image>,
     checked: Handle<Image>,
+}
+
+#[derive(Resource, Clone)]
+struct ThemePickerAssets {
+    hue_sat_wheel: Handle<Image>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

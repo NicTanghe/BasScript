@@ -574,26 +574,55 @@ fn sync_selection_background_color(state: &mut EditorState) {
     );
 }
 
-fn adjust_selection_background_channel(
-    state: &mut EditorState,
-    channel: ThemeColorChannel,
-    delta: f32,
-) {
-    match channel {
-        ThemeColorChannel::Red => {
-            state.selection_bg_rgba.x = (state.selection_bg_rgba.x + delta).clamp(0.0, 1.0);
-        }
-        ThemeColorChannel::Green => {
-            state.selection_bg_rgba.y = (state.selection_bg_rgba.y + delta).clamp(0.0, 1.0);
-        }
-        ThemeColorChannel::Blue => {
-            state.selection_bg_rgba.z = (state.selection_bg_rgba.z + delta).clamp(0.0, 1.0);
-        }
-        ThemeColorChannel::Alpha => {
-            state.selection_bg_rgba.w = (state.selection_bg_rgba.w + delta).clamp(0.0, 1.0);
-        }
+fn rgb_to_hsv(rgb: Vec3) -> (f32, f32, f32) {
+    let r = rgb.x.clamp(0.0, 1.0);
+    let g = rgb.y.clamp(0.0, 1.0);
+    let b = rgb.z.clamp(0.0, 1.0);
+
+    let max = r.max(g.max(b));
+    let min = r.min(g.min(b));
+    let delta = max - min;
+
+    let value = max;
+    let saturation = if max <= f32::EPSILON { 0.0 } else { delta / max };
+
+    let hue = if delta <= f32::EPSILON {
+        0.0
+    } else if (max - r).abs() <= f32::EPSILON {
+        ((g - b) / delta).rem_euclid(6.0) / 6.0
+    } else if (max - g).abs() <= f32::EPSILON {
+        (((b - r) / delta) + 2.0) / 6.0
+    } else {
+        (((r - g) / delta) + 4.0) / 6.0
+    };
+
+    (hue.rem_euclid(1.0), saturation.clamp(0.0, 1.0), value.clamp(0.0, 1.0))
+}
+
+fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> Vec3 {
+    let h = hue.rem_euclid(1.0);
+    let s = saturation.clamp(0.0, 1.0);
+    let v = value.clamp(0.0, 1.0);
+
+    if s <= f32::EPSILON {
+        return Vec3::new(v, v, v);
     }
-    sync_selection_background_color(state);
+
+    let scaled = h * 6.0;
+    let sector = scaled.floor() as i32;
+    let fraction = scaled - sector as f32;
+    let p = v * (1.0 - s);
+    let q = v * (1.0 - s * fraction);
+    let t = v * (1.0 - s * (1.0 - fraction));
+
+    match sector.rem_euclid(6) {
+        0 => Vec3::new(v, t, p),
+        1 => Vec3::new(q, v, p),
+        2 => Vec3::new(p, v, t),
+        3 => Vec3::new(p, q, v),
+        4 => Vec3::new(t, p, v),
+        _ => Vec3::new(v, p, q),
+    }
 }
 
 fn save_editor_ui_state(state: &EditorState) -> io::Result<()> {

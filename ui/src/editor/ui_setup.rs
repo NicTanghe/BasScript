@@ -51,10 +51,15 @@ fn setup(
             16,
         ),
     };
+    let theme_picker_assets = ThemePickerAssets {
+        hue_sat_wheel: generate_theme_color_wheel_image(&mut images, THEME_COLOR_WHEEL_SIZE_PX),
+    };
+    let hue_sat_wheel = theme_picker_assets.hue_sat_wheel.clone();
     let font = fonts.regular.clone();
     commands.insert_resource(fonts);
     commands.insert_resource(workspace_icons);
     commands.insert_resource(checklist_icons);
+    commands.insert_resource(theme_picker_assets);
 
     commands
         .spawn((
@@ -395,42 +400,36 @@ fn setup(
                         BackgroundColor(Color::srgb(0.82, 0.84, 0.86)),
                         ThemeColorPickerPanel,
                         children![
+                            theme_visual_picker(font.clone(), hue_sat_wheel.clone()),
                             (
-                                Text::new("Color picker"),
+                                Text::new(""),
                                 TextFont {
                                     font: font.clone(),
-                                    font_size: 13.0,
+                                    font_size: 12.0,
                                     ..default()
                                 },
                                 TextColor(COLOR_TEXT_MAIN),
+                                ThemeSelectionRgbLabel,
                             ),
-                            theme_color_setting_row(
-                                font.clone(),
-                                "Red",
-                                ThemeColorChannel::Red,
-                                SettingsAction::SelectionBackgroundRedDecrease,
-                                SettingsAction::SelectionBackgroundRedIncrease,
+                            (
+                                Text::new(""),
+                                TextFont {
+                                    font: font.clone(),
+                                    font_size: 12.0,
+                                    ..default()
+                                },
+                                TextColor(COLOR_TEXT_MAIN),
+                                ThemeSelectionHsvLabel,
                             ),
-                            theme_color_setting_row(
-                                font.clone(),
-                                "Green",
-                                ThemeColorChannel::Green,
-                                SettingsAction::SelectionBackgroundGreenDecrease,
-                                SettingsAction::SelectionBackgroundGreenIncrease,
-                            ),
-                            theme_color_setting_row(
-                                font.clone(),
-                                "Blue",
-                                ThemeColorChannel::Blue,
-                                SettingsAction::SelectionBackgroundBlueDecrease,
-                                SettingsAction::SelectionBackgroundBlueIncrease,
-                            ),
-                            theme_color_setting_row(
-                                font.clone(),
-                                "Alpha",
-                                ThemeColorChannel::Alpha,
-                                SettingsAction::SelectionBackgroundAlphaDecrease,
-                                SettingsAction::SelectionBackgroundAlphaIncrease,
+                            (
+                                Text::new(""),
+                                TextFont {
+                                    font: font.clone(),
+                                    font_size: 12.0,
+                                    ..default()
+                                },
+                                TextColor(COLOR_TEXT_MAIN),
+                                ThemeSelectionHexLabel,
                             ),
                         ],
                     ),
@@ -590,6 +589,51 @@ fn load_workspace_icon_image(
             ))
         }
     }
+}
+
+fn generate_theme_color_wheel_image(images: &mut Assets<Image>, diameter: u32) -> Handle<Image> {
+    let size = diameter.max(2);
+    let half = size as f32 * 0.5;
+    let mut data = vec![0_u8; (size * size * 4) as usize];
+
+    for y in 0..size {
+        for x in 0..size {
+            let fx = ((x as f32 + 0.5) - half) / half;
+            let fy = (half - (y as f32 + 0.5)) / half;
+            let radius = (fx * fx + fy * fy).sqrt();
+            let pixel = ((y * size + x) * 4) as usize;
+            if radius > 1.0 {
+                data[pixel + 0] = 0;
+                data[pixel + 1] = 0;
+                data[pixel + 2] = 0;
+                data[pixel + 3] = 0;
+                continue;
+            }
+
+            let mut hue = fy.atan2(fx) / std::f32::consts::TAU;
+            if hue < 0.0 {
+                hue += 1.0;
+            }
+            let saturation = radius.clamp(0.0, 1.0);
+            let rgb = hsv_to_rgb(hue, saturation, 1.0);
+            data[pixel + 0] = (rgb.x * 255.0).round().clamp(0.0, 255.0) as u8;
+            data[pixel + 1] = (rgb.y * 255.0).round().clamp(0.0, 255.0) as u8;
+            data[pixel + 2] = (rgb.z * 255.0).round().clamp(0.0, 255.0) as u8;
+            data[pixel + 3] = 255;
+        }
+    }
+
+    images.add(Image::new(
+        bevy::render::render_resource::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        bevy::render::render_resource::TextureDimension::D2,
+        data,
+        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+        bevy::asset::RenderAssetUsages::default(),
+    ))
 }
 
 fn load_font_with_fallback(
@@ -1111,12 +1155,71 @@ fn theme_selection_background_row(font: Handle<Font>) -> impl Bundle {
     )
 }
 
-fn theme_color_setting_row(
+fn theme_visual_picker(font: Handle<Font>, hue_sat_wheel: Handle<Image>) -> impl Bundle {
+    (
+        Node {
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Start,
+            column_gap: px(12.0),
+            ..default()
+        },
+        children![
+            (
+                Node {
+                    width: px(THEME_COLOR_WHEEL_SIZE),
+                    height: px(THEME_COLOR_WHEEL_SIZE),
+                    position_type: PositionType::Relative,
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+                ImageNode::new(hue_sat_wheel),
+                RelativeCursorPosition::default(),
+                ThemeHueSatWheel,
+                children![(
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: px(10.0),
+                        height: px(10.0),
+                        border: UiRect::all(px(1.0)),
+                        border_radius: BorderRadius::MAX,
+                        left: px((THEME_COLOR_WHEEL_SIZE - 10.0) * 0.5),
+                        top: px((THEME_COLOR_WHEEL_SIZE - 10.0) * 0.5),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
+                    BorderColor::all(Color::srgb(1.0, 1.0, 1.0)),
+                    ThemeHueSatCursor,
+                )],
+            ),
+            (
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(6.0),
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+                children![
+                    theme_color_slider_row(font.clone(), "Hue", ThemeSliderChannel::Hue),
+                    theme_color_slider_row(
+                        font.clone(),
+                        "Sat",
+                        ThemeSliderChannel::Saturation,
+                    ),
+                    theme_color_slider_row(font.clone(), "Value", ThemeSliderChannel::Value),
+                    theme_color_slider_row(font.clone(), "Red", ThemeSliderChannel::Red),
+                    theme_color_slider_row(font.clone(), "Green", ThemeSliderChannel::Green),
+                    theme_color_slider_row(font.clone(), "Blue", ThemeSliderChannel::Blue),
+                    theme_color_slider_row(font.clone(), "Alpha", ThemeSliderChannel::Alpha),
+                ],
+            )
+        ],
+    )
+}
+
+fn theme_color_slider_row(
     font: Handle<Font>,
     label: &str,
-    channel: ThemeColorChannel,
-    decrease_action: SettingsAction,
-    increase_action: SettingsAction,
+    channel: ThemeSliderChannel,
 ) -> impl Bundle {
     (
         Node {
@@ -1130,31 +1233,63 @@ fn theme_color_setting_row(
                 Text::new(label),
                 TextFont {
                     font: font.clone(),
-                    font_size: 13.0,
+                    font_size: 12.0,
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
                 Node {
-                    width: px(220.0),
+                    width: px(40.0),
                     ..default()
                 },
             ),
-            settings_action_button(font.clone(), "-", decrease_action),
+            (
+                Node {
+                    width: px(THEME_COLOR_SLIDER_WIDTH),
+                    height: px(THEME_COLOR_SLIDER_HEIGHT),
+                    position_type: PositionType::Relative,
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+                RelativeCursorPosition::default(),
+                BackgroundColor(Color::srgb(0.45, 0.46, 0.48)),
+                ThemeColorSlider { channel },
+                children![(
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(0.0),
+                        top: px(0.0),
+                        width: px(THEME_COLOR_SLIDER_KNOB_WIDTH),
+                        height: px(THEME_COLOR_SLIDER_HEIGHT),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.94, 0.95, 0.97)),
+                    ThemeColorSliderKnob { channel },
+                )],
+            ),
             (
                 Text::new(""),
                 TextFont {
-                    font: font.clone(),
-                    font_size: 13.0,
+                    font,
+                    font_size: 12.0,
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
-                ThemeColorLabel { channel },
+                ThemeColorLabel {
+                    channel: match channel {
+                        ThemeSliderChannel::Hue => ThemeColorChannel::Hue,
+                        ThemeSliderChannel::Saturation => ThemeColorChannel::Saturation,
+                        ThemeSliderChannel::Red => ThemeColorChannel::Red,
+                        ThemeSliderChannel::Green => ThemeColorChannel::Green,
+                        ThemeSliderChannel::Blue => ThemeColorChannel::Blue,
+                        ThemeSliderChannel::Value => ThemeColorChannel::Value,
+                        ThemeSliderChannel::Alpha => ThemeColorChannel::Alpha,
+                    },
+                },
                 Node {
-                    width: px(56.0),
+                    width: px(44.0),
                     ..default()
                 },
             ),
-            settings_action_button(font, "+", increase_action),
         ],
     )
 }
@@ -1362,7 +1497,6 @@ fn handle_settings_buttons(
         }
 
         let mut settings_changed = false;
-        let mut theme_changed = false;
         match action {
             SettingsAction::DialogueDoubleSpaceNewline => {
                 state.dialogue_double_space_newline = !state.dialogue_double_space_newline;
@@ -1440,70 +1574,6 @@ fn handle_settings_buttons(
                     "Closed color picker.".to_string()
                 };
             }
-            SettingsAction::SelectionBackgroundRedDecrease => {
-                adjust_selection_background_channel(
-                    &mut state,
-                    ThemeColorChannel::Red,
-                    -THEME_COLOR_STEP,
-                );
-                theme_changed = true;
-            }
-            SettingsAction::SelectionBackgroundRedIncrease => {
-                adjust_selection_background_channel(
-                    &mut state,
-                    ThemeColorChannel::Red,
-                    THEME_COLOR_STEP,
-                );
-                theme_changed = true;
-            }
-            SettingsAction::SelectionBackgroundGreenDecrease => {
-                adjust_selection_background_channel(
-                    &mut state,
-                    ThemeColorChannel::Green,
-                    -THEME_COLOR_STEP,
-                );
-                theme_changed = true;
-            }
-            SettingsAction::SelectionBackgroundGreenIncrease => {
-                adjust_selection_background_channel(
-                    &mut state,
-                    ThemeColorChannel::Green,
-                    THEME_COLOR_STEP,
-                );
-                theme_changed = true;
-            }
-            SettingsAction::SelectionBackgroundBlueDecrease => {
-                adjust_selection_background_channel(
-                    &mut state,
-                    ThemeColorChannel::Blue,
-                    -THEME_COLOR_STEP,
-                );
-                theme_changed = true;
-            }
-            SettingsAction::SelectionBackgroundBlueIncrease => {
-                adjust_selection_background_channel(
-                    &mut state,
-                    ThemeColorChannel::Blue,
-                    THEME_COLOR_STEP,
-                );
-                theme_changed = true;
-            }
-            SettingsAction::SelectionBackgroundAlphaDecrease => {
-                adjust_selection_background_channel(
-                    &mut state,
-                    ThemeColorChannel::Alpha,
-                    -THEME_COLOR_STEP,
-                );
-                theme_changed = true;
-            }
-            SettingsAction::SelectionBackgroundAlphaIncrease => {
-                adjust_selection_background_channel(
-                    &mut state,
-                    ThemeColorChannel::Alpha,
-                    THEME_COLOR_STEP,
-                );
-                theme_changed = true;
-            }
             SettingsAction::OpenKeybinds => {
                 state.pending_keybind_capture = None;
                 next_screen_state.set(UiScreenState::Keybinds);
@@ -1528,20 +1598,114 @@ fn handle_settings_buttons(
                 state.status_message = format!("Settings save failed: {error}");
             }
         }
+    }
+}
 
-        if theme_changed {
-            let theme = theme_settings_from_state(&state);
-            if let Err(error) = save_theme_settings(&theme) {
-                state.status_message = format!("Theme save failed: {error}");
-            } else {
-                state.status_message = format!(
-                    "Selection background: ({:.2}, {:.2}, {:.2}, {:.2})",
+fn handle_theme_color_picker_input(
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    mut state: ResMut<EditorState>,
+    wheel_query: Query<&RelativeCursorPosition, With<ThemeHueSatWheel>>,
+    slider_query: Query<(&ThemeColorSlider, &RelativeCursorPosition, &ComputedNode)>,
+) {
+    if !state.theme_color_picker_open || !mouse_buttons.pressed(MouseButton::Left) {
+        return;
+    }
+
+    let mut theme_changed = false;
+    for relative_cursor in wheel_query.iter() {
+        if !relative_cursor.cursor_over() {
+            continue;
+        }
+        let Some(normalized) = relative_cursor.normalized else {
+            continue;
+        };
+
+        let dx = (normalized.x - 0.5) * 2.0;
+        let dy = (0.5 - normalized.y) * 2.0;
+        let radius = (dx * dx + dy * dy).sqrt();
+        if radius > 1.0 {
+            continue;
+        }
+
+        let mut hue = dy.atan2(dx) / std::f32::consts::TAU;
+        if hue < 0.0 {
+            hue += 1.0;
+        }
+        let saturation = radius.clamp(0.0, 1.0);
+        let current_rgb = Vec3::new(
+            state.selection_bg_rgba.x,
+            state.selection_bg_rgba.y,
+            state.selection_bg_rgba.z,
+        );
+        let (_, _, value) = rgb_to_hsv(current_rgb);
+        let next_rgb = hsv_to_rgb(hue, saturation, value);
+        state.selection_bg_rgba.x = next_rgb.x;
+        state.selection_bg_rgba.y = next_rgb.y;
+        state.selection_bg_rgba.z = next_rgb.z;
+        theme_changed = true;
+    }
+
+    for (slider, relative_cursor, computed) in slider_query.iter() {
+        if !relative_cursor.cursor_over() {
+            continue;
+        }
+        let Some(normalized) = relative_cursor.normalized else {
+            continue;
+        };
+        let track_width = computed.size().x.max(THEME_COLOR_SLIDER_KNOB_WIDTH + 1.0);
+        let usable_width = (track_width - THEME_COLOR_SLIDER_KNOB_WIDTH).max(1.0);
+        let cursor_x = normalized.x.clamp(0.0, 1.0) * track_width;
+        let next = ((cursor_x - THEME_COLOR_SLIDER_KNOB_WIDTH * 0.5) / usable_width).clamp(0.0, 1.0);
+        match slider.channel {
+            ThemeSliderChannel::Hue => {
+                let current_rgb = Vec3::new(
                     state.selection_bg_rgba.x,
                     state.selection_bg_rgba.y,
                     state.selection_bg_rgba.z,
-                    state.selection_bg_rgba.w
                 );
+                let (_, saturation, value) = rgb_to_hsv(current_rgb);
+                let next_rgb = hsv_to_rgb(next, saturation, value);
+                state.selection_bg_rgba.x = next_rgb.x;
+                state.selection_bg_rgba.y = next_rgb.y;
+                state.selection_bg_rgba.z = next_rgb.z;
             }
+            ThemeSliderChannel::Saturation => {
+                let current_rgb = Vec3::new(
+                    state.selection_bg_rgba.x,
+                    state.selection_bg_rgba.y,
+                    state.selection_bg_rgba.z,
+                );
+                let (hue, _, value) = rgb_to_hsv(current_rgb);
+                let next_rgb = hsv_to_rgb(hue, next, value);
+                state.selection_bg_rgba.x = next_rgb.x;
+                state.selection_bg_rgba.y = next_rgb.y;
+                state.selection_bg_rgba.z = next_rgb.z;
+            }
+            ThemeSliderChannel::Red => state.selection_bg_rgba.x = next,
+            ThemeSliderChannel::Green => state.selection_bg_rgba.y = next,
+            ThemeSliderChannel::Blue => state.selection_bg_rgba.z = next,
+            ThemeSliderChannel::Alpha => state.selection_bg_rgba.w = next,
+            ThemeSliderChannel::Value => {
+                let current_rgb = Vec3::new(
+                    state.selection_bg_rgba.x,
+                    state.selection_bg_rgba.y,
+                    state.selection_bg_rgba.z,
+                );
+                let (hue, saturation, _) = rgb_to_hsv(current_rgb);
+                let next_rgb = hsv_to_rgb(hue, saturation, next);
+                state.selection_bg_rgba.x = next_rgb.x;
+                state.selection_bg_rgba.y = next_rgb.y;
+                state.selection_bg_rgba.z = next_rgb.z;
+            }
+        }
+        theme_changed = true;
+    }
+
+    if theme_changed {
+        sync_selection_background_color(&mut state);
+        let theme = theme_settings_from_state(&state);
+        if let Err(error) = save_theme_settings(&theme) {
+            state.status_message = format!("Theme save failed: {error}");
         }
     }
 }
@@ -1736,39 +1900,8 @@ fn sync_settings_ui(
             Without<SettingToggleLabel>,
             Without<SettingMarginLabel>,
             Without<ThemeColorLabel>,
-            Without<ThemeSelectionBackgroundValueLabel>,
         ),
     >,
-    mut theme_label_query: Query<
-        (&ThemeColorLabel, &mut Text),
-        (
-            Without<SettingToggleLabel>,
-            Without<SettingMarginLabel>,
-            Without<KeybindBindingLabel>,
-            Without<ThemeSelectionBackgroundValueLabel>,
-        ),
-    >,
-    mut selection_background_value_query: Query<
-        &mut Text,
-        (
-            With<ThemeSelectionBackgroundValueLabel>,
-            Without<SettingToggleLabel>,
-            Without<SettingMarginLabel>,
-            Without<KeybindBindingLabel>,
-            Without<ThemeColorLabel>,
-        ),
-    >,
-    mut theme_picker_panel_query: Query<
-        &mut Node,
-        (
-            With<ThemeColorPickerPanel>,
-            Without<EditorScreenRoot>,
-            Without<SettingsScreenRoot>,
-            Without<KeybindsScreenRoot>,
-            Without<ThemeScreenRoot>,
-        ),
-    >,
-    mut theme_preview_swatch_query: Query<&mut BackgroundColor, With<ThemeColorPreviewSwatch>>,
 ) {
     if let Ok(mut editor_root) = editor_root_query.single_mut() {
         editor_root.display = if *screen_state.get() == UiScreenState::Editor {
@@ -1800,15 +1933,6 @@ fn sync_settings_ui(
         } else {
             Display::None
         };
-    }
-
-    if let Ok(mut picker_panel) = theme_picker_panel_query.single_mut() {
-        picker_panel.display =
-            if state.theme_color_picker_open && *screen_state.get() == UiScreenState::Theme {
-                Display::Flex
-            } else {
-                Display::None
-            };
     }
 
     for (label, mut text) in toggle_label_query.iter_mut() {
@@ -1858,28 +1982,163 @@ fn sync_settings_ui(
             binding_display(state.keybinds.binding(label.action))
         };
     }
+}
 
-    for (label, mut text) in theme_label_query.iter_mut() {
-        let value = match label.channel {
-            ThemeColorChannel::Red => state.selection_bg_rgba.x,
-            ThemeColorChannel::Green => state.selection_bg_rgba.y,
-            ThemeColorChannel::Blue => state.selection_bg_rgba.z,
-            ThemeColorChannel::Alpha => state.selection_bg_rgba.w,
-        };
-        **text = format!("{value:.3}");
+fn sync_theme_picker_ui(
+    state: Res<EditorState>,
+    screen_state: Res<State<UiScreenState>>,
+    mut node_queries: ParamSet<(
+        Query<&mut Node, With<ThemeColorPickerPanel>>,
+        Query<
+            (
+                &mut Node,
+                Option<&ThemeColorSliderKnob>,
+                Option<&ThemeHueSatCursor>,
+            ),
+            Or<(With<ThemeColorSliderKnob>, With<ThemeHueSatCursor>)>,
+        >,
+    )>,
+    mut color_queries: ParamSet<(
+        Query<&mut BackgroundColor, With<ThemeColorPreviewSwatch>>,
+        Query<(&ThemeColorSlider, &mut BackgroundColor)>,
+    )>,
+    mut text_query: Query<
+        (
+            &mut Text,
+            Option<&ThemeSelectionBackgroundValueLabel>,
+            Option<&ThemeColorLabel>,
+            Option<&ThemeSelectionRgbLabel>,
+            Option<&ThemeSelectionHsvLabel>,
+            Option<&ThemeSelectionHexLabel>,
+        ),
+        Or<(
+            With<ThemeSelectionBackgroundValueLabel>,
+            With<ThemeColorLabel>,
+            With<ThemeSelectionRgbLabel>,
+            With<ThemeSelectionHsvLabel>,
+            With<ThemeSelectionHexLabel>,
+        )>,
+    >,
+) {
+    if let Ok(mut picker_panel) = node_queries.p0().single_mut() {
+        picker_panel.display =
+            if state.theme_color_picker_open && *screen_state.get() == UiScreenState::Theme {
+                Display::Flex
+            } else {
+                Display::None
+            };
     }
 
-    for mut text in selection_background_value_query.iter_mut() {
-        **text = format!(
-            "({:.3}, {:.3}, {:.3}, {:.3})",
-            state.selection_bg_rgba.x,
-            state.selection_bg_rgba.y,
-            state.selection_bg_rgba.z,
-            state.selection_bg_rgba.w
-        );
-    }
-
-    for mut swatch in theme_preview_swatch_query.iter_mut() {
+    for mut swatch in color_queries.p0().iter_mut() {
         swatch.0 = state.selection_bg_color;
+    }
+
+    let rgb = Vec3::new(
+        state.selection_bg_rgba.x,
+        state.selection_bg_rgba.y,
+        state.selection_bg_rgba.z,
+    );
+    let (hue, saturation, value) = rgb_to_hsv(rgb);
+    let rgb_255 = (
+        (state.selection_bg_rgba.x * 255.0).round().clamp(0.0, 255.0) as u8,
+        (state.selection_bg_rgba.y * 255.0).round().clamp(0.0, 255.0) as u8,
+        (state.selection_bg_rgba.z * 255.0).round().clamp(0.0, 255.0) as u8,
+        (state.selection_bg_rgba.w * 255.0).round().clamp(0.0, 255.0) as u8,
+    );
+
+    for (mut text, value_label, channel_label, rgb_label, hsv_label, hex_label) in
+        text_query.iter_mut()
+    {
+        if value_label.is_some() {
+            **text = format!(
+                "({:.3}, {:.3}, {:.3}, {:.3})",
+                state.selection_bg_rgba.x,
+                state.selection_bg_rgba.y,
+                state.selection_bg_rgba.z,
+                state.selection_bg_rgba.w
+            );
+            continue;
+        }
+
+        if let Some(channel_label) = channel_label {
+            let channel_value = match channel_label.channel {
+                ThemeColorChannel::Hue => hue,
+                ThemeColorChannel::Saturation => saturation,
+                ThemeColorChannel::Red => state.selection_bg_rgba.x,
+                ThemeColorChannel::Green => state.selection_bg_rgba.y,
+                ThemeColorChannel::Blue => state.selection_bg_rgba.z,
+                ThemeColorChannel::Alpha => state.selection_bg_rgba.w,
+                ThemeColorChannel::Value => value,
+            };
+            **text = format!("{channel_value:.3}");
+            continue;
+        }
+
+        if rgb_label.is_some() {
+            **text = format!(
+                "RGBA: {} {} {} {}",
+                rgb_255.0, rgb_255.1, rgb_255.2, rgb_255.3
+            );
+            continue;
+        }
+
+        if hsv_label.is_some() {
+            **text = format!(
+                "HSV: {:.1}° {:.1}% {:.1}%",
+                hue * 360.0,
+                saturation * 100.0,
+                value * 100.0
+            );
+            continue;
+        }
+
+        if hex_label.is_some() {
+            **text = format!(
+                "HEX: #{:02X}{:02X}{:02X}{:02X}",
+                rgb_255.0, rgb_255.1, rgb_255.2, rgb_255.3
+            );
+        }
+    }
+
+    for (slider, mut color) in color_queries.p1().iter_mut() {
+        color.0 = match slider.channel {
+            ThemeSliderChannel::Hue => Color::srgb(0.56, 0.56, 0.58),
+            ThemeSliderChannel::Saturation => {
+                let vibrant = hsv_to_rgb(hue, 1.0, value.max(0.2));
+                Color::srgb(vibrant.x, vibrant.y, vibrant.z)
+            }
+            ThemeSliderChannel::Red => Color::srgb(0.74, 0.28, 0.28),
+            ThemeSliderChannel::Green => Color::srgb(0.28, 0.68, 0.35),
+            ThemeSliderChannel::Blue => Color::srgb(0.30, 0.44, 0.78),
+            ThemeSliderChannel::Value => Color::srgb(0.42, 0.42, 0.45),
+            ThemeSliderChannel::Alpha => Color::srgb(0.58, 0.58, 0.60),
+        };
+    }
+
+    let cursor_half = 5.0;
+    let angle = hue * std::f32::consts::TAU;
+    let cursor_x = angle.cos() * saturation;
+    let cursor_y = angle.sin() * saturation;
+    for (mut node, slider_knob, wheel_cursor) in node_queries.p1().iter_mut() {
+        if let Some(knob) = slider_knob {
+            let t = match knob.channel {
+                ThemeSliderChannel::Hue => hue,
+                ThemeSliderChannel::Saturation => saturation,
+                ThemeSliderChannel::Red => state.selection_bg_rgba.x,
+                ThemeSliderChannel::Green => state.selection_bg_rgba.y,
+                ThemeSliderChannel::Blue => state.selection_bg_rgba.z,
+                ThemeSliderChannel::Alpha => state.selection_bg_rgba.w,
+                ThemeSliderChannel::Value => value,
+            }
+            .clamp(0.0, 1.0);
+            node.left = px((THEME_COLOR_SLIDER_WIDTH - THEME_COLOR_SLIDER_KNOB_WIDTH) * t);
+            node.top = px(0.0);
+            continue;
+        }
+
+        if wheel_cursor.is_some() {
+            node.left = px((cursor_x * 0.5 + 0.5) * THEME_COLOR_WHEEL_SIZE - cursor_half);
+            node.top = px((-cursor_y * 0.5 + 0.5) * THEME_COLOR_WHEEL_SIZE - cursor_half);
+        }
     }
 }
