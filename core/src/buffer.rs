@@ -224,10 +224,42 @@ impl Document {
         self.lines[position.line].push_str(&next_line);
         position
     }
+
+    pub fn delete_range(&mut self, start: Position, end: Position) -> Position {
+        let mut start = self.clamp_position(start);
+        let mut end = self.clamp_position(end);
+        if position_after(start, end) {
+            std::mem::swap(&mut start, &mut end);
+        }
+
+        if start == end {
+            return start;
+        }
+
+        if start.line == end.line {
+            let line = &mut self.lines[start.line];
+            let start_byte = char_to_byte_index(line, start.column);
+            let end_byte = char_to_byte_index(line, end.column);
+            line.replace_range(start_byte..end_byte, "");
+            return start;
+        }
+
+        let start_prefix_end = char_to_byte_index(&self.lines[start.line], start.column);
+        let end_suffix_start = char_to_byte_index(&self.lines[end.line], end.column);
+        let mut merged = self.lines[start.line][..start_prefix_end].to_owned();
+        merged.push_str(&self.lines[end.line][end_suffix_start..]);
+        self.lines[start.line] = merged;
+        self.lines.drain(start.line.saturating_add(1)..=end.line);
+        start
+    }
 }
 
 fn char_count(input: &str) -> usize {
     input.chars().count()
+}
+
+fn position_after(left: Position, right: Position) -> bool {
+    left.line > right.line || (left.line == right.line && left.column > right.column)
 }
 
 fn char_to_byte_index(input: &str, column: usize) -> usize {
@@ -274,5 +306,35 @@ mod tests {
         assert_eq!(cursor, Position { line: 0, column: 1 });
         assert_eq!(doc.line_count(), 1);
         assert_eq!(doc.line(0), Some("AB"));
+    }
+
+    #[test]
+    fn delete_range_within_single_line() {
+        let mut doc = Document::from_text("abcdef");
+        let cursor = doc.delete_range(Position { line: 0, column: 2 }, Position { line: 0, column: 5 });
+
+        assert_eq!(cursor, Position { line: 0, column: 2 });
+        assert_eq!(doc.line_count(), 1);
+        assert_eq!(doc.line(0), Some("abf"));
+    }
+
+    #[test]
+    fn delete_range_across_multiple_lines() {
+        let mut doc = Document::from_text("abc\ndef\nghi");
+        let cursor = doc.delete_range(Position { line: 0, column: 1 }, Position { line: 2, column: 1 });
+
+        assert_eq!(cursor, Position { line: 0, column: 1 });
+        assert_eq!(doc.line_count(), 1);
+        assert_eq!(doc.line(0), Some("ahi"));
+    }
+
+    #[test]
+    fn delete_range_swaps_reversed_bounds() {
+        let mut doc = Document::from_text("abc\ndef");
+        let cursor = doc.delete_range(Position { line: 1, column: 1 }, Position { line: 0, column: 2 });
+
+        assert_eq!(cursor, Position { line: 0, column: 2 });
+        assert_eq!(doc.line_count(), 1);
+        assert_eq!(doc.line(0), Some("abef"));
     }
 }

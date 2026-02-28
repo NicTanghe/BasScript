@@ -36,10 +36,12 @@ const DEFAULT_SAVE_PATH: &str = "scripts/session.fountain";
 const EDITOR_SETTINGS_PATH: &str = "settings/editor_settings.ron";
 const KEYBINDS_SETTINGS_PATH: &str = "settings/keybinds.ron";
 const UI_STATE_PATH: &str = "settings/state.ron";
+const THEME_SETTINGS_PATH: &str = "settings/theme.ron";
 const LEGACY_EDITOR_SETTINGS_PATH: &str = "scripts/editor_settings.ron";
 const LEGACY_KEYBINDS_SETTINGS_PATH: &str = "scripts/keybinds.ron";
 const LEGACY_SETTINGS_PATH: &str = "scripts/settings.toml";
 const PROCESSED_PAPER_CAPACITY: usize = 16;
+const SELECTION_RECT_CAPACITY: usize = 512;
 
 const FONT_SIZE: f32 = 12.0;
 const LINE_HEIGHT: f32 = 12.0;
@@ -118,11 +120,19 @@ impl Plugin for UiPlugin {
             .init_resource::<DialogState>()
             .init_resource::<MiddleAutoscrollState>()
             .init_resource::<NavigationRepeatState>()
+            .init_resource::<MouseSelectionState>()
             .init_resource::<PanelLayoutState>()
             .init_resource::<PanelSplitterDragState>()
             .init_state::<UiScreenState>()
             .insert_non_send_resource(DialogMainThreadMarker)
-            .add_systems(Startup, (setup, setup_processed_papers.after(setup)))
+            .add_systems(
+                Startup,
+                (
+                    setup,
+                    setup_selection_rects.after(setup),
+                    setup_processed_papers.after(setup),
+                ),
+            )
             .add_systems(
                 Update,
                 (
@@ -167,7 +177,7 @@ impl Plugin for UiPlugin {
                     handle_ctrl_left_drag_scroll,
                     handle_middle_mouse_autoscroll,
                     handle_panel_splitter_drag.after(handle_middle_mouse_autoscroll),
-                    handle_mouse_click
+                    handle_mouse_selection
                         .after(handle_middle_mouse_autoscroll)
                         .after(handle_panel_splitter_drag),
                     sync_middle_autoscroll_indicator.after(handle_middle_mouse_autoscroll),
@@ -259,6 +269,17 @@ struct PanelPaper {
 #[derive(Component)]
 struct PanelCanvas {
     kind: PanelKind,
+}
+
+#[derive(Component)]
+struct PanelSelectionLayer {
+    kind: PanelKind,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct PanelSelectionRect {
+    kind: PanelKind,
+    index: usize,
 }
 
 #[derive(Component)]
@@ -664,6 +685,7 @@ struct EditorState {
     parsed: Vec<ParsedLine>,
     document_format: DocumentFormat,
     cursor: Cursor,
+    selection_anchor: Option<Position>,
     top_line: usize,
     processed_top_line: usize,
     processed_top_visual: usize,
@@ -678,6 +700,7 @@ struct EditorState {
     pending_keybind_capture: Option<ShortcutAction>,
     workspace_sidebar_visible: bool,
     top_menu_collapsed: bool,
+    selection_bg_color: Color,
     show_system_titlebar: bool,
     caret_blink: Timer,
     caret_visible: bool,
@@ -805,6 +828,36 @@ impl Default for PersistentUiState {
     }
 }
 
+#[derive(Clone, Debug)]
+struct ThemeSettings {
+    selection_background_r: f32,
+    selection_background_g: f32,
+    selection_background_b: f32,
+    selection_background_a: f32,
+}
+
+impl Default for ThemeSettings {
+    fn default() -> Self {
+        Self {
+            selection_background_r: 0.16,
+            selection_background_g: 0.43,
+            selection_background_b: 0.88,
+            selection_background_a: 0.36,
+        }
+    }
+}
+
+impl ThemeSettings {
+    fn selection_background_color(&self) -> Color {
+        Color::srgba(
+            self.selection_background_r.clamp(0.0, 1.0),
+            self.selection_background_g.clamp(0.0, 1.0),
+            self.selection_background_b.clamp(0.0, 1.0),
+            self.selection_background_a.clamp(0.0, 1.0),
+        )
+    }
+}
+
 #[derive(Resource, Clone)]
 struct EditorFonts {
     regular: Handle<Font>,
@@ -880,6 +933,7 @@ impl FromWorld for EditorState {
         let paths = DocumentPath::new(DEFAULT_LOAD_PATH, DEFAULT_SAVE_PATH);
         let settings = load_persistent_settings();
         let ui_state = load_persistent_ui_state();
+        let theme_settings = load_theme_settings();
         let saved_workspace_root = settings.workspace_root_path.clone();
         let keybinds = load_keybind_settings();
         let (document, document_format, status_message) = match Document::load(&paths.load_path) {
@@ -916,6 +970,7 @@ impl FromWorld for EditorState {
             parsed,
             document_format,
             cursor: Cursor::default(),
+            selection_anchor: None,
             top_line: 0,
             processed_top_line: 0,
             processed_top_visual: 0,
@@ -930,6 +985,7 @@ impl FromWorld for EditorState {
             pending_keybind_capture: None,
             workspace_sidebar_visible: ui_state.workspace_sidebar_visible,
             top_menu_collapsed: ui_state.top_menu_collapsed,
+            selection_bg_color: theme_settings.selection_background_color(),
             show_system_titlebar: settings.show_system_titlebar,
             caret_blink: Timer::from_seconds(0.5, TimerMode::Repeating),
             caret_visible: true,
@@ -1017,6 +1073,27 @@ impl EditorState {
         self.caret_visible = true;
     }
 
+    fn selection_bounds(&self) -> Option<(Position, Position)> {
+        let anchor = self.selection_anchor?;
+        let head = self.cursor.position;
+        if anchor == head {
+            return None;
+        }
+
+        if position_is_before_or_equal(anchor, head) {
+            Some((anchor, head))
+        } else {
+            Some((head, anchor))
+        }
+    }
+
+    fn delete_selection(&mut self) -> Option<Position> {
+        let (start, end) = self.selection_bounds()?;
+        let next = self.document.delete_range(start, end);
+        self.set_cursor(next, true);
+        Some(next)
+    }
+
     fn max_top_line(&self, _visible_lines: usize) -> usize {
         self.document.line_count().saturating_sub(1)
     }
@@ -1096,12 +1173,31 @@ impl EditorState {
     }
 
     fn set_cursor(&mut self, position: Position, update_preferred: bool) {
+        self.set_cursor_with_selection(position, update_preferred, false);
+    }
+
+    fn set_cursor_with_selection(
+        &mut self,
+        position: Position,
+        update_preferred: bool,
+        extend_selection: bool,
+    ) {
+        let anchor = if extend_selection {
+            Some(self.selection_anchor.unwrap_or(self.cursor.position))
+        } else {
+            None
+        };
         let clamped = self.document.clamp_position(position);
 
         if update_preferred {
             self.cursor.set_position(clamped);
         } else {
             self.cursor.position = clamped;
+        }
+
+        self.selection_anchor = anchor;
+        if self.selection_anchor.is_some_and(|start| start == self.cursor.position) {
+            self.selection_anchor = None;
         }
 
         self.reset_blink();
@@ -1132,6 +1228,7 @@ impl EditorState {
                 self.document_format = document_format;
                 self.reparse();
                 self.cursor = Cursor::default();
+                self.selection_anchor = None;
                 self.top_line = 0;
                 self.processed_top_line = 0;
                 self.processed_top_visual = 0;
@@ -1201,6 +1298,7 @@ impl EditorState {
             .cursor
             .preferred_column
             .min(self.document.line_len_chars(self.cursor.position.line));
+        self.selection_anchor = None;
 
         self.top_line = snapshot.top_line;
         self.processed_top_line = snapshot.processed_top_line;
@@ -1288,6 +1386,10 @@ fn document_format_label(format: DocumentFormat) -> &'static str {
         DocumentFormat::Fountain => "Fountain",
         DocumentFormat::Markdown => "Markdown",
     }
+}
+
+fn position_is_before_or_equal(left: Position, right: Position) -> bool {
+    left.line < right.line || (left.line == right.line && left.column <= right.column)
 }
 
 fn detect_document_format(path: &Path, document: &Document) -> DocumentFormat {
@@ -1418,4 +1520,3 @@ fn is_fountain_hint(trimmed: &str) -> bool {
         .chars()
         .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || " .()'-".contains(ch))
 }
-

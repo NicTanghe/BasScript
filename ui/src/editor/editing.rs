@@ -41,6 +41,13 @@ fn handle_text_input(
         }
 
         let mut changed = false;
+        let mut selection_deleted = false;
+
+        if let Some(next) = state.delete_selection() {
+            dirty_from_line = Some(dirty_from_line.map_or(next.line, |line| line.min(next.line)));
+            changed = true;
+            selection_deleted = true;
+        }
 
         match &input.logical_key {
             Key::Enter => {
@@ -52,6 +59,12 @@ fn handle_text_input(
                 changed = true;
             }
             Key::Backspace => {
+                if selection_deleted {
+                    if changed {
+                        edited = true;
+                    }
+                    continue;
+                }
                 let cursor_pos = state.cursor.position;
                 if cursor_pos.line > 0 || cursor_pos.column > 0 {
                     let next = state.document.backspace(cursor_pos);
@@ -64,6 +77,12 @@ fn handle_text_input(
                 }
             }
             Key::Delete => {
+                if selection_deleted {
+                    if changed {
+                        edited = true;
+                    }
+                    continue;
+                }
                 let cursor_pos = state.cursor.position;
                 let line_len = state.document.line_len_chars(cursor_pos.line);
                 let has_next_line = cursor_pos.line + 1 < state.document.line_count();
@@ -128,6 +147,7 @@ fn handle_navigation_input(
         .find(|(panel, _)| panel.kind == PanelKind::Processed)
         .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
     state.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
+    let extend_selection = shift_modifier_pressed(&keys);
     let mut moved = false;
 
     if shortcut_modifier_pressed(&keys) {
@@ -211,7 +231,7 @@ fn handle_navigation_input(
 
     let previous_active_arrow = navigation_repeat.active_arrow;
     if let Some(arrow) = just_pressed_navigation_arrow(&keys) {
-        moved |= move_cursor_by_arrow_key(&mut state, arrow);
+        moved |= move_cursor_by_arrow_key(&mut state, arrow, extend_selection);
         navigation_repeat.active_arrow = Some(arrow);
         navigation_repeat.repeat_cooldown_secs = NAVIGATION_REPEAT_INITIAL_DELAY_SECS;
     } else {
@@ -229,7 +249,7 @@ fn handle_navigation_input(
         if let Some(arrow) = active_arrow {
             navigation_repeat.repeat_cooldown_secs -= time.delta_secs().max(0.0);
             while navigation_repeat.repeat_cooldown_secs <= 0.0 {
-                moved |= move_cursor_by_arrow_key(&mut state, arrow);
+                moved |= move_cursor_by_arrow_key(&mut state, arrow, extend_selection);
                 navigation_repeat.repeat_cooldown_secs += NAVIGATION_REPEAT_INTERVAL_SECS;
             }
         } else {
@@ -239,14 +259,14 @@ fn handle_navigation_input(
 
     if keys.just_pressed(KeyCode::Home) {
         let line = state.cursor.position.line;
-        state.set_cursor(Position { line, column: 0 }, true);
+        state.set_cursor_with_selection(Position { line, column: 0 }, true, extend_selection);
         moved = true;
     }
 
     if keys.just_pressed(KeyCode::End) {
         let line = state.cursor.position.line;
         let column = state.document.line_len_chars(line);
-        state.set_cursor(Position { line, column }, true);
+        state.set_cursor_with_selection(Position { line, column }, true, extend_selection);
         moved = true;
     }
 
@@ -259,12 +279,13 @@ fn handle_navigation_input(
             .preferred_column
             .min(state.document.line_len_chars(new_line));
 
-        state.set_cursor(
+        state.set_cursor_with_selection(
             Position {
                 line: new_line,
                 column,
             },
             false,
+            extend_selection,
         );
         moved = true;
     }
@@ -282,12 +303,13 @@ fn handle_navigation_input(
             .preferred_column
             .min(state.document.line_len_chars(new_line));
 
-        state.set_cursor(
+        state.set_cursor_with_selection(
             Position {
                 line: new_line,
                 column,
             },
             false,
+            extend_selection,
         );
         moved = true;
     }
@@ -319,7 +341,11 @@ fn held_navigation_arrow(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
     .find(|key| keys.pressed(*key))
 }
 
-fn move_cursor_by_arrow_key(state: &mut EditorState, arrow: KeyCode) -> bool {
+fn move_cursor_by_arrow_key(
+    state: &mut EditorState,
+    arrow: KeyCode,
+    extend_selection: bool,
+) -> bool {
     let current = state.cursor.position;
     let next = match arrow {
         KeyCode::ArrowLeft => state.document.move_left(current),
@@ -329,274 +355,10 @@ fn move_cursor_by_arrow_key(state: &mut EditorState, arrow: KeyCode) -> bool {
         _ => return false,
     };
 
-    state.set_cursor(next, !matches!(arrow, KeyCode::ArrowUp | KeyCode::ArrowDown));
+    state.set_cursor_with_selection(
+        next,
+        !matches!(arrow, KeyCode::ArrowUp | KeyCode::ArrowDown),
+        extend_selection,
+    );
     next != current
-}
-
-fn handle_mouse_click(
-    mouse_buttons: Res<ButtonInput<MouseButton>>,
-    keys: Res<ButtonInput<KeyCode>>,
-    mut middle_autoscroll: ResMut<MiddleAutoscrollState>,
-    mut splitter_drag: ResMut<PanelSplitterDragState>,
-    panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
-    text_layout_query: Query<(&PanelText, &TextLayoutInfo)>,
-    processed_text_layout_query: Query<
-        (&ProcessedPaperText, &TextLayoutInfo, &ComputedNode),
-        (Without<PanelText>, Without<PanelPaper>, Without<PanelCaret>, Without<PanelCanvas>),
-    >,
-    mut state: ResMut<EditorState>,
-) {
-    if splitter_drag.suppress_next_left_click && !mouse_buttons.pressed(MouseButton::Left) {
-        splitter_drag.suppress_next_left_click = false;
-    }
-    if splitter_drag.suppress_next_left_click || splitter_drag.active.is_some() {
-        return;
-    }
-
-    if middle_autoscroll.suppress_next_left_click && !mouse_buttons.pressed(MouseButton::Left) {
-        middle_autoscroll.suppress_next_left_click = false;
-    }
-    if !mouse_buttons.just_pressed(MouseButton::Left) {
-        return;
-    }
-    if middle_autoscroll.suppress_next_left_click {
-        middle_autoscroll.suppress_next_left_click = false;
-        return;
-    }
-    if middle_autoscroll.is_active() {
-        return;
-    }
-    if keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
-        return;
-    }
-    let visible_lines = viewport_lines_from_panels(
-        &panel_query,
-        state.display_mode,
-        state.measured_line_step,
-        scaled_text_padding_y(&state),
-    );
-    let plain_panel_size = panel_query
-        .iter()
-        .find(|(panel, _, _)| panel.kind == PanelKind::Plain)
-        .map(|(_, _, computed)| computed.size() * computed.inverse_scale_factor());
-    let processed_panel_size = panel_query
-        .iter()
-        .find(|(panel, _, _)| panel.kind == PanelKind::Processed)
-        .map(|(_, _, computed)| computed.size() * computed.inverse_scale_factor());
-    state.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
-    let processed_layout_info =
-        processed_panel_size.map(|size| processed_page_layout(size, &state));
-    let processed_wrap_columns = processed_layout_info.map_or(64, |layout| layout.wrap_columns);
-    let processed_lines_per_page = processed_layout_info.map_or(40, |layout| layout.lines_per_page);
-    let processed_spacer_lines = processed_layout_info.map_or(2, |layout| layout.spacer_lines);
-    let processed_step_lines = processed_layout_info
-        .map_or(processed_page_step_lines(), |layout| layout.page_step_lines)
-        .max(1);
-    let processed_view_capacity = processed_step_lines
-        .saturating_mul(PROCESSED_PAPER_CAPACITY)
-        .max(1);
-    let plain_lines = visible_plain_lines(&state, visible_lines);
-    let processed_all_lines = processed_display_lines(
-        &mut state,
-        processed_wrap_columns,
-        processed_lines_per_page,
-        processed_spacer_lines,
-    );
-    if processed_all_lines.is_empty() {
-        state.processed_top_visual = 0;
-    } else {
-        state.processed_top_visual = state
-            .processed_top_visual
-            .min(processed_all_lines.len().saturating_sub(1));
-    }
-    let processed_view = build_processed_view(
-        &processed_all_lines,
-        state.processed_top_visual,
-        processed_step_lines,
-        processed_view_capacity,
-    );
-    let first_visible_page = processed_view.start_index / processed_step_lines;
-    let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
-    let plain_line_height = state.measured_line_step.max(1.0);
-    let processed_line_height = scaled_line_height(&state).max(1.0);
-    let plain_char_width = scaled_char_width(&state).max(1.0);
-    let processed_char_width = scaled_char_width(&state).max(1.0);
-    let plain_origin_x = scaled_text_padding_x(&state) - state.plain_horizontal_scroll;
-    let plain_origin_y = scaled_text_padding_y(&state);
-    let anchor_line_in_page = processed_anchor_line_in_page(&processed_view, processed_step_lines);
-    let processed_anchor_offset_px =
-        processed_anchor_scroll_offset_px(anchor_line_in_page, processed_line_height);
-    let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
-    for (panel, relative_cursor, computed) in panel_query.iter() {
-        if !state.panel_visible(panel.kind) {
-            continue;
-        }
-        if !relative_cursor.cursor_over() {
-            continue;
-        }
-
-        let Some(normalized) = relative_cursor.normalized else {
-            continue;
-        };
-
-        // Clicking anywhere in a panel selects its scroll-anchor policy.
-        state.focused_panel = panel.kind;
-
-        if state.document.is_empty() {
-            state.set_cursor(Position::default(), true);
-            break;
-        }
-
-        let inverse_scale = computed.inverse_scale_factor();
-        let size = computed.size() * inverse_scale;
-        let raw_x = (normalized.x + 0.5) * size.x;
-        let raw_y = (normalized.y + 0.5) * size.y;
-        let panel_x = raw_x;
-        let panel_y = raw_y;
-        if panel.kind == PanelKind::Processed {
-            let Some(processed_layout) = processed_layout_info else {
-                continue;
-            };
-            if processed_all_lines.is_empty() {
-                continue;
-            }
-
-            let geometry = processed_layout.geometry;
-            let processed_step_px = processed_page_step_px(&geometry, state.zoom);
-            let text_left = geometry.text_left - state.processed_horizontal_scroll;
-            let text_right = text_left + geometry.text_width;
-
-            let mut clicked_page = None;
-            for slot in 0..PROCESSED_PAPER_CAPACITY {
-                let page_index = first_visible_page.saturating_add(slot);
-                let page_top = processed_page_top_for_slot(
-                    &geometry,
-                    slot,
-                    processed_step_px,
-                    processed_anchor_offset_px,
-                ) + processed_zoom_bias_px;
-                let page_bottom = page_top + geometry.paper_height;
-
-                if panel_y >= page_top && panel_y <= page_bottom {
-                    clicked_page = Some((slot, page_index));
-                    break;
-                }
-            }
-
-            let Some((slot, page_index)) = clicked_page else {
-                continue;
-            };
-
-            let text_top = processed_text_top_for_slot(
-                &geometry,
-                slot,
-                processed_step_px,
-                processed_anchor_offset_px,
-            ) + processed_zoom_bias_px;
-            let local_x = (panel_x - text_left).max(0.0);
-            let local_y = (panel_y - text_top).max(0.0);
-            let fallback_line_in_page = ((local_y / processed_line_height).floor().max(0.0)
-                as usize)
-                .min(processed_lines_per_page.saturating_sub(1));
-            let fallback_column = if panel_x <= text_left {
-                0
-            } else {
-                ((panel_x.min(text_right) - text_left) / processed_char_width)
-                    .round()
-                    .max(0.0) as usize
-            };
-
-            let (line_in_page, display_column) = processed_text_layout_query
-                .iter()
-                .find(|(paper_text, _, _)| paper_text.slot == slot)
-                .map_or((fallback_line_in_page, fallback_column), |(_, layout, text_computed)| {
-                    let inverse_scale = text_computed.inverse_scale_factor();
-                    let line_in_page = line_index_from_layout_y(
-                        layout,
-                        local_y,
-                        processed_lines_per_page.max(1),
-                        inverse_scale,
-                    )
-                    .unwrap_or(fallback_line_in_page)
-                    .min(processed_lines_per_page.saturating_sub(1));
-
-                    let global_for_line = page_index
-                        .saturating_mul(processed_step_lines)
-                        .saturating_add(line_in_page)
-                        .min(processed_all_lines.len().saturating_sub(1));
-                    let display_line =
-                        processed_all_lines.get(global_for_line).map_or("", |line| line.text.as_str());
-                    let display_column = column_from_layout_x(
-                        layout,
-                        line_in_page,
-                        local_x,
-                        display_line,
-                        inverse_scale,
-                        processed_char_width,
-                    )
-                    .unwrap_or(fallback_column);
-                    (line_in_page, display_column)
-                });
-
-            let global_index = page_index
-                .saturating_mul(processed_step_lines)
-                .saturating_add(line_in_page)
-                .min(processed_all_lines.len().saturating_sub(1));
-            let Some(global_index) =
-                nearest_non_spacer_visual_index(&processed_all_lines, global_index)
-            else {
-                continue;
-            };
-            let Some(visual_line) = processed_all_lines.get(global_index) else {
-                continue;
-            };
-            let raw_column = processed_raw_column_from_display(visual_line, display_column);
-            let line = visual_line.source_line;
-            let max_col = state.document.line_len_chars(line);
-            let column = raw_column.min(max_col);
-
-            state.set_cursor(Position { line, column }, true);
-            apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
-            break;
-        }
-
-        let local_x = (panel_x - plain_origin_x).max(0.0);
-        let local_y = (panel_y - plain_origin_y).max(0.0);
-        let panel_line_count = plain_lines.len().max(1);
-        let line_offset = plain_layout
-            .and_then(|layout| {
-                line_index_from_layout_y(layout, local_y, panel_line_count, inverse_scale)
-            })
-            .unwrap_or_else(|| {
-                ((local_y / plain_line_height).floor().max(0.0) as usize)
-                    .min(panel_line_count.saturating_sub(1))
-            });
-        let line = state
-            .top_line
-            .saturating_add(line_offset)
-            .min(state.document.line_count().saturating_sub(1));
-        let visible_offset = line.saturating_sub(state.top_line);
-        let display_line = plain_lines
-            .get(visible_offset)
-            .map_or("", |line| line.as_str());
-        let raw_column = plain_layout
-            .and_then(|layout| {
-                column_from_layout_x(
-                    layout,
-                    visible_offset,
-                    local_x,
-                    display_line,
-                    inverse_scale,
-                    plain_char_width,
-                )
-            })
-            .unwrap_or_else(|| (local_x / plain_char_width).round().max(0.0) as usize);
-
-        let max_col = state.document.line_len_chars(line);
-        let column = raw_column.min(max_col);
-
-        state.set_cursor(Position { line, column }, true);
-        apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
-        break;
-    }
 }

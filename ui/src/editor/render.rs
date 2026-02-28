@@ -65,6 +65,22 @@ fn render_editor(
             Without<ProcessedChecklistIcon>,
         ),
     >,
+    mut selection_rect_query: Query<
+        (
+            &PanelSelectionRect,
+            &mut Node,
+            &mut BackgroundColor,
+            &mut Visibility,
+        ),
+        (
+            Without<PanelText>,
+            Without<PanelPaper>,
+            Without<PanelCaret>,
+            Without<PanelCanvas>,
+            Without<ProcessedPaperText>,
+            Without<ProcessedChecklistIcon>,
+        ),
+    >,
     mut paper_query: Query<
         (
             &PanelPaper,
@@ -308,6 +324,17 @@ fn render_editor(
 
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
     state.measured_line_step = scaled_line_height(&state);
+    render_plain_selection_rects(
+        &mut selection_rect_query,
+        &state,
+        &plain_lines,
+        plain_layout,
+        plain_inverse_scale,
+        plain_origin_x,
+        plain_origin_y,
+        plain_char_width,
+        plain_line_height,
+    );
 
     render_panel_carets(
         &mut caret_query,

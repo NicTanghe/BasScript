@@ -109,6 +109,33 @@ fn load_persistent_ui_state() -> PersistentUiState {
     persistent_ui_state_from_ron(&contents, &defaults)
 }
 
+fn load_theme_settings() -> ThemeSettings {
+    let path = PathBuf::from(THEME_SETTINGS_PATH);
+    let defaults = ThemeSettings::default();
+    let contents = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            info!(
+                "[theme] No theme file found at {}; using defaults",
+                path.display()
+            );
+            let _ = save_theme_settings(&defaults);
+            return defaults;
+        }
+        Err(error) => {
+            warn!(
+                "[theme] Failed reading {}: {}; using defaults",
+                path.display(),
+                error
+            );
+            return defaults;
+        }
+    };
+
+    info!("[theme] Loaded theme from {}", path.display());
+    theme_settings_from_ron(&contents, &defaults)
+}
+
 fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
     let path = PathBuf::from(EDITOR_SETTINGS_PATH);
     let workspace_root_path = settings
@@ -185,6 +212,30 @@ fn save_persistent_ui_state(ui_state: &PersistentUiState) -> io::Result<()> {
 
     fs::write(&path, contents)?;
     info!("[state] Saved UI state to {}", path.display());
+    Ok(())
+}
+
+fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
+    let path = PathBuf::from(THEME_SETTINGS_PATH);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let contents = format!(
+        "(\n\
+         \tselection_background_r: {:.3},\n\
+         \tselection_background_g: {:.3},\n\
+         \tselection_background_b: {:.3},\n\
+         \tselection_background_a: {:.3},\n\
+         )\n",
+        theme.selection_background_r,
+        theme.selection_background_g,
+        theme.selection_background_b,
+        theme.selection_background_a
+    );
+
+    fs::write(&path, contents)?;
+    info!("[theme] Saved theme to {}", path.display());
     Ok(())
 }
 
@@ -270,6 +321,19 @@ fn persistent_ui_state_from_ron(
     PersistentUiState {
         workspace_sidebar_visible,
         top_menu_collapsed,
+    }
+}
+
+fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSettings {
+    ThemeSettings {
+        selection_background_r: parse_ron_f32(contents, "selection_background_r")
+            .unwrap_or(defaults.selection_background_r),
+        selection_background_g: parse_ron_f32(contents, "selection_background_g")
+            .unwrap_or(defaults.selection_background_g),
+        selection_background_b: parse_ron_f32(contents, "selection_background_b")
+            .unwrap_or(defaults.selection_background_b),
+        selection_background_a: parse_ron_f32(contents, "selection_background_a")
+            .unwrap_or(defaults.selection_background_a),
     }
 }
 

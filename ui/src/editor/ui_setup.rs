@@ -1000,6 +1000,19 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
                         (
                             Node {
                                 position_type: PositionType::Absolute,
+                                left: px(0.0),
+                                top: px(0.0),
+                                width: percent(100.0),
+                                height: percent(100.0),
+                                overflow: Overflow::clip(),
+                                ..default()
+                            },
+                            PanelSelectionLayer { kind },
+                            ZIndex(1),
+                        ),
+                        (
+                            Node {
+                                position_type: PositionType::Absolute,
                                 left: px(TEXT_PADDING_X),
                                 top: px(TEXT_PADDING_Y),
                                 width: px(CARET_WIDTH),
@@ -1009,7 +1022,7 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
                             UiTransform::default(),
                             BackgroundColor(Color::srgba(0.12, 0.12, 0.13, 0.35)),
                             Visibility::Hidden,
-                            ZIndex(1),
+                            ZIndex(2),
                             PanelCaret { kind },
                         ),
                         (
@@ -1029,7 +1042,7 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
                                 ..default()
                             },
                             UiTransform::default(),
-                            ZIndex(2),
+                            ZIndex(3),
                             PanelText { kind },
                         )
                     ],
