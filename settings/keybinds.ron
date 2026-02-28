@@ -1,5 +1,5 @@
 (
-	open_workspace: "1",
+	open_workspace: "O",
 	save_as: "S",
 	undo: "Z",
 	redo: "Shift+Z",

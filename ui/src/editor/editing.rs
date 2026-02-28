@@ -108,7 +108,9 @@ fn handle_text_input(
 
 fn handle_navigation_input(
     keys: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
     body_query: Query<(&PanelBody, &ComputedNode)>,
+    mut navigation_repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
 ) {
     let visible_lines = viewport_lines(
@@ -207,32 +209,32 @@ fn handle_navigation_input(
         }
     }
 
-    if keys.just_pressed(KeyCode::ArrowLeft) {
-        let next = state.document.move_left(state.cursor.position);
-        state.set_cursor(next, true);
-        moved = true;
-    }
+    let previous_active_arrow = navigation_repeat.active_arrow;
+    if let Some(arrow) = just_pressed_navigation_arrow(&keys) {
+        moved |= move_cursor_by_arrow_key(&mut state, arrow);
+        navigation_repeat.active_arrow = Some(arrow);
+        navigation_repeat.repeat_cooldown_secs = NAVIGATION_REPEAT_INITIAL_DELAY_SECS;
+    } else {
+        let active_arrow = navigation_repeat
+            .active_arrow
+            .filter(|arrow| keys.pressed(*arrow))
+            .or_else(|| held_navigation_arrow(&keys));
 
-    if keys.just_pressed(KeyCode::ArrowRight) {
-        let next = state.document.move_right(state.cursor.position);
-        state.set_cursor(next, true);
-        moved = true;
-    }
+        if active_arrow != previous_active_arrow {
+            navigation_repeat.repeat_cooldown_secs = NAVIGATION_REPEAT_INITIAL_DELAY_SECS;
+        }
 
-    if keys.just_pressed(KeyCode::ArrowUp) {
-        let next = state
-            .document
-            .move_up(state.cursor.position, state.cursor.preferred_column);
-        state.set_cursor(next, false);
-        moved = true;
-    }
+        navigation_repeat.active_arrow = active_arrow;
 
-    if keys.just_pressed(KeyCode::ArrowDown) {
-        let next = state
-            .document
-            .move_down(state.cursor.position, state.cursor.preferred_column);
-        state.set_cursor(next, false);
-        moved = true;
+        if let Some(arrow) = active_arrow {
+            navigation_repeat.repeat_cooldown_secs -= time.delta_secs().max(0.0);
+            while navigation_repeat.repeat_cooldown_secs <= 0.0 {
+                moved |= move_cursor_by_arrow_key(&mut state, arrow);
+                navigation_repeat.repeat_cooldown_secs += NAVIGATION_REPEAT_INTERVAL_SECS;
+            }
+        } else {
+            navigation_repeat.repeat_cooldown_secs = 0.0;
+        }
     }
 
     if keys.just_pressed(KeyCode::Home) {
@@ -293,6 +295,42 @@ fn handle_navigation_input(
     if moved {
         apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
     }
+}
+
+fn just_pressed_navigation_arrow(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
+    [
+        KeyCode::ArrowLeft,
+        KeyCode::ArrowRight,
+        KeyCode::ArrowUp,
+        KeyCode::ArrowDown,
+    ]
+    .into_iter()
+    .find(|key| keys.just_pressed(*key))
+}
+
+fn held_navigation_arrow(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
+    [
+        KeyCode::ArrowLeft,
+        KeyCode::ArrowRight,
+        KeyCode::ArrowUp,
+        KeyCode::ArrowDown,
+    ]
+    .into_iter()
+    .find(|key| keys.pressed(*key))
+}
+
+fn move_cursor_by_arrow_key(state: &mut EditorState, arrow: KeyCode) -> bool {
+    let current = state.cursor.position;
+    let next = match arrow {
+        KeyCode::ArrowLeft => state.document.move_left(current),
+        KeyCode::ArrowRight => state.document.move_right(current),
+        KeyCode::ArrowUp => state.document.move_up(current, state.cursor.preferred_column),
+        KeyCode::ArrowDown => state.document.move_down(current, state.cursor.preferred_column),
+        _ => return false,
+    };
+
+    state.set_cursor(next, !matches!(arrow, KeyCode::ArrowUp | KeyCode::ArrowDown));
+    next != current
 }
 
 fn handle_mouse_click(

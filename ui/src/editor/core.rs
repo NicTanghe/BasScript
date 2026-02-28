@@ -44,11 +44,14 @@ const PROCESSED_PAPER_CAPACITY: usize = 16;
 const FONT_SIZE: f32 = 12.0;
 const LINE_HEIGHT: f32 = 12.0;
 const DEFAULT_CHAR_WIDTH: f32 = 7.2;
+const DEFAULT_MARKDOWN_CHAR_WIDTH: f32 = 6.2;
 const TEXT_PADDING_X: f32 = 14.0;
 const TEXT_PADDING_Y: f32 = 10.0;
 const ZOOM_MIN: f32 = 0.6;
 const ZOOM_MAX: f32 = 1.8;
 const ZOOM_STEP: f32 = 0.1;
+const NAVIGATION_REPEAT_INITIAL_DELAY_SECS: f32 = 0.30;
+const NAVIGATION_REPEAT_INTERVAL_SECS: f32 = 0.045;
 const HISTORY_LIMIT: usize = 512;
 const MM_PER_INCH: f32 = 25.4;
 const POINTS_PER_INCH: f32 = 72.0;
@@ -114,6 +117,7 @@ impl Plugin for UiPlugin {
         app.init_resource::<EditorState>()
             .init_resource::<DialogState>()
             .init_resource::<MiddleAutoscrollState>()
+            .init_resource::<NavigationRepeatState>()
             .init_resource::<PanelLayoutState>()
             .init_resource::<PanelSplitterDragState>()
             .init_state::<UiScreenState>()
@@ -722,6 +726,12 @@ struct MiddleAutoscrollState {
     anchor_cursor_position: Vec2,
     plain_vertical_remainder_lines: f32,
     suppress_next_left_click: bool,
+}
+
+#[derive(Resource, Default, Clone, Copy, Debug)]
+struct NavigationRepeatState {
+    active_arrow: Option<KeyCode>,
+    repeat_cooldown_secs: f32,
 }
 
 #[derive(Resource, Clone, Copy, Debug)]

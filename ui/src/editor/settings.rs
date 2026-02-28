@@ -448,8 +448,15 @@ fn scaled_line_height(state: &EditorState) -> f32 {
     LINE_HEIGHT * state.zoom
 }
 
+fn default_char_width_for_format(format: DocumentFormat) -> f32 {
+    match format {
+        DocumentFormat::Markdown => DEFAULT_MARKDOWN_CHAR_WIDTH,
+        DocumentFormat::Fountain => DEFAULT_CHAR_WIDTH,
+    }
+}
+
 fn scaled_char_width(state: &EditorState) -> f32 {
-    DEFAULT_CHAR_WIDTH * state.zoom
+    default_char_width_for_format(state.document_format) * state.zoom
 }
 
 fn scaled_text_padding_x(state: &EditorState) -> f32 {

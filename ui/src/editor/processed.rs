@@ -47,7 +47,8 @@ fn processed_page_layout(panel_size: Vec2, state: &EditorState) -> ProcessedPage
         (A4_WIDTH_POINTS - state.page_margin_left - state.page_margin_right).max(1.0);
     let base_text_height =
         (base_paper_height - state.page_margin_top - state.page_margin_bottom).max(1.0);
-    let wrap_columns = ((base_text_width / DEFAULT_CHAR_WIDTH) + 1e-4)
+    let base_char_width = default_char_width_for_format(state.document_format).max(0.1);
+    let wrap_columns = ((base_text_width / base_char_width) + 1e-4)
         .floor()
         .max(1.0) as usize;
     let lines_per_page = ((base_text_height / LINE_HEIGHT) + 1e-4)
