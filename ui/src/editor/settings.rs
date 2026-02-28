@@ -132,8 +132,30 @@ fn load_theme_settings() -> ThemeSettings {
         }
     };
 
+    let used_legacy_fields = parse_ron_vec4(&contents, "selection_background").is_none()
+        && (parse_ron_f32(&contents, "selection_background_r").is_some()
+            || parse_ron_f32(&contents, "selection_background_g").is_some()
+            || parse_ron_f32(&contents, "selection_background_b").is_some()
+            || parse_ron_f32(&contents, "selection_background_a").is_some());
+
+    let theme = theme_settings_from_ron(&contents, &defaults);
+    if used_legacy_fields {
+        if let Err(error) = save_theme_settings(&theme) {
+            warn!(
+                "[theme] Failed migrating legacy theme format at {}: {}",
+                path.display(),
+                error
+            );
+        } else {
+            info!(
+                "[theme] Migrated legacy theme format to vector4 at {}",
+                path.display()
+            );
+        }
+    }
+
     info!("[theme] Loaded theme from {}", path.display());
-    theme_settings_from_ron(&contents, &defaults)
+    theme
 }
 
 fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
@@ -221,17 +243,15 @@ fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
         fs::create_dir_all(parent)?;
     }
 
+    let selection_background = theme.selection_background_clamped();
     let contents = format!(
         "(\n\
-         \tselection_background_r: {:.3},\n\
-         \tselection_background_g: {:.3},\n\
-         \tselection_background_b: {:.3},\n\
-         \tselection_background_a: {:.3},\n\
+         \tselection_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          )\n",
-        theme.selection_background_r,
-        theme.selection_background_g,
-        theme.selection_background_b,
-        theme.selection_background_a
+        selection_background.x,
+        selection_background.y,
+        selection_background.z,
+        selection_background.w
     );
 
     fs::write(&path, contents)?;
@@ -270,6 +290,69 @@ fn parse_ron_bool(contents: &str, key: &str) -> Option<bool> {
 
 fn parse_ron_f32(contents: &str, key: &str) -> Option<f32> {
     parse_ron_value(contents, key)?.parse::<f32>().ok()
+}
+
+fn parse_ron_vec4(contents: &str, key: &str) -> Option<Vec4> {
+    let raw = parse_ron_value(contents, key)?;
+    parse_ron_vec4_value(&raw)
+}
+
+fn parse_ron_vec4_value(raw: &str) -> Option<Vec4> {
+    let trimmed = raw.trim();
+    let stripped = trimmed
+        .strip_prefix("Vec4(")
+        .and_then(|value| value.strip_suffix(')'))
+        .or_else(|| {
+            trimmed
+                .strip_prefix("vec4(")
+                .and_then(|value| value.strip_suffix(')'))
+        })
+        .unwrap_or(trimmed);
+
+    let inner = stripped
+        .strip_prefix('(')
+        .and_then(|value| value.strip_suffix(')'))
+        .or_else(|| {
+            stripped
+                .strip_prefix('[')
+                .and_then(|value| value.strip_suffix(']'))
+        })
+        .unwrap_or(stripped);
+
+    if inner.contains(':') {
+        let x = parse_named_vec_component(inner, "x").or_else(|| parse_named_vec_component(inner, "r"))?;
+        let y = parse_named_vec_component(inner, "y").or_else(|| parse_named_vec_component(inner, "g"))?;
+        let z = parse_named_vec_component(inner, "z").or_else(|| parse_named_vec_component(inner, "b"))?;
+        let w = parse_named_vec_component(inner, "w").or_else(|| parse_named_vec_component(inner, "a"))?;
+        return Some(Vec4::new(x, y, z, w));
+    }
+
+    let mut values = [0.0_f32; 4];
+    let mut index = 0usize;
+    for token in inner.split(',').map(str::trim).filter(|token| !token.is_empty()) {
+        if index >= values.len() {
+            return None;
+        }
+        values[index] = token.parse::<f32>().ok()?;
+        index += 1;
+    }
+
+    if index == 4 {
+        Some(Vec4::new(values[0], values[1], values[2], values[3]))
+    } else {
+        None
+    }
+}
+
+fn parse_named_vec_component(raw: &str, key: &str) -> Option<f32> {
+    for entry in raw.split(',').map(str::trim).filter(|entry| !entry.is_empty()) {
+        let (lhs, rhs) = entry.split_once(':')?;
+        if lhs.trim() != key {
+            continue;
+        }
+        return rhs.trim().parse::<f32>().ok();
+    }
+    None
 }
 
 fn parse_ron_string(contents: &str, key: &str) -> Option<String> {
@@ -325,15 +408,26 @@ fn persistent_ui_state_from_ron(
 }
 
 fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSettings {
+    let selection_background = parse_ron_vec4(contents, "selection_background").unwrap_or_else(|| {
+        Vec4::new(
+            parse_ron_f32(contents, "selection_background_r")
+                .unwrap_or(defaults.selection_background.x),
+            parse_ron_f32(contents, "selection_background_g")
+                .unwrap_or(defaults.selection_background.y),
+            parse_ron_f32(contents, "selection_background_b")
+                .unwrap_or(defaults.selection_background.z),
+            parse_ron_f32(contents, "selection_background_a")
+                .unwrap_or(defaults.selection_background.w),
+        )
+    });
+
     ThemeSettings {
-        selection_background_r: parse_ron_f32(contents, "selection_background_r")
-            .unwrap_or(defaults.selection_background_r),
-        selection_background_g: parse_ron_f32(contents, "selection_background_g")
-            .unwrap_or(defaults.selection_background_g),
-        selection_background_b: parse_ron_f32(contents, "selection_background_b")
-            .unwrap_or(defaults.selection_background_b),
-        selection_background_a: parse_ron_f32(contents, "selection_background_a")
-            .unwrap_or(defaults.selection_background_a),
+        selection_background: Vec4::new(
+            selection_background.x.clamp(0.0, 1.0),
+            selection_background.y.clamp(0.0, 1.0),
+            selection_background.z.clamp(0.0, 1.0),
+            selection_background.w.clamp(0.0, 1.0),
+        ),
     }
 }
 
@@ -452,6 +546,54 @@ fn persistent_ui_state_from_state(state: &EditorState) -> PersistentUiState {
         workspace_sidebar_visible: state.workspace_sidebar_visible,
         top_menu_collapsed: state.top_menu_collapsed,
     }
+}
+
+fn theme_settings_from_state(state: &EditorState) -> ThemeSettings {
+    ThemeSettings {
+        selection_background: Vec4::new(
+            state.selection_bg_rgba.x.clamp(0.0, 1.0),
+            state.selection_bg_rgba.y.clamp(0.0, 1.0),
+            state.selection_bg_rgba.z.clamp(0.0, 1.0),
+            state.selection_bg_rgba.w.clamp(0.0, 1.0),
+        ),
+    }
+}
+
+fn sync_selection_background_color(state: &mut EditorState) {
+    state.selection_bg_rgba = Vec4::new(
+        state.selection_bg_rgba.x.clamp(0.0, 1.0),
+        state.selection_bg_rgba.y.clamp(0.0, 1.0),
+        state.selection_bg_rgba.z.clamp(0.0, 1.0),
+        state.selection_bg_rgba.w.clamp(0.0, 1.0),
+    );
+    state.selection_bg_color = Color::srgba(
+        state.selection_bg_rgba.x,
+        state.selection_bg_rgba.y,
+        state.selection_bg_rgba.z,
+        state.selection_bg_rgba.w,
+    );
+}
+
+fn adjust_selection_background_channel(
+    state: &mut EditorState,
+    channel: ThemeColorChannel,
+    delta: f32,
+) {
+    match channel {
+        ThemeColorChannel::Red => {
+            state.selection_bg_rgba.x = (state.selection_bg_rgba.x + delta).clamp(0.0, 1.0);
+        }
+        ThemeColorChannel::Green => {
+            state.selection_bg_rgba.y = (state.selection_bg_rgba.y + delta).clamp(0.0, 1.0);
+        }
+        ThemeColorChannel::Blue => {
+            state.selection_bg_rgba.z = (state.selection_bg_rgba.z + delta).clamp(0.0, 1.0);
+        }
+        ThemeColorChannel::Alpha => {
+            state.selection_bg_rgba.w = (state.selection_bg_rgba.w + delta).clamp(0.0, 1.0);
+        }
+    }
+    sync_selection_background_color(state);
 }
 
 fn save_editor_ui_state(state: &EditorState) -> io::Result<()> {

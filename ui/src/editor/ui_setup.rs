@@ -236,6 +236,7 @@ fn setup(
                         SettingsAction::MarginBottomDecrease,
                         SettingsAction::MarginBottomIncrease,
                     ),
+                    settings_action_button(font.clone(), "Theme", SettingsAction::OpenTheme),
                     settings_action_button(font.clone(), "Keybinds", SettingsAction::OpenKeybinds),
                     settings_action_button(font.clone(), "Back to editor", SettingsAction::BackToEditor),
                 ],
@@ -328,6 +329,111 @@ fn setup(
                     ),
                     keybind_row(font.clone(), "Left click", "Place cursor"),
                     keybind_row(font.clone(), "Right click", "Cancel middle-click autoscroll"),
+                    (
+                        Node {
+                            flex_direction: FlexDirection::Row,
+                            column_gap: px(8.0),
+                            margin: UiRect::top(px(8.0)),
+                            ..default()
+                        },
+                        children![
+                            settings_action_button(
+                                font.clone(),
+                                "Back to settings",
+                                SettingsAction::BackToSettings,
+                            ),
+                            settings_action_button(
+                                font.clone(),
+                                "Back to editor",
+                                SettingsAction::BackToEditor,
+                            ),
+                        ],
+                    ),
+                ],
+            ));
+
+            root.spawn((
+                Node {
+                    width: percent(100.0),
+                    height: percent(100.0),
+                    display: Display::None,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(10.0),
+                    padding: UiRect::axes(px(18.0), px(16.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.86, 0.88, 0.90)),
+                ThemeScreenRoot,
+                children![
+                    (
+                        Text::new("Theme"),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MAIN),
+                    ),
+                    (
+                        Text::new("Adjust editor theme colors."),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MUTED),
+                    ),
+                    theme_selection_background_row(font.clone()),
+                    (
+                        Node {
+                            display: Display::None,
+                            flex_direction: FlexDirection::Column,
+                            row_gap: px(8.0),
+                            padding: UiRect::all(px(10.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.82, 0.84, 0.86)),
+                        ThemeColorPickerPanel,
+                        children![
+                            (
+                                Text::new("Color picker"),
+                                TextFont {
+                                    font: font.clone(),
+                                    font_size: 13.0,
+                                    ..default()
+                                },
+                                TextColor(COLOR_TEXT_MAIN),
+                            ),
+                            theme_color_setting_row(
+                                font.clone(),
+                                "Red",
+                                ThemeColorChannel::Red,
+                                SettingsAction::SelectionBackgroundRedDecrease,
+                                SettingsAction::SelectionBackgroundRedIncrease,
+                            ),
+                            theme_color_setting_row(
+                                font.clone(),
+                                "Green",
+                                ThemeColorChannel::Green,
+                                SettingsAction::SelectionBackgroundGreenDecrease,
+                                SettingsAction::SelectionBackgroundGreenIncrease,
+                            ),
+                            theme_color_setting_row(
+                                font.clone(),
+                                "Blue",
+                                ThemeColorChannel::Blue,
+                                SettingsAction::SelectionBackgroundBlueDecrease,
+                                SettingsAction::SelectionBackgroundBlueIncrease,
+                            ),
+                            theme_color_setting_row(
+                                font.clone(),
+                                "Alpha",
+                                ThemeColorChannel::Alpha,
+                                SettingsAction::SelectionBackgroundAlphaDecrease,
+                                SettingsAction::SelectionBackgroundAlphaIncrease,
+                            ),
+                        ],
+                    ),
                     (
                         Node {
                             flex_direction: FlexDirection::Row,
@@ -933,6 +1039,126 @@ fn margin_setting_row(
     )
 }
 
+fn theme_selection_background_row(font: Handle<Font>) -> impl Bundle {
+    (
+        Node {
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            column_gap: px(10.0),
+            ..default()
+        },
+        children![
+            (
+                Text::new("Selection background"),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MAIN),
+                Node {
+                    width: px(170.0),
+                    ..default()
+                },
+            ),
+            (
+                Text::new(""),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MAIN),
+                ThemeSelectionBackgroundValueLabel,
+                Node {
+                    width: px(220.0),
+                    ..default()
+                },
+            ),
+            (
+                Button,
+                SettingsAction::ToggleThemeColorPicker,
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    column_gap: px(8.0),
+                    padding: UiRect::axes(px(10.0), px(6.0)),
+                    ..default()
+                },
+                BackgroundColor(BUTTON_NORMAL),
+                children![
+                    (
+                        Node {
+                            width: px(14.0),
+                            height: px(14.0),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
+                        ThemeColorPreviewSwatch,
+                    ),
+                    (
+                        Text::new("Pick"),
+                        TextFont {
+                            font,
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MAIN),
+                    ),
+                ],
+            ),
+        ],
+    )
+}
+
+fn theme_color_setting_row(
+    font: Handle<Font>,
+    label: &str,
+    channel: ThemeColorChannel,
+    decrease_action: SettingsAction,
+    increase_action: SettingsAction,
+) -> impl Bundle {
+    (
+        Node {
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            column_gap: px(8.0),
+            ..default()
+        },
+        children![
+            (
+                Text::new(label),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MAIN),
+                Node {
+                    width: px(220.0),
+                    ..default()
+                },
+            ),
+            settings_action_button(font.clone(), "-", decrease_action),
+            (
+                Text::new(""),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MAIN),
+                ThemeColorLabel { channel },
+                Node {
+                    width: px(56.0),
+                    ..default()
+                },
+            ),
+            settings_action_button(font, "+", increase_action),
+        ],
+    )
+}
+
 fn panel_splitter_bundle(kind: PanelSplitter) -> impl Bundle {
     (
         Node {
@@ -1136,6 +1362,7 @@ fn handle_settings_buttons(
         }
 
         let mut settings_changed = false;
+        let mut theme_changed = false;
         match action {
             SettingsAction::DialogueDoubleSpaceNewline => {
                 state.dialogue_double_space_newline = !state.dialogue_double_space_newline;
@@ -1201,6 +1428,82 @@ fn handle_settings_buttons(
                 adjust_page_margin(&mut state, MarginEdge::Bottom, PAGE_MARGIN_STEP);
                 settings_changed = true;
             }
+            SettingsAction::OpenTheme => {
+                next_screen_state.set(UiScreenState::Theme);
+                state.status_message = "Opened theme.".to_string();
+            }
+            SettingsAction::ToggleThemeColorPicker => {
+                state.theme_color_picker_open = !state.theme_color_picker_open;
+                state.status_message = if state.theme_color_picker_open {
+                    "Opened color picker.".to_string()
+                } else {
+                    "Closed color picker.".to_string()
+                };
+            }
+            SettingsAction::SelectionBackgroundRedDecrease => {
+                adjust_selection_background_channel(
+                    &mut state,
+                    ThemeColorChannel::Red,
+                    -THEME_COLOR_STEP,
+                );
+                theme_changed = true;
+            }
+            SettingsAction::SelectionBackgroundRedIncrease => {
+                adjust_selection_background_channel(
+                    &mut state,
+                    ThemeColorChannel::Red,
+                    THEME_COLOR_STEP,
+                );
+                theme_changed = true;
+            }
+            SettingsAction::SelectionBackgroundGreenDecrease => {
+                adjust_selection_background_channel(
+                    &mut state,
+                    ThemeColorChannel::Green,
+                    -THEME_COLOR_STEP,
+                );
+                theme_changed = true;
+            }
+            SettingsAction::SelectionBackgroundGreenIncrease => {
+                adjust_selection_background_channel(
+                    &mut state,
+                    ThemeColorChannel::Green,
+                    THEME_COLOR_STEP,
+                );
+                theme_changed = true;
+            }
+            SettingsAction::SelectionBackgroundBlueDecrease => {
+                adjust_selection_background_channel(
+                    &mut state,
+                    ThemeColorChannel::Blue,
+                    -THEME_COLOR_STEP,
+                );
+                theme_changed = true;
+            }
+            SettingsAction::SelectionBackgroundBlueIncrease => {
+                adjust_selection_background_channel(
+                    &mut state,
+                    ThemeColorChannel::Blue,
+                    THEME_COLOR_STEP,
+                );
+                theme_changed = true;
+            }
+            SettingsAction::SelectionBackgroundAlphaDecrease => {
+                adjust_selection_background_channel(
+                    &mut state,
+                    ThemeColorChannel::Alpha,
+                    -THEME_COLOR_STEP,
+                );
+                theme_changed = true;
+            }
+            SettingsAction::SelectionBackgroundAlphaIncrease => {
+                adjust_selection_background_channel(
+                    &mut state,
+                    ThemeColorChannel::Alpha,
+                    THEME_COLOR_STEP,
+                );
+                theme_changed = true;
+            }
             SettingsAction::OpenKeybinds => {
                 state.pending_keybind_capture = None;
                 next_screen_state.set(UiScreenState::Keybinds);
@@ -1223,6 +1526,21 @@ fn handle_settings_buttons(
             let persistent = persistent_settings_from_state(&state);
             if let Err(error) = save_persistent_settings(&persistent) {
                 state.status_message = format!("Settings save failed: {error}");
+            }
+        }
+
+        if theme_changed {
+            let theme = theme_settings_from_state(&state);
+            if let Err(error) = save_theme_settings(&theme) {
+                state.status_message = format!("Theme save failed: {error}");
+            } else {
+                state.status_message = format!(
+                    "Selection background: ({:.2}, {:.2}, {:.2}, {:.2})",
+                    state.selection_bg_rgba.x,
+                    state.selection_bg_rgba.y,
+                    state.selection_bg_rgba.z,
+                    state.selection_bg_rgba.w
+                );
             }
         }
     }
@@ -1364,6 +1682,7 @@ fn sync_settings_ui(
             With<EditorScreenRoot>,
             Without<SettingsScreenRoot>,
             Without<KeybindsScreenRoot>,
+            Without<ThemeScreenRoot>,
         ),
     >,
     mut settings_root_query: Query<
@@ -1372,6 +1691,7 @@ fn sync_settings_ui(
             With<SettingsScreenRoot>,
             Without<EditorScreenRoot>,
             Without<KeybindsScreenRoot>,
+            Without<ThemeScreenRoot>,
         ),
     >,
     mut keybinds_root_query: Query<
@@ -1380,14 +1700,75 @@ fn sync_settings_ui(
             With<KeybindsScreenRoot>,
             Without<EditorScreenRoot>,
             Without<SettingsScreenRoot>,
+            Without<ThemeScreenRoot>,
         ),
     >,
-    mut toggle_label_query: Query<(&SettingToggleLabel, &mut Text), Without<SettingMarginLabel>>,
-    mut margin_label_query: Query<(&SettingMarginLabel, &mut Text), Without<SettingToggleLabel>>,
+    mut theme_root_query: Query<
+        &mut Node,
+        (
+            With<ThemeScreenRoot>,
+            Without<EditorScreenRoot>,
+            Without<SettingsScreenRoot>,
+            Without<KeybindsScreenRoot>,
+        ),
+    >,
+    mut toggle_label_query: Query<
+        (&SettingToggleLabel, &mut Text),
+        (
+            Without<SettingMarginLabel>,
+            Without<KeybindBindingLabel>,
+            Without<ThemeColorLabel>,
+            Without<ThemeSelectionBackgroundValueLabel>,
+        ),
+    >,
+    mut margin_label_query: Query<
+        (&SettingMarginLabel, &mut Text),
+        (
+            Without<SettingToggleLabel>,
+            Without<KeybindBindingLabel>,
+            Without<ThemeColorLabel>,
+            Without<ThemeSelectionBackgroundValueLabel>,
+        ),
+    >,
     mut keybind_label_query: Query<
         (&KeybindBindingLabel, &mut Text),
-        (Without<SettingToggleLabel>, Without<SettingMarginLabel>),
+        (
+            Without<SettingToggleLabel>,
+            Without<SettingMarginLabel>,
+            Without<ThemeColorLabel>,
+            Without<ThemeSelectionBackgroundValueLabel>,
+        ),
     >,
+    mut theme_label_query: Query<
+        (&ThemeColorLabel, &mut Text),
+        (
+            Without<SettingToggleLabel>,
+            Without<SettingMarginLabel>,
+            Without<KeybindBindingLabel>,
+            Without<ThemeSelectionBackgroundValueLabel>,
+        ),
+    >,
+    mut selection_background_value_query: Query<
+        &mut Text,
+        (
+            With<ThemeSelectionBackgroundValueLabel>,
+            Without<SettingToggleLabel>,
+            Without<SettingMarginLabel>,
+            Without<KeybindBindingLabel>,
+            Without<ThemeColorLabel>,
+        ),
+    >,
+    mut theme_picker_panel_query: Query<
+        &mut Node,
+        (
+            With<ThemeColorPickerPanel>,
+            Without<EditorScreenRoot>,
+            Without<SettingsScreenRoot>,
+            Without<KeybindsScreenRoot>,
+            Without<ThemeScreenRoot>,
+        ),
+    >,
+    mut theme_preview_swatch_query: Query<&mut BackgroundColor, With<ThemeColorPreviewSwatch>>,
 ) {
     if let Ok(mut editor_root) = editor_root_query.single_mut() {
         editor_root.display = if *screen_state.get() == UiScreenState::Editor {
@@ -1411,6 +1792,23 @@ fn sync_settings_ui(
         } else {
             Display::None
         };
+    }
+
+    if let Ok(mut theme_root) = theme_root_query.single_mut() {
+        theme_root.display = if *screen_state.get() == UiScreenState::Theme {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
+    if let Ok(mut picker_panel) = theme_picker_panel_query.single_mut() {
+        picker_panel.display =
+            if state.theme_color_picker_open && *screen_state.get() == UiScreenState::Theme {
+                Display::Flex
+            } else {
+                Display::None
+            };
     }
 
     for (label, mut text) in toggle_label_query.iter_mut() {
@@ -1459,5 +1857,29 @@ fn sync_settings_ui(
         } else {
             binding_display(state.keybinds.binding(label.action))
         };
+    }
+
+    for (label, mut text) in theme_label_query.iter_mut() {
+        let value = match label.channel {
+            ThemeColorChannel::Red => state.selection_bg_rgba.x,
+            ThemeColorChannel::Green => state.selection_bg_rgba.y,
+            ThemeColorChannel::Blue => state.selection_bg_rgba.z,
+            ThemeColorChannel::Alpha => state.selection_bg_rgba.w,
+        };
+        **text = format!("{value:.3}");
+    }
+
+    for mut text in selection_background_value_query.iter_mut() {
+        **text = format!(
+            "({:.3}, {:.3}, {:.3}, {:.3})",
+            state.selection_bg_rgba.x,
+            state.selection_bg_rgba.y,
+            state.selection_bg_rgba.z,
+            state.selection_bg_rgba.w
+        );
+    }
+
+    for mut swatch in theme_preview_swatch_query.iter_mut() {
+        swatch.0 = state.selection_bg_color;
     }
 }

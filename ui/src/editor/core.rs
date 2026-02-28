@@ -68,6 +68,7 @@ const PAGE_TEXT_MARGIN_TOP: f32 = 30.0;
 const PAGE_TEXT_MARGIN_BOTTOM: f32 = 30.0;
 const PAGE_GAP: f32 = 24.0;
 const PAGE_MARGIN_STEP: f32 = 8.0;
+const THEME_COLOR_STEP: f32 = 0.02;
 const MIN_TEXT_BOX_WIDTH: f32 = 120.0;
 const MIN_TEXT_BOX_HEIGHT: f32 = 120.0;
 const PANEL_SPLITTER_WIDTH: f32 = 0.0;
@@ -112,6 +113,7 @@ enum UiScreenState {
     Editor,
     Settings,
     Keybinds,
+    Theme,
 }
 
 impl Plugin for UiPlugin {
@@ -159,7 +161,11 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Update,
                 handle_settings_buttons
-                    .run_if(in_state(UiScreenState::Settings).or(in_state(UiScreenState::Keybinds))),
+                    .run_if(
+                        in_state(UiScreenState::Settings)
+                            .or(in_state(UiScreenState::Keybinds))
+                            .or(in_state(UiScreenState::Theme)),
+                    ),
             )
             .add_systems(
                 Update,
@@ -324,6 +330,16 @@ enum SettingsAction {
     MarginTopIncrease,
     MarginBottomDecrease,
     MarginBottomIncrease,
+    OpenTheme,
+    ToggleThemeColorPicker,
+    SelectionBackgroundRedDecrease,
+    SelectionBackgroundRedIncrease,
+    SelectionBackgroundGreenDecrease,
+    SelectionBackgroundGreenIncrease,
+    SelectionBackgroundBlueDecrease,
+    SelectionBackgroundBlueIncrease,
+    SelectionBackgroundAlphaDecrease,
+    SelectionBackgroundAlphaIncrease,
     OpenKeybinds,
     BackToSettings,
     BackToEditor,
@@ -664,6 +680,9 @@ struct SettingsScreenRoot;
 struct KeybindsScreenRoot;
 
 #[derive(Component)]
+struct ThemeScreenRoot;
+
+#[derive(Component)]
 struct TopMenuSection;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
@@ -678,6 +697,28 @@ enum MarginEdge {
 struct SettingMarginLabel {
     edge: MarginEdge,
 }
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+enum ThemeColorChannel {
+    Red,
+    Green,
+    Blue,
+    Alpha,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct ThemeColorLabel {
+    channel: ThemeColorChannel,
+}
+
+#[derive(Component)]
+struct ThemeSelectionBackgroundValueLabel;
+
+#[derive(Component)]
+struct ThemeColorPickerPanel;
+
+#[derive(Component)]
+struct ThemeColorPreviewSwatch;
 
 #[derive(Resource)]
 struct EditorState {
@@ -700,7 +741,9 @@ struct EditorState {
     pending_keybind_capture: Option<ShortcutAction>,
     workspace_sidebar_visible: bool,
     top_menu_collapsed: bool,
+    selection_bg_rgba: Vec4,
     selection_bg_color: Color,
+    theme_color_picker_open: bool,
     show_system_titlebar: bool,
     caret_blink: Timer,
     caret_visible: bool,
@@ -830,30 +873,34 @@ impl Default for PersistentUiState {
 
 #[derive(Clone, Debug)]
 struct ThemeSettings {
-    selection_background_r: f32,
-    selection_background_g: f32,
-    selection_background_b: f32,
-    selection_background_a: f32,
+    selection_background: Vec4,
 }
 
 impl Default for ThemeSettings {
     fn default() -> Self {
         Self {
-            selection_background_r: 0.16,
-            selection_background_g: 0.43,
-            selection_background_b: 0.88,
-            selection_background_a: 0.36,
+            selection_background: Vec4::new(0.16, 0.43, 0.88, 0.36),
         }
     }
 }
 
 impl ThemeSettings {
+    fn selection_background_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.selection_background.x.clamp(0.0, 1.0),
+            self.selection_background.y.clamp(0.0, 1.0),
+            self.selection_background.z.clamp(0.0, 1.0),
+            self.selection_background.w.clamp(0.0, 1.0),
+        )
+    }
+
     fn selection_background_color(&self) -> Color {
+        let rgba = self.selection_background_clamped();
         Color::srgba(
-            self.selection_background_r.clamp(0.0, 1.0),
-            self.selection_background_g.clamp(0.0, 1.0),
-            self.selection_background_b.clamp(0.0, 1.0),
-            self.selection_background_a.clamp(0.0, 1.0),
+            rgba.x,
+            rgba.y,
+            rgba.z,
+            rgba.w,
         )
     }
 }
@@ -985,7 +1032,9 @@ impl FromWorld for EditorState {
             pending_keybind_capture: None,
             workspace_sidebar_visible: ui_state.workspace_sidebar_visible,
             top_menu_collapsed: ui_state.top_menu_collapsed,
+            selection_bg_rgba: theme_settings.selection_background_clamped(),
             selection_bg_color: theme_settings.selection_background_color(),
+            theme_color_picker_open: false,
             show_system_titlebar: settings.show_system_titlebar,
             caret_blink: Timer::from_seconds(0.5, TimerMode::Repeating),
             caret_visible: true,
