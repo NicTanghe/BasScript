@@ -318,10 +318,7 @@ fn handle_mouse_selection(
         return;
     };
 
-    if is_start && !shift_modifier_pressed(&keys) && state.open_script_link_at(position) {
-        mouse_selection.active = false;
-        mouse_selection.extend_from_existing = false;
-        mouse_selection.dragged = false;
+    if consume_script_link_click(&mut state, &mut mouse_selection, &keys, is_start, position) {
         return;
     }
 

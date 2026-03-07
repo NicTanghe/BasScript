@@ -12,6 +12,8 @@ include!("ui_setup.rs");
 include!("splitters.rs");
 // Persistent settings I/O and margin/scale helpers.
 include!("settings.rs");
+// Internal script linking navigation and click handling.
+include!("linking/mod.rs");
 // Selection state, pointer behavior, and selection rendering.
 include!("selection.rs");
 // Text panel-specific logic.
