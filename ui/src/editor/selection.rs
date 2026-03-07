@@ -318,6 +318,13 @@ fn handle_mouse_selection(
         return;
     };
 
+    if is_start && !shift_modifier_pressed(&keys) && state.open_script_link_at(position) {
+        mouse_selection.active = false;
+        mouse_selection.extend_from_existing = false;
+        mouse_selection.dragged = false;
+        return;
+    }
+
     if is_start {
         let extend_selection = shift_modifier_pressed(&keys);
         mouse_selection.active = true;

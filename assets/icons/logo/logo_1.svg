@@ -1,0 +1,91 @@
+<svg width="800" height="800" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+
+    <!-- Background -->
+    <radialGradient id="bgGrad" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#2f3740" />
+      <stop offset="100%" stop-color="#161b20" />
+    </radialGradient>
+
+    <!-- Flame gradient -->
+    <linearGradient id="flameGradient" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#F25C27" />
+      <stop offset="55%" stop-color="#FF8A3D" />
+      <stop offset="100%" stop-color="#FFD36B" />
+    </linearGradient>
+
+    <!-- Glow -->
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6" />
+    </filter>
+
+    <!-- ===== ACCURATE NIB MASK ===== -->
+    <mask id="nibMask">
+      <rect width="800" height="800" fill="white" />
+
+      <!-- tighter, realistic nib -->
+      <g transform="translate(400,490)">
+        <path
+          d="
+          M 0 -155
+          L 40 -55
+          C 50 -25, 50 85, 50 85
+          L 0 135
+          L -50 85
+          C -50 85, -50 -25, -40 -55
+          Z"
+          fill="black" />
+      </g>
+    </mask>
+
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="800" fill="url(#bgGrad)" />
+
+  <!-- ===== NARROW 3-TONGUE FLAME ===== -->
+  <path
+    mask="url(#nibMask)"
+    filter="url(#glow)"
+    fill="url(#flameGradient)"
+    d="
+      M400 130
+      C420 205, 455 235, 465 290
+      C480 255, 520 285, 525 345
+      C550 430, 545 515, 520 595
+      C490 690, 440 735, 400 735
+      C360 735, 310 690, 280 595
+      C255 515, 250 430, 275 345
+      C280 285, 320 255, 335 290
+      C345 235, 380 205, 400 130
+      Z"
+  />
+
+  <!-- ===== Nib details ===== -->
+  <g transform="translate(400,525)">
+    <!-- slit -->
+    <rect x="-1.4" y="-190" width="2.0" height="170" fill="#FF7A33" />
+    <!-- breather hole -->
+    <circle cx="0" cy="-55" r="7.5" fill="#FF7A33" />
+  </g>
+
+  <!-- ===== Text ===== -->
+  <text x="400" y="705"
+    text-anchor="middle"
+    font-family="Inter, system-ui, sans-serif"
+    font-weight="800"
+    font-size="92"
+    fill="white">
+    LoreFire
+  </text>
+
+  <text x="400" y="748"
+    text-anchor="middle"
+    font-family="Inter, system-ui, sans-serif"
+    font-size="22"
+    letter-spacing="6"
+    fill="#9BA2A8">
+    SCRIPTWRITING PLATFORM
+  </text>
+
+</svg>

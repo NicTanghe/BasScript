@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use crate::links::{ScriptLink, render_script_link_text};
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Position {
     pub line: usize,
@@ -47,17 +49,19 @@ pub enum DocumentFormat {
 pub struct ParsedLine {
     pub kind: LineKind,
     pub raw: String,
+    pub script_links: Vec<ScriptLink>,
 }
 
 impl ParsedLine {
     pub fn processed_text(&self) -> String {
         let indent = " ".repeat(self.indent_width());
+        let visible_text = render_script_link_text(&self.raw).text;
 
         match self.kind {
             LineKind::SceneHeading | LineKind::Transition | LineKind::Character => {
-                format!("{indent}{}", self.raw.to_uppercase())
+                format!("{indent}{}", visible_text.to_uppercase())
             }
-            _ => format!("{indent}{}", self.raw),
+            _ => format!("{indent}{visible_text}"),
         }
     }
 

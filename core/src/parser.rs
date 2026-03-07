@@ -1,4 +1,5 @@
 use crate::buffer::Document;
+use crate::links::extract_script_links;
 use crate::model::{DocumentFormat, LineKind, ParsedLine};
 
 pub fn parse_document(document: &Document) -> Vec<ParsedLine> {
@@ -23,6 +24,7 @@ fn parse_fountain(document: &Document) -> Vec<ParsedLine> {
         parsed.push(ParsedLine {
             kind,
             raw: raw.clone(),
+            script_links: extract_script_links(raw),
         });
     }
 
@@ -42,6 +44,7 @@ fn parse_markdown(document: &Document) -> Vec<ParsedLine> {
         parsed.push(ParsedLine {
             kind,
             raw: raw.clone(),
+            script_links: extract_script_links(raw),
         });
     }
 
@@ -246,6 +249,17 @@ mod tests {
 
         assert_eq!(parsed[0].kind, LineKind::SceneHeading);
         assert_eq!(parsed[1].kind, LineKind::Action);
+    }
+
+    #[test]
+    fn extracts_internal_script_links_per_line() {
+        let doc =
+            Document::from_text("He opens [door-kitchen-main] and [that door](door-kitchen-main).");
+        let parsed = parse_document(&doc);
+
+        assert_eq!(parsed[0].script_links.len(), 2);
+        assert_eq!(parsed[0].script_links[0].target, "door-kitchen-main");
+        assert_eq!(parsed[0].script_links[1].label, "that door");
     }
 
     #[test]
