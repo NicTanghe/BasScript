@@ -3,6 +3,44 @@ use basscript_core::{
 };
 
 impl EditorState {
+    fn clear_script_link_target_cache(&mut self) {
+        self.script_link_target_types.clear();
+        self.missing_script_link_targets.clear();
+    }
+
+    fn ensure_current_script_link_targets_cached(&mut self) {
+        let targets = self
+            .parsed
+            .iter()
+            .flat_map(|line| line.script_links.iter().map(|link| link.target.clone()))
+            .collect::<BTreeSet<_>>();
+
+        self.script_link_target_types
+            .retain(|target, _| targets.contains(target));
+        self.missing_script_link_targets
+            .retain(|target| targets.contains(target));
+
+        for target in targets {
+            if self.script_link_target_types.contains_key(&target)
+                || self.missing_script_link_targets.contains(&target)
+            {
+                continue;
+            }
+
+            let entity_type = self
+                .resolve_script_target_path(&target)
+                .ok()
+                .and_then(|path| EntityDocument::load(&path).ok())
+                .map(|document| document.metadata.entity_type.trim().to_ascii_lowercase());
+
+            if let Some(entity_type) = entity_type {
+                self.script_link_target_types.insert(target, entity_type);
+            } else {
+                self.missing_script_link_targets.insert(target);
+            }
+        }
+    }
+
     fn open_script_link_at(&mut self, position: Position) -> bool {
         let Some(target) = self
             .parsed

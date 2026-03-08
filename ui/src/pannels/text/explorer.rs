@@ -97,6 +97,7 @@ impl EditorState {
     fn set_workspace_root(&mut self, root: PathBuf) {
         let normalized_root = root.canonicalize().unwrap_or(root);
         self.workspace_root = Some(normalized_root.clone());
+        self.clear_script_link_target_cache();
 
         match collect_workspace_files(&normalized_root) {
             Ok(files) => {

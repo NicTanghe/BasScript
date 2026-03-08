@@ -409,7 +409,15 @@ fn setup(
                                     row_gap: px(8.0),
                                     ..default()
                                 },
-                                children![theme_color_row(font.clone())],
+                                children![
+                                    theme_color_row(font.clone(), ThemeColorTarget::SelectionBackground),
+                                    theme_color_row(font.clone(), ThemeColorTarget::LinkFallback),
+                                    theme_color_row(font.clone(), ThemeColorTarget::LinkCharacter),
+                                    theme_color_row(font.clone(), ThemeColorTarget::LinkPlace),
+                                    theme_color_row(font.clone(), ThemeColorTarget::LinkProp),
+                                    theme_color_row(font.clone(), ThemeColorTarget::LinkFaction),
+                                    theme_color_row(font.clone(), ThemeColorTarget::LinkConcept)
+                                ],
                             ),
                             (
                                 Node {
@@ -1123,7 +1131,7 @@ fn margin_setting_row(
     )
 }
 
-fn theme_color_row(font: Handle<Font>) -> impl Bundle {
+fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> impl Bundle {
     (
         Node {
             flex_direction: FlexDirection::Row,
@@ -1131,6 +1139,7 @@ fn theme_color_row(font: Handle<Font>) -> impl Bundle {
             column_gap: px(10.0),
             ..default()
         },
+        ThemeColorRow { target },
         children![
             (
                 Text::new(""),
@@ -1140,7 +1149,7 @@ fn theme_color_row(font: Handle<Font>) -> impl Bundle {
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
-                ThemeColorNameLabel,
+                ThemeColorNameLabel { target },
                 Node {
                     width: px(170.0),
                     ..default()
@@ -1154,7 +1163,7 @@ fn theme_color_row(font: Handle<Font>) -> impl Bundle {
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
-                ThemeColorValueLabel,
+                ThemeColorValueLabel { target },
                 Node {
                     width: px(220.0),
                     ..default()
@@ -1162,7 +1171,7 @@ fn theme_color_row(font: Handle<Font>) -> impl Bundle {
             ),
             (
                 Button,
-                SettingsAction::ToggleThemeColorPicker,
+                ThemeColorPickerButton { target },
                 Node {
                     flex_direction: FlexDirection::Row,
                     align_items: AlignItems::Center,
@@ -1179,7 +1188,7 @@ fn theme_color_row(font: Handle<Font>) -> impl Bundle {
                             ..default()
                         },
                         BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
-                        ThemeColorPreviewSwatch,
+                        ThemeColorPreviewSwatch { target },
                     ),
                     (
                         Text::new("Pick"),
@@ -1514,6 +1523,7 @@ fn style_toolbar_buttons(
                 With<ToolbarAction>,
                 With<SettingsAction>,
                 With<KeybindRebindButton>,
+                With<ThemeColorPickerButton>,
             )>,
         ),
     >,
@@ -1523,6 +1533,29 @@ fn style_toolbar_buttons(
             Interaction::Pressed => BUTTON_PRESSED,
             Interaction::Hovered => BUTTON_HOVER,
             Interaction::None => BUTTON_NORMAL,
+        };
+    }
+}
+
+fn handle_theme_color_picker_buttons(
+    interaction_query: Query<
+        (&Interaction, &ThemeColorPickerButton),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut state: ResMut<EditorState>,
+) {
+    for (interaction, button) in interaction_query.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        let same_target = state.theme_color_target == button.target;
+        state.theme_color_target = button.target;
+        state.theme_color_picker_open = !(same_target && state.theme_color_picker_open);
+        state.status_message = if state.theme_color_picker_open {
+            format!("Opened color picker for {}.", button.target.status_label())
+        } else {
+            format!("Closed color picker for {}.", button.target.status_label())
         };
     }
 }
@@ -1610,24 +1643,10 @@ fn handle_settings_buttons(
                 state.status_message = "Opened theme.".to_string();
             }
             SettingsAction::OpenLinkColors => {
-                state.theme_color_target = ThemeColorTarget::ProcessedLink;
+                state.theme_color_target = ThemeColorTarget::LinkFallback;
                 state.theme_color_picker_open = false;
                 next_screen_state.set(UiScreenState::Theme);
                 state.status_message = "Opened link colors.".to_string();
-            }
-            SettingsAction::ToggleThemeColorPicker => {
-                state.theme_color_picker_open = !state.theme_color_picker_open;
-                state.status_message = if state.theme_color_picker_open {
-                    format!(
-                        "Opened color picker for {}.",
-                        state.theme_color_target.status_label()
-                    )
-                } else {
-                    format!(
-                        "Closed color picker for {}.",
-                        state.theme_color_target.status_label()
-                    )
-                };
             }
             SettingsAction::OpenKeybinds => {
                 state.pending_keybind_capture = None;
@@ -2044,6 +2063,7 @@ fn sync_theme_picker_ui(
     state: Res<EditorState>,
     screen_state: Res<State<UiScreenState>>,
     mut node_queries: ParamSet<(
+        Query<(&ThemeColorRow, &mut Node)>,
         Query<&mut Node, With<ThemeColorPickerPanel>>,
         Query<
             (
@@ -2055,7 +2075,7 @@ fn sync_theme_picker_ui(
         >,
     )>,
     mut color_queries: ParamSet<(
-        Query<&mut BackgroundColor, With<ThemeColorPreviewSwatch>>,
+        Query<(&ThemeColorPreviewSwatch, &mut BackgroundColor)>,
         Query<(&ThemeColorSlider, &mut BackgroundColor)>,
     )>,
     mut text_query: Query<
@@ -2083,7 +2103,7 @@ fn sync_theme_picker_ui(
     >,
     wheel_size_query: Query<&ComputedNode, With<ThemeHueSatWheel>>,
 ) {
-    if let Ok(mut picker_panel) = node_queries.p0().single_mut() {
+    if let Ok(mut picker_panel) = node_queries.p1().single_mut() {
         picker_panel.display =
             if state.theme_color_picker_open && *screen_state.get() == UiScreenState::Theme {
                 Display::Flex
@@ -2094,10 +2114,18 @@ fn sync_theme_picker_ui(
 
     let active_target = state.theme_color_target;
     let active_rgba = active_theme_rgba(&state);
-    let active_color = active_theme_color(&state);
+    let link_colors_page = active_target.is_link_color();
 
-    for mut swatch in color_queries.p0().iter_mut() {
-        swatch.0 = active_color;
+    for (row, mut node) in node_queries.p0().iter_mut() {
+        node.display = if row.target.is_link_color() == link_colors_page {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
+    for (swatch, mut color) in color_queries.p0().iter_mut() {
+        color.0 = theme_color_for_target(&state, swatch.target);
     }
 
     let rgb = Vec3::new(active_rgba.x, active_rgba.y, active_rgba.z);
@@ -2131,15 +2159,16 @@ fn sync_theme_picker_ui(
             continue;
         }
 
-        if name_label.is_some() {
-            **text = active_target.color_label().to_string();
+        if let Some(name_label) = name_label {
+            **text = name_label.target.color_label().to_string();
             continue;
         }
 
-        if value_label.is_some() {
+        if let Some(value_label) = value_label {
+            let rgba = theme_rgba_for_target(&state, value_label.target);
             **text = format!(
                 "({:.3}, {:.3}, {:.3}, {:.3})",
-                active_rgba.x, active_rgba.y, active_rgba.z, active_rgba.w
+                rgba.x, rgba.y, rgba.z, rgba.w
             );
             continue;
         }
@@ -2214,7 +2243,7 @@ fn sync_theme_picker_ui(
     let angle = hue * std::f32::consts::TAU;
     let cursor_x = angle.cos() * saturation;
     let cursor_y = angle.sin() * saturation;
-    for (mut node, slider_knob, wheel_cursor) in node_queries.p1().iter_mut() {
+    for (mut node, slider_knob, wheel_cursor) in node_queries.p2().iter_mut() {
         if let Some(knob) = slider_knob {
             let t = match knob.channel {
                 ThemeSliderChannel::Hue => hue,

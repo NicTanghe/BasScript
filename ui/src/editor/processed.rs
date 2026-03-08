@@ -206,7 +206,7 @@ fn processed_segment_ranges(state: &EditorState) -> Vec<(usize, usize, bool)> {
 struct PreparedProcessedText {
     text: String,
     display_to_raw: Vec<usize>,
-    link_flags: Vec<bool>,
+    link_targets: Vec<Option<String>>,
 }
 
 fn identity_link_display_text(input: &str) -> LinkDisplayText {
@@ -217,12 +217,18 @@ fn identity_link_display_text(input: &str) -> LinkDisplayText {
     }
 }
 
-fn build_link_flags(display_to_raw: &[usize], script_links: &[ScriptLink]) -> Vec<bool> {
+fn build_link_targets(
+    display_to_raw: &[usize],
+    script_links: &[ScriptLink],
+) -> Vec<Option<String>> {
     let ranges = script_links
         .iter()
         .map(|link| {
             let visible = basscript_core::script_link_visible_column_range(link);
-            *visible.start()..visible.end().saturating_add(1)
+            (
+                *visible.start()..visible.end().saturating_add(1),
+                link.target.clone(),
+            )
         })
         .collect::<Vec<_>>();
 
@@ -232,7 +238,8 @@ fn build_link_flags(display_to_raw: &[usize], script_links: &[ScriptLink]) -> Ve
             let raw_end = display_to_raw[index + 1];
             ranges
                 .iter()
-                .any(|range| raw_start < range.end && raw_end > range.start)
+                .find(|(range, _)| raw_start < range.end && raw_end > range.start)
+                .map(|(_, target)| target.clone())
         })
         .collect()
 }
@@ -256,17 +263,17 @@ fn prepare_processed_line_text(
         .iter()
         .map(|column| raw_column_base.saturating_add(*column))
         .collect::<Vec<_>>();
-    let link_flags = if raw_override_active {
-        vec![false; rendered.text.chars().count()]
+    let link_targets = if raw_override_active {
+        vec![None; rendered.text.chars().count()]
     } else {
-        build_link_flags(&display_to_raw, &parsed_line.script_links)
+        build_link_targets(&display_to_raw, &parsed_line.script_links)
     };
 
     (
         PreparedProcessedText {
             text: rendered.text,
             display_to_raw,
-            link_flags,
+            link_targets,
         },
         checklist_state,
     )
@@ -503,6 +510,7 @@ fn processed_cache_lines<'a>(
     lines_per_page: usize,
     spacer_lines: usize,
 ) -> &'a [ProcessedVisualLine] {
+    state.ensure_current_script_link_targets_cached();
     ensure_processed_cache(state, wrap_columns, lines_per_page, spacer_lines);
     state
         .processed_cache
@@ -520,6 +528,7 @@ fn processed_display_lines(
         return processed_cache_lines(state, wrap_columns, lines_per_page, spacer_lines).to_vec();
     }
 
+    state.ensure_current_script_link_targets_cached();
     let raw_override_line = Some(
         state
             .cursor
@@ -548,19 +557,24 @@ fn push_processed_fragment(
     fragments: &mut Vec<ProcessedVisualFragment>,
     text: String,
     is_link: bool,
+    link_target: Option<String>,
 ) {
     if text.is_empty() {
         return;
     }
 
     if let Some(previous) = fragments.last_mut() {
-        if previous.is_link == is_link {
+        if previous.is_link == is_link && previous.link_target == link_target {
             previous.text.push_str(&text);
             return;
         }
     }
 
-    fragments.push(ProcessedVisualFragment { text, is_link });
+    fragments.push(ProcessedVisualFragment {
+        text,
+        is_link,
+        link_target,
+    });
 }
 
 fn uppercase_processed_text(input: &str, uppercase: bool) -> String {
@@ -600,6 +614,7 @@ fn push_wrapped_visual_lines(
             fragments: vec![ProcessedVisualFragment {
                 text: " ".repeat(blank_columns),
                 is_link: false,
+                link_target: None,
             }],
             display_to_raw: vec![raw_column; blank_columns.saturating_add(1)],
             raw_start_column: raw_column,
@@ -627,16 +642,17 @@ fn push_wrapped_visual_lines(
 
         let mut fragments = Vec::<ProcessedVisualFragment>::new();
         if indent_width > 0 {
-            push_processed_fragment(&mut fragments, " ".repeat(indent_width), false);
+            push_processed_fragment(&mut fragments, " ".repeat(indent_width), false, None);
         }
 
         let mut index = start;
         while index < split {
-            let is_link = prepared_text.link_flags.get(index).copied().unwrap_or(false);
+            let link_target = prepared_text.link_targets.get(index).cloned().unwrap_or(None);
+            let is_link = link_target.is_some();
             let fragment_start = index;
             index += 1;
             while index < split
-                && prepared_text.link_flags.get(index).copied().unwrap_or(false) == is_link
+                && prepared_text.link_targets.get(index).cloned().unwrap_or(None) == link_target
             {
                 index += 1;
             }
@@ -646,6 +662,7 @@ fn push_wrapped_visual_lines(
                 &mut fragments,
                 uppercase_processed_text(&fragment_text, uppercase),
                 is_link,
+                link_target,
             );
         }
 
@@ -689,6 +706,7 @@ fn push_page_spacers(out: &mut Vec<ProcessedVisualLine>, source_line: usize, cou
             fragments: vec![ProcessedVisualFragment {
                 text: " ".to_owned(),
                 is_link: false,
+                link_target: None,
             }],
             display_to_raw: vec![0, 0],
             raw_start_column: 0,
@@ -1041,7 +1059,9 @@ fn processed_visual_fragment_for_part(
     let tail = visual_line.fragments.get(start..)?;
     let all_same_link_state = tail
         .iter()
-        .all(|fragment| fragment.is_link == tail[0].is_link);
+        .all(|fragment| {
+            fragment.is_link == tail[0].is_link && fragment.link_target == tail[0].link_target
+        });
 
     Some(ProcessedVisualFragment {
         text: tail
@@ -1049,6 +1069,11 @@ fn processed_visual_fragment_for_part(
             .map(|fragment| fragment.text.as_str())
             .collect::<String>(),
         is_link: all_same_link_state && tail[0].is_link,
+        link_target: if all_same_link_state {
+            tail[0].link_target.clone()
+        } else {
+            None
+        },
     })
 }
 
@@ -1155,7 +1180,7 @@ fn apply_processed_styles(
 
         **text_span = fragment.text;
         text_color.0 = if allow_link_color && fragment.is_link {
-            state.processed_link_color
+            state.processed_link_color_for_target(fragment.link_target.as_deref())
         } else {
             color
         };

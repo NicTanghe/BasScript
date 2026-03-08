@@ -244,20 +244,50 @@ fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
     }
 
     let selection_background = theme.selection_background_clamped();
-    let processed_link = theme.processed_link_clamped();
+    let link_fallback = theme.link_fallback_clamped();
+    let link_prop = theme.link_prop_clamped();
+    let link_place = theme.link_place_clamped();
+    let link_character = theme.link_character_clamped();
+    let link_faction = theme.link_faction_clamped();
+    let link_concept = theme.link_concept_clamped();
     let contents = format!(
         "(\n\
          \tselection_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
-         \tprocessed_link: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tlink_fallback: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tlink_prop: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tlink_place: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tlink_character: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tlink_faction: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tlink_concept: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          )\n",
         selection_background.x,
         selection_background.y,
         selection_background.z,
         selection_background.w,
-        processed_link.x,
-        processed_link.y,
-        processed_link.z,
-        processed_link.w
+        link_fallback.x,
+        link_fallback.y,
+        link_fallback.z,
+        link_fallback.w,
+        link_prop.x,
+        link_prop.y,
+        link_prop.z,
+        link_prop.w,
+        link_place.x,
+        link_place.y,
+        link_place.z,
+        link_place.w,
+        link_character.x,
+        link_character.y,
+        link_character.z,
+        link_character.w,
+        link_faction.x,
+        link_faction.y,
+        link_faction.z,
+        link_faction.w,
+        link_concept.x,
+        link_concept.y,
+        link_concept.z,
+        link_concept.w
     );
 
     fs::write(&path, contents)?;
@@ -426,8 +456,15 @@ fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSet
                 .unwrap_or(defaults.selection_background.w),
         )
     });
-    let processed_link = parse_ron_vec4(contents, "processed_link")
-        .unwrap_or(defaults.processed_link);
+    let legacy_processed_link = parse_ron_vec4(contents, "processed_link")
+        .unwrap_or(defaults.link_fallback);
+    let link_fallback = parse_ron_vec4(contents, "link_fallback").unwrap_or(legacy_processed_link);
+    let link_prop = parse_ron_vec4(contents, "link_prop").unwrap_or(defaults.link_prop);
+    let link_place = parse_ron_vec4(contents, "link_place").unwrap_or(defaults.link_place);
+    let link_character =
+        parse_ron_vec4(contents, "link_character").unwrap_or(defaults.link_character);
+    let link_faction = parse_ron_vec4(contents, "link_faction").unwrap_or(defaults.link_faction);
+    let link_concept = parse_ron_vec4(contents, "link_concept").unwrap_or(defaults.link_concept);
 
     ThemeSettings {
         selection_background: Vec4::new(
@@ -436,12 +473,12 @@ fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSet
             selection_background.z.clamp(0.0, 1.0),
             selection_background.w.clamp(0.0, 1.0),
         ),
-        processed_link: Vec4::new(
-            processed_link.x.clamp(0.0, 1.0),
-            processed_link.y.clamp(0.0, 1.0),
-            processed_link.z.clamp(0.0, 1.0),
-            processed_link.w.clamp(0.0, 1.0),
-        ),
+        link_fallback: clamp_vec4_rgba(link_fallback),
+        link_prop: clamp_vec4_rgba(link_prop),
+        link_place: clamp_vec4_rgba(link_place),
+        link_character: clamp_vec4_rgba(link_character),
+        link_faction: clamp_vec4_rgba(link_faction),
+        link_concept: clamp_vec4_rgba(link_concept),
     }
 }
 
@@ -570,12 +607,12 @@ fn theme_settings_from_state(state: &EditorState) -> ThemeSettings {
             state.selection_bg_rgba.z.clamp(0.0, 1.0),
             state.selection_bg_rgba.w.clamp(0.0, 1.0),
         ),
-        processed_link: Vec4::new(
-            state.processed_link_rgba.x.clamp(0.0, 1.0),
-            state.processed_link_rgba.y.clamp(0.0, 1.0),
-            state.processed_link_rgba.z.clamp(0.0, 1.0),
-            state.processed_link_rgba.w.clamp(0.0, 1.0),
-        ),
+        link_fallback: clamp_vec4_rgba(state.link_fallback_rgba),
+        link_prop: clamp_vec4_rgba(state.link_prop_rgba),
+        link_place: clamp_vec4_rgba(state.link_place_rgba),
+        link_character: clamp_vec4_rgba(state.link_character_rgba),
+        link_faction: clamp_vec4_rgba(state.link_faction_rgba),
+        link_concept: clamp_vec4_rgba(state.link_concept_rgba),
     }
 }
 
@@ -592,40 +629,130 @@ fn sync_theme_colors(state: &mut EditorState) {
         state.selection_bg_rgba.z,
         state.selection_bg_rgba.w,
     );
-    state.processed_link_rgba = Vec4::new(
-        state.processed_link_rgba.x.clamp(0.0, 1.0),
-        state.processed_link_rgba.y.clamp(0.0, 1.0),
-        state.processed_link_rgba.z.clamp(0.0, 1.0),
-        state.processed_link_rgba.w.clamp(0.0, 1.0),
-    );
-    state.processed_link_color = Color::srgba(
-        state.processed_link_rgba.x,
-        state.processed_link_rgba.y,
-        state.processed_link_rgba.z,
-        state.processed_link_rgba.w,
-    );
+    state.link_fallback_rgba = clamp_vec4_rgba(state.link_fallback_rgba);
+    state.link_fallback_color = color_from_rgba(state.link_fallback_rgba);
+    state.link_prop_rgba = clamp_vec4_rgba(state.link_prop_rgba);
+    state.link_prop_color = color_from_rgba(state.link_prop_rgba);
+    state.link_place_rgba = clamp_vec4_rgba(state.link_place_rgba);
+    state.link_place_color = color_from_rgba(state.link_place_rgba);
+    state.link_character_rgba = clamp_vec4_rgba(state.link_character_rgba);
+    state.link_character_color = color_from_rgba(state.link_character_rgba);
+    state.link_faction_rgba = clamp_vec4_rgba(state.link_faction_rgba);
+    state.link_faction_color = color_from_rgba(state.link_faction_rgba);
+    state.link_concept_rgba = clamp_vec4_rgba(state.link_concept_rgba);
+    state.link_concept_color = color_from_rgba(state.link_concept_rgba);
 }
 
 fn active_theme_rgba(state: &EditorState) -> Vec4 {
-    match state.theme_color_target {
+    theme_rgba_for_target(state, state.theme_color_target)
+}
+
+fn theme_rgba_for_target(state: &EditorState, target: ThemeColorTarget) -> Vec4 {
+    match target {
         ThemeColorTarget::SelectionBackground => state.selection_bg_rgba,
-        ThemeColorTarget::ProcessedLink => state.processed_link_rgba,
+        ThemeColorTarget::LinkFallback => state.link_fallback_rgba,
+        ThemeColorTarget::LinkProp => state.link_prop_rgba,
+        ThemeColorTarget::LinkPlace => state.link_place_rgba,
+        ThemeColorTarget::LinkCharacter => state.link_character_rgba,
+        ThemeColorTarget::LinkFaction => state.link_faction_rgba,
+        ThemeColorTarget::LinkConcept => state.link_concept_rgba,
     }
 }
 
-fn active_theme_color(state: &EditorState) -> Color {
-    match state.theme_color_target {
+fn theme_color_for_target(state: &EditorState, target: ThemeColorTarget) -> Color {
+    match target {
         ThemeColorTarget::SelectionBackground => state.selection_bg_color,
-        ThemeColorTarget::ProcessedLink => state.processed_link_color,
+        ThemeColorTarget::LinkFallback => state.link_fallback_color,
+        ThemeColorTarget::LinkProp => state.link_prop_color,
+        ThemeColorTarget::LinkPlace => state.link_place_color,
+        ThemeColorTarget::LinkCharacter => state.link_character_color,
+        ThemeColorTarget::LinkFaction => state.link_faction_color,
+        ThemeColorTarget::LinkConcept => state.link_concept_color,
     }
 }
 
 fn set_active_theme_rgba(state: &mut EditorState, rgba: Vec4) {
     match state.theme_color_target {
         ThemeColorTarget::SelectionBackground => state.selection_bg_rgba = rgba,
-        ThemeColorTarget::ProcessedLink => state.processed_link_rgba = rgba,
+        ThemeColorTarget::LinkFallback => state.link_fallback_rgba = rgba,
+        ThemeColorTarget::LinkProp => state.link_prop_rgba = rgba,
+        ThemeColorTarget::LinkPlace => state.link_place_rgba = rgba,
+        ThemeColorTarget::LinkCharacter => state.link_character_rgba = rgba,
+        ThemeColorTarget::LinkFaction => state.link_faction_rgba = rgba,
+        ThemeColorTarget::LinkConcept => state.link_concept_rgba = rgba,
     }
     sync_theme_colors(state);
+}
+
+impl EditorState {
+    fn processed_link_color_for_target(&self, target: Option<&str>) -> Color {
+        let Some(target) = target else {
+            return self.link_fallback_color;
+        };
+        let Some(entity_type) = self.script_link_target_types.get(target) else {
+            return self.link_fallback_color;
+        };
+
+        self.link_color_for_type(entity_type)
+    }
+
+    fn link_color_for_type(&self, entity_type: &str) -> Color {
+        match link_color_target_for_entity_type(entity_type) {
+            ThemeColorTarget::LinkFallback => self.link_fallback_color,
+            ThemeColorTarget::LinkProp => self.link_prop_color,
+            ThemeColorTarget::LinkPlace => self.link_place_color,
+            ThemeColorTarget::LinkCharacter => self.link_character_color,
+            ThemeColorTarget::LinkFaction => self.link_faction_color,
+            ThemeColorTarget::LinkConcept => self.link_concept_color,
+            ThemeColorTarget::SelectionBackground => self.link_fallback_color,
+        }
+    }
+}
+
+fn link_color_target_for_entity_type(entity_type: &str) -> ThemeColorTarget {
+    match normalize_entity_type_key(entity_type).as_str() {
+        "" | "unknown" => ThemeColorTarget::LinkFallback,
+        "prop" | "object" | "item" | "vehicle" | "costume" | "wardrobe" => {
+            ThemeColorTarget::LinkProp
+        }
+        "location" | "place" | "setting" | "room" => ThemeColorTarget::LinkPlace,
+        "character" | "person" | "cast" | "npc" => ThemeColorTarget::LinkCharacter,
+        "group" | "faction" | "organization" | "org" => ThemeColorTarget::LinkFaction,
+        "note" | "concept" | "theme" | "event" | "beat" | "moment" => {
+            ThemeColorTarget::LinkConcept
+        }
+        _ => ThemeColorTarget::LinkFallback,
+    }
+}
+
+fn normalize_entity_type_key(entity_type: &str) -> String {
+    entity_type
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+fn clamp_vec4_rgba(value: Vec4) -> Vec4 {
+    Vec4::new(
+        value.x.clamp(0.0, 1.0),
+        value.y.clamp(0.0, 1.0),
+        value.z.clamp(0.0, 1.0),
+        value.w.clamp(0.0, 1.0),
+    )
+}
+
+fn color_from_rgba(value: Vec4) -> Color {
+    Color::srgba(value.x, value.y, value.z, value.w)
 }
 
 fn rgb_to_hsv(rgb: Vec3) -> (f32, f32, f32) {

@@ -334,6 +334,12 @@ fn split_front_matter(markdown: &str, path: &Path) -> Result<(Vec<String>, Strin
 }
 
 fn parse_front_matter(path: &Path, lines: &[String]) -> Result<EntityFrontMatter, LinkError> {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum FrontMatterBlock {
+        Aliases,
+        Ignore,
+    }
+
     let mut id = None::<String>;
     let mut target = None::<String>;
     let mut entity_type = None::<String>;
@@ -341,23 +347,33 @@ fn parse_front_matter(path: &Path, lines: &[String]) -> Result<EntityFrontMatter
     let mut aliases = Vec::<String>::new();
     let mut aliases_seen = false;
     let mut status = None::<String>;
-    let mut reading_alias_block = false;
+    let mut active_block = None::<(usize, FrontMatterBlock)>;
 
     for (index, line) in lines.iter().enumerate() {
         let line_number = index + 2;
+        let indent = line.chars().take_while(|ch| ch.is_ascii_whitespace()).count();
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
 
-        if reading_alias_block && trimmed.starts_with("- ") {
-            let alias = parse_yaml_scalar(&trimmed[2..]);
-            if !alias.is_empty() {
-                aliases.push(alias);
+        if let Some((block_indent, block_kind)) = active_block {
+            if indent > block_indent {
+                match block_kind {
+                    FrontMatterBlock::Aliases => {
+                        if let Some(alias_value) = trimmed.strip_prefix("- ") {
+                            let alias = parse_yaml_scalar(alias_value);
+                            if !alias.is_empty() {
+                                aliases.push(alias);
+                            }
+                        }
+                        continue;
+                    }
+                    FrontMatterBlock::Ignore => continue,
+                }
             }
-            continue;
+            active_block = None;
         }
-        reading_alias_block = false;
 
         let Some((key, value)) = trimmed.split_once(':') else {
             return Err(LinkError::MalformedFrontMatterLine {
@@ -377,13 +393,19 @@ fn parse_front_matter(path: &Path, lines: &[String]) -> Result<EntityFrontMatter
             "aliases" => {
                 aliases_seen = true;
                 if value.is_empty() {
-                    reading_alias_block = true;
+                    active_block = Some((indent, FrontMatterBlock::Aliases));
                 } else {
                     aliases.extend(parse_alias_value(path, line_number, value)?);
                 }
             }
             "status" => status = Some(parse_yaml_scalar(value)),
-            _ => {}
+            _ => {
+                if value.is_empty()
+                    || matches!(value.chars().next(), Some('|') | Some('>'))
+                {
+                    active_block = Some((indent, FrontMatterBlock::Ignore));
+                }
+            }
         }
     }
 

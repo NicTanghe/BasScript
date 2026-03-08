@@ -175,6 +175,10 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 Update,
+                handle_theme_color_picker_buttons.run_if(in_state(UiScreenState::Theme)),
+            )
+            .add_systems(
+                Update,
                 handle_theme_color_picker_input.run_if(in_state(UiScreenState::Theme)),
             )
             .add_systems(
@@ -343,7 +347,6 @@ enum SettingsAction {
     MarginBottomIncrease,
     OpenTheme,
     OpenLinkColors,
-    ToggleThemeColorPicker,
     OpenKeybinds,
     BackToSettings,
     BackToEditor,
@@ -714,6 +717,11 @@ enum ThemeColorChannel {
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct ThemeColorRow {
+    target: ThemeColorTarget,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 struct ThemeColorLabel {
     channel: ThemeColorChannel,
 }
@@ -725,16 +733,27 @@ struct ThemeScreenTitleLabel;
 struct ThemeScreenDescriptionLabel;
 
 #[derive(Component)]
-struct ThemeColorNameLabel;
+struct ThemeColorNameLabel {
+    target: ThemeColorTarget,
+}
 
 #[derive(Component)]
-struct ThemeColorValueLabel;
+struct ThemeColorValueLabel {
+    target: ThemeColorTarget,
+}
 
 #[derive(Component)]
 struct ThemeColorPickerPanel;
 
-#[derive(Component)]
-struct ThemeColorPreviewSwatch;
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct ThemeColorPreviewSwatch {
+    target: ThemeColorTarget,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct ThemeColorPickerButton {
+    target: ThemeColorTarget,
+}
 
 #[derive(Component)]
 struct ThemeHueSatWheel;
@@ -756,36 +775,57 @@ enum ThemeSliderChannel {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ThemeColorTarget {
     SelectionBackground,
-    ProcessedLink,
+    LinkFallback,
+    LinkProp,
+    LinkPlace,
+    LinkCharacter,
+    LinkFaction,
+    LinkConcept,
 }
 
 impl ThemeColorTarget {
     fn screen_title(self) -> &'static str {
-        match self {
-            Self::SelectionBackground => "Theme",
-            Self::ProcessedLink => "Link Colors",
+        if self.is_link_color() {
+            "Link Colors"
+        } else {
+            "Theme"
         }
     }
 
     fn screen_description(self) -> &'static str {
-        match self {
-            Self::SelectionBackground => "Adjust editor selection colors.",
-            Self::ProcessedLink => "Adjust the color used for internal links in processed view.",
+        if self.is_link_color() {
+            "Adjust processed-view link colors by YAML `type`. Unmapped types use Fallback."
+        } else {
+            "Adjust editor selection colors."
         }
     }
 
     fn color_label(self) -> &'static str {
         match self {
             Self::SelectionBackground => "Selection background",
-            Self::ProcessedLink => "Processed link text",
+            Self::LinkFallback => "Fallback",
+            Self::LinkProp => "Prop",
+            Self::LinkPlace => "Place",
+            Self::LinkCharacter => "Character",
+            Self::LinkFaction => "Faction",
+            Self::LinkConcept => "Concept",
         }
     }
 
     fn status_label(self) -> &'static str {
         match self {
             Self::SelectionBackground => "selection background",
-            Self::ProcessedLink => "processed link color",
+            Self::LinkFallback => "fallback link color",
+            Self::LinkProp => "prop link color",
+            Self::LinkPlace => "place link color",
+            Self::LinkCharacter => "character link color",
+            Self::LinkFaction => "faction link color",
+            Self::LinkConcept => "concept link color",
         }
+    }
+
+    fn is_link_color(self) -> bool {
+        !matches!(self, Self::SelectionBackground)
     }
 }
 
@@ -831,8 +871,18 @@ struct EditorState {
     top_menu_collapsed: bool,
     selection_bg_rgba: Vec4,
     selection_bg_color: Color,
-    processed_link_rgba: Vec4,
-    processed_link_color: Color,
+    link_fallback_rgba: Vec4,
+    link_fallback_color: Color,
+    link_prop_rgba: Vec4,
+    link_prop_color: Color,
+    link_place_rgba: Vec4,
+    link_place_color: Color,
+    link_character_rgba: Vec4,
+    link_character_color: Color,
+    link_faction_rgba: Vec4,
+    link_faction_color: Color,
+    link_concept_rgba: Vec4,
+    link_concept_color: Color,
     theme_color_target: ThemeColorTarget,
     theme_color_picker_open: bool,
     show_system_titlebar: bool,
@@ -852,6 +902,8 @@ struct EditorState {
     workspace_files: Vec<WorkspaceFileEntry>,
     workspace_selected: Option<usize>,
     workspace_expanded_folders: BTreeSet<String>,
+    script_link_target_types: BTreeMap<String, String>,
+    missing_script_link_targets: BTreeSet<String>,
     workspace_ui_dirty: bool,
     undo_history: Vec<EditorHistorySnapshot>,
     redo_history: Vec<EditorHistorySnapshot>,
@@ -965,14 +1017,24 @@ impl Default for PersistentUiState {
 #[derive(Clone, Debug)]
 struct ThemeSettings {
     selection_background: Vec4,
-    processed_link: Vec4,
+    link_fallback: Vec4,
+    link_prop: Vec4,
+    link_place: Vec4,
+    link_character: Vec4,
+    link_faction: Vec4,
+    link_concept: Vec4,
 }
 
 impl Default for ThemeSettings {
     fn default() -> Self {
         Self {
             selection_background: Vec4::new(0.16, 0.43, 0.88, 0.36),
-            processed_link: Vec4::new(0.10, 0.38, 0.72, 1.0),
+            link_fallback: Vec4::new(0.10, 0.38, 0.72, 1.0),
+            link_prop: Vec4::new(0.68, 0.40, 0.10, 1.0),
+            link_place: Vec4::new(0.12, 0.50, 0.34, 1.0),
+            link_character: Vec4::new(0.70, 0.20, 0.24, 1.0),
+            link_faction: Vec4::new(0.34, 0.32, 0.68, 1.0),
+            link_concept: Vec4::new(0.56, 0.28, 0.14, 1.0),
         }
     }
 }
@@ -997,17 +1059,87 @@ impl ThemeSettings {
         )
     }
 
-    fn processed_link_clamped(&self) -> Vec4 {
+    fn link_fallback_clamped(&self) -> Vec4 {
         Vec4::new(
-            self.processed_link.x.clamp(0.0, 1.0),
-            self.processed_link.y.clamp(0.0, 1.0),
-            self.processed_link.z.clamp(0.0, 1.0),
-            self.processed_link.w.clamp(0.0, 1.0),
+            self.link_fallback.x.clamp(0.0, 1.0),
+            self.link_fallback.y.clamp(0.0, 1.0),
+            self.link_fallback.z.clamp(0.0, 1.0),
+            self.link_fallback.w.clamp(0.0, 1.0),
         )
     }
 
-    fn processed_link_color(&self) -> Color {
-        let rgba = self.processed_link_clamped();
+    fn link_fallback_color(&self) -> Color {
+        let rgba = self.link_fallback_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    fn link_prop_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.link_prop.x.clamp(0.0, 1.0),
+            self.link_prop.y.clamp(0.0, 1.0),
+            self.link_prop.z.clamp(0.0, 1.0),
+            self.link_prop.w.clamp(0.0, 1.0),
+        )
+    }
+
+    fn link_prop_color(&self) -> Color {
+        let rgba = self.link_prop_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    fn link_place_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.link_place.x.clamp(0.0, 1.0),
+            self.link_place.y.clamp(0.0, 1.0),
+            self.link_place.z.clamp(0.0, 1.0),
+            self.link_place.w.clamp(0.0, 1.0),
+        )
+    }
+
+    fn link_place_color(&self) -> Color {
+        let rgba = self.link_place_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    fn link_character_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.link_character.x.clamp(0.0, 1.0),
+            self.link_character.y.clamp(0.0, 1.0),
+            self.link_character.z.clamp(0.0, 1.0),
+            self.link_character.w.clamp(0.0, 1.0),
+        )
+    }
+
+    fn link_character_color(&self) -> Color {
+        let rgba = self.link_character_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    fn link_faction_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.link_faction.x.clamp(0.0, 1.0),
+            self.link_faction.y.clamp(0.0, 1.0),
+            self.link_faction.z.clamp(0.0, 1.0),
+            self.link_faction.w.clamp(0.0, 1.0),
+        )
+    }
+
+    fn link_faction_color(&self) -> Color {
+        let rgba = self.link_faction_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    fn link_concept_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.link_concept.x.clamp(0.0, 1.0),
+            self.link_concept.y.clamp(0.0, 1.0),
+            self.link_concept.z.clamp(0.0, 1.0),
+            self.link_concept.w.clamp(0.0, 1.0),
+        )
+    }
+
+    fn link_concept_color(&self) -> Color {
+        let rgba = self.link_concept_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 }
@@ -1146,8 +1278,18 @@ impl FromWorld for EditorState {
             top_menu_collapsed: ui_state.top_menu_collapsed,
             selection_bg_rgba: theme_settings.selection_background_clamped(),
             selection_bg_color: theme_settings.selection_background_color(),
-            processed_link_rgba: theme_settings.processed_link_clamped(),
-            processed_link_color: theme_settings.processed_link_color(),
+            link_fallback_rgba: theme_settings.link_fallback_clamped(),
+            link_fallback_color: theme_settings.link_fallback_color(),
+            link_prop_rgba: theme_settings.link_prop_clamped(),
+            link_prop_color: theme_settings.link_prop_color(),
+            link_place_rgba: theme_settings.link_place_clamped(),
+            link_place_color: theme_settings.link_place_color(),
+            link_character_rgba: theme_settings.link_character_clamped(),
+            link_character_color: theme_settings.link_character_color(),
+            link_faction_rgba: theme_settings.link_faction_clamped(),
+            link_faction_color: theme_settings.link_faction_color(),
+            link_concept_rgba: theme_settings.link_concept_clamped(),
+            link_concept_color: theme_settings.link_concept_color(),
             theme_color_target: ThemeColorTarget::SelectionBackground,
             theme_color_picker_open: false,
             show_system_titlebar: settings.show_system_titlebar,
@@ -1167,6 +1309,8 @@ impl FromWorld for EditorState {
             workspace_files: Vec::new(),
             workspace_selected: None,
             workspace_expanded_folders: BTreeSet::new(),
+            script_link_target_types: BTreeMap::new(),
+            missing_script_link_targets: BTreeSet::new(),
             workspace_ui_dirty: true,
             undo_history: Vec::new(),
             redo_history: Vec::new(),
@@ -1216,11 +1360,13 @@ impl EditorState {
 
     fn reparse(&mut self) {
         self.parsed = parse_document_with_format(&self.document, self.document_format);
+        self.missing_script_link_targets.clear();
         self.mark_processed_cache_dirty_from(0);
     }
 
     fn reparse_with_dirty_hint(&mut self, dirty_line: usize) {
         self.parsed = parse_document_with_format(&self.document, self.document_format);
+        self.missing_script_link_targets.clear();
         self.mark_processed_cache_dirty_from(dirty_line);
     }
 
@@ -1390,6 +1536,7 @@ impl EditorState {
                 let document_format = detect_document_format(&path, &document);
                 self.document = document;
                 self.document_format = document_format;
+                self.clear_script_link_target_cache();
                 self.reparse();
                 self.cursor = Cursor::default();
                 self.selection_anchor = None;

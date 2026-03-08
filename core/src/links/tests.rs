@@ -103,6 +103,37 @@ fn loads_entity_document_from_yaml_front_matter() {
 }
 
 #[test]
+fn ignores_unknown_yaml_blocks_after_known_front_matter_fields() {
+    let markdown = r#"---
+id: place_cinder_ward_001
+target: cinder-ward
+type: place
+name: Cinder Ward
+aliases:
+  - the Ward
+status: energized
+tags:
+  - undercity
+  - industrial
+controlled_by: gilded-conclave
+home_to:
+  - cinder-union
+description: >
+  A flood-prone worker district.
+  It keeps the city functioning.
+---
+Notes.
+"#;
+    let document = EntityDocument::from_markdown("cinder-ward.md", markdown).unwrap();
+
+    assert_eq!(document.metadata.target, "cinder-ward");
+    assert_eq!(document.metadata.entity_type, "place");
+    assert_eq!(document.metadata.name, "Cinder Ward");
+    assert_eq!(document.metadata.aliases, vec!["the Ward".to_owned()]);
+    assert_eq!(document.metadata.status.as_deref(), Some("energized"));
+}
+
+#[test]
 fn rejects_target_filename_mismatch() {
     let error = EntityDocument::from_markdown("other.md", kitchen_door_markdown()).unwrap_err();
     assert!(matches!(error, LinkError::FilenameTargetMismatch { .. }));

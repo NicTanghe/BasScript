@@ -440,6 +440,7 @@ fn visible_plain_lines(state: &EditorState, visible_lines: usize) -> Vec<String>
 struct ProcessedVisualFragment {
     text: String,
     is_link: bool,
+    link_target: Option<String>,
 }
 
 #[derive(Clone, Debug)]
