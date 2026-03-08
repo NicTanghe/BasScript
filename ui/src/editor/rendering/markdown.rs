@@ -15,11 +15,20 @@ fn markdown_visual_text(parsed_line: &ParsedLine) -> Option<(usize, String, Opti
     }
 }
 
-fn markdown_line_style(parsed_line: &ParsedLine) -> Option<LineRenderStyle> {
-    match parsed_line.kind {
-        LineKind::MarkdownHeading => Some(markdown_heading_style(
-            parsed_line.markdown_heading_level.unwrap_or(1),
-        )),
+#[derive(Clone, Debug)]
+struct MarkdownFrontMatterDisplay {
+    closing_line_index: usize,
+    rendered_title: String,
+}
+
+fn markdown_line_style(
+    kind: &LineKind,
+    markdown_heading_level: Option<u8>,
+) -> Option<LineRenderStyle> {
+    match kind {
+        LineKind::MarkdownHeading => {
+            Some(markdown_heading_style(markdown_heading_level.unwrap_or(1)))
+        }
         LineKind::MarkdownListItem => Some(LineRenderStyle::new(
             FontVariant::Regular,
             COLOR_MARKDOWN_LIST,
@@ -52,6 +61,51 @@ fn markdown_line_style(parsed_line: &ParsedLine) -> Option<LineRenderStyle> {
         )),
         LineKind::MarkdownParagraph => Some(default_line_render_style()),
         _ => None,
+    }
+}
+
+fn markdown_front_matter_display(document: &Document) -> Option<MarkdownFrontMatterDisplay> {
+    let lines = document.lines();
+    if lines.len() < 3 || lines.first()?.trim() != "---" {
+        return None;
+    }
+
+    let closing_line_index = lines
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find_map(|(index, line)| (line.trim() == "---").then_some(index))?;
+    let rendered_title = lines[1..closing_line_index]
+        .iter()
+        .find_map(|line| markdown_front_matter_target_value(line))
+        .map(|target| target.replace('-', " "))?;
+
+    Some(MarkdownFrontMatterDisplay {
+        closing_line_index,
+        rendered_title,
+    })
+}
+
+fn markdown_front_matter_target_value(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+
+    let (key, value) = trimmed.split_once(':')?;
+    (key.trim() == "target").then(|| markdown_yaml_scalar(value))
+}
+
+fn markdown_yaml_scalar(value: &str) -> String {
+    let trimmed = value.trim();
+    match trimmed.chars().next() {
+        Some('"') if trimmed.ends_with('"') && trimmed.len() >= 2 => {
+            trimmed[1..trimmed.len().saturating_sub(1)].to_owned()
+        }
+        Some('\'') if trimmed.ends_with('\'') && trimmed.len() >= 2 => {
+            trimmed[1..trimmed.len().saturating_sub(1)].to_owned()
+        }
+        _ => trimmed.to_owned(),
     }
 }
 
@@ -120,14 +174,20 @@ fn markdown_list_item_visual(raw: &str) -> (usize, String, Option<bool>) {
         }
 
         let text = trimmed[marker_end..].iter().collect::<String>();
-        return (leading.saturating_add(marker_end), format!("• {text}"), None);
+        return (
+            leading.saturating_add(marker_end),
+            format!("• {text}"),
+            None,
+        );
     }
 
     if let Some((prefix, content_start)) = ordered_list_content_start(&trimmed) {
         if let Some((consumed, checked, checklist_content_start)) =
             markdown_checklist_marker(&trimmed, content_start)
         {
-            let text = trimmed[checklist_content_start..].iter().collect::<String>();
+            let text = trimmed[checklist_content_start..]
+                .iter()
+                .collect::<String>();
             return (
                 leading.saturating_add(consumed),
                 format!("{prefix} {text}"),
@@ -208,4 +268,22 @@ fn ordered_list_content_start(chars: &[char]) -> Option<(String, usize)> {
 
     let prefix = chars[..=digits].iter().collect::<String>();
     Some((prefix, content_start))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_render_title_from_markdown_front_matter_target() {
+        let document = Document::from_text(
+            "---\ntarget: door-kitchen-main\nname: Kitchen Main Door\n---\nBody\n",
+        );
+
+        let front_matter =
+            markdown_front_matter_display(&document).expect("front matter should be parsed");
+
+        assert_eq!(front_matter.closing_line_index, 3);
+        assert_eq!(front_matter.rendered_title, "door kitchen main");
+    }
 }

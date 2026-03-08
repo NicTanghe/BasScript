@@ -31,7 +31,12 @@ fn render_editor(
         ),
     >,
     mut processed_checklist_icon_query: Query<
-        (&ProcessedChecklistIcon, &mut ImageNode, &mut Node, &mut Visibility),
+        (
+            &ProcessedChecklistIcon,
+            &mut ImageNode,
+            &mut Node,
+            &mut Visibility,
+        ),
         (
             Without<PanelText>,
             Without<PanelPaper>,
@@ -54,7 +59,12 @@ fn render_editor(
     text_layout_query: Query<(&PanelText, &TextLayoutInfo)>,
     processed_text_layout_query: Query<
         (&ProcessedPaperText, &TextLayoutInfo, &ComputedNode),
-        (Without<PanelText>, Without<PanelPaper>, Without<PanelCaret>, Without<PanelCanvas>),
+        (
+            Without<PanelText>,
+            Without<PanelPaper>,
+            Without<PanelCaret>,
+            Without<PanelCanvas>,
+        ),
     >,
     mut caret_query: Query<
         (&PanelCaret, &mut Node, &mut Visibility, &mut UiTransform),
@@ -224,7 +234,8 @@ fn render_editor(
     let checklist_icon_size = (processed_line_height * 0.72).clamp(8.0, 16.0);
     let checklist_icon_gap = (processed_line_height * 0.20).clamp(2.0, 4.0);
 
-    for (icon, mut image_node, mut node, mut visibility) in processed_checklist_icon_query.iter_mut()
+    for (icon, mut image_node, mut node, mut visibility) in
+        processed_checklist_icon_query.iter_mut()
     {
         if icon.slot >= PROCESSED_PAPER_CAPACITY {
             *visibility = Visibility::Hidden;
@@ -232,7 +243,9 @@ fn render_editor(
         }
 
         let page_index = first_visible_page.saturating_add(icon.slot);
-        let line_offset = icon.line_offset.min(processed_page_step_lines.saturating_sub(1));
+        let line_offset = icon
+            .line_offset
+            .min(processed_page_step_lines.saturating_sub(1));
         if line_offset >= processed_lines_per_page {
             *visibility = Visibility::Hidden;
             continue;
@@ -260,11 +273,9 @@ fn render_editor(
             checklist_icons.unchecked.clone()
         };
         node.left = px((text_left_in_paper - checklist_icon_size - checklist_icon_gap).max(0.0));
-        node.top = px(
-            text_top_in_paper
-                + line_offset as f32 * processed_line_height
-                + ((processed_line_height - checklist_icon_size) * 0.5).max(0.0),
-        );
+        node.top = px(text_top_in_paper
+            + line_offset as f32 * processed_line_height
+            + ((processed_line_height - checklist_icon_size) * 0.5).max(0.0));
         node.width = px(checklist_icon_size);
         node.height = px(checklist_icon_size);
         *visibility = Visibility::Visible;
@@ -452,6 +463,7 @@ struct ProcessedVisualLine {
     raw_start_column: usize,
     raw_end_column: usize,
     markdown_checklist_checked: Option<bool>,
+    render_override: Option<ProcessedLineRenderOverride>,
     is_spacer: bool,
 }
 
@@ -478,6 +490,12 @@ struct ProcessedView {
     start_index: usize,
     anchor_index: usize,
     lines: Vec<ProcessedVisualLine>,
+}
+
+#[derive(Clone, Debug)]
+struct ProcessedLineRenderOverride {
+    kind: LineKind,
+    markdown_heading_level: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -518,8 +536,15 @@ fn default_line_render_style() -> LineRenderStyle {
 }
 
 fn processed_line_style(parsed_line: &ParsedLine) -> LineRenderStyle {
-    fountain_line_style(&parsed_line.kind)
-        .or_else(|| markdown_line_style(parsed_line))
+    processed_line_style_for_kind(&parsed_line.kind, parsed_line.markdown_heading_level)
+}
+
+fn processed_line_style_for_kind(
+    kind: &LineKind,
+    markdown_heading_level: Option<u8>,
+) -> LineRenderStyle {
+    fountain_line_style(kind)
+        .or_else(|| markdown_line_style(kind, markdown_heading_level))
         .unwrap_or_else(default_line_render_style)
 }
 
