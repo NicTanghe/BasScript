@@ -479,3 +479,82 @@ struct ProcessedView {
     anchor_index: usize,
     lines: Vec<ProcessedVisualLine>,
 }
+
+#[derive(Clone, Copy, Debug)]
+struct LineRenderStyle {
+    font_variant: FontVariant,
+    color: Color,
+    font_scale: f32,
+    line_height_scale: f32,
+}
+
+impl LineRenderStyle {
+    const fn new(
+        font_variant: FontVariant,
+        color: Color,
+        font_scale: f32,
+        line_height_scale: f32,
+    ) -> Self {
+        Self {
+            font_variant,
+            color,
+            font_scale,
+            line_height_scale,
+        }
+    }
+}
+
+fn transparent_line_render_style() -> LineRenderStyle {
+    LineRenderStyle::new(
+        FontVariant::Regular,
+        Color::srgba(0.0, 0.0, 0.0, 0.0),
+        1.0,
+        1.0,
+    )
+}
+
+fn default_line_render_style() -> LineRenderStyle {
+    LineRenderStyle::new(FontVariant::Regular, COLOR_ACTION, 1.0, 1.0)
+}
+
+fn processed_line_style(parsed_line: &ParsedLine) -> LineRenderStyle {
+    fountain_line_style(&parsed_line.kind)
+        .or_else(|| markdown_line_style(parsed_line))
+        .unwrap_or_else(default_line_render_style)
+}
+
+fn font_variant_for_processed_fragment(
+    base: FontVariant,
+    fragment: &ProcessedVisualFragment,
+    format: DocumentFormat,
+) -> FontVariant {
+    if !fragment.is_link || format != DocumentFormat::Fountain {
+        return base;
+    }
+
+    match base {
+        FontVariant::Italic | FontVariant::BoldItalic => FontVariant::BoldItalic,
+        FontVariant::Regular | FontVariant::Bold => FontVariant::Bold,
+    }
+}
+
+fn font_for_variant_with_format(
+    fonts: &EditorFonts,
+    variant: FontVariant,
+    format: DocumentFormat,
+) -> Handle<Font> {
+    match format {
+        DocumentFormat::Markdown => match variant {
+            FontVariant::Regular => fonts.markdown_regular.clone(),
+            FontVariant::Bold => fonts.markdown_bold.clone(),
+            FontVariant::Italic => fonts.markdown_italic.clone(),
+            FontVariant::BoldItalic => fonts.markdown_bold_italic.clone(),
+        },
+        DocumentFormat::Fountain => match variant {
+            FontVariant::Regular => fonts.regular.clone(),
+            FontVariant::Bold => fonts.bold.clone(),
+            FontVariant::Italic => fonts.italic.clone(),
+            FontVariant::BoldItalic => fonts.bold_italic.clone(),
+        },
+    }
+}

@@ -30,4 +30,4 @@ include!("dialogs.rs");
 // Text editing/navigation/mouse interaction systems.
 include!("editing.rs");
 // Rendering systems.
-include!("render.rs");
+include!("rendering/mod.rs");

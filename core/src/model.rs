@@ -50,6 +50,7 @@ pub struct ParsedLine {
     pub kind: LineKind,
     pub raw: String,
     pub script_links: Vec<ScriptLink>,
+    pub markdown_heading_level: Option<u8>,
 }
 
 impl ParsedLine {

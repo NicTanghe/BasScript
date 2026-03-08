@@ -2,9 +2,9 @@
 	dialogue_double_space_newline: true,
 	non_dialogue_double_space_newline: false,
 	show_system_titlebar: false,
-	page_margin_left: 98.000,
+	page_margin_left: 82.000,
 	page_margin_right: 66.000,
-	page_margin_top: 104.000,
+	page_margin_top: 88.000,
 	page_margin_bottom: 64.000,
 	workspace_root_path: "//?/C:/Users/Nicol/Documents/scripts/testscript",
 )
