@@ -6,8 +6,8 @@ use std::{
 };
 
 use basscript_core::{
-    Cursor, Document, DocumentFormat, DocumentPath, LineKind, ParsedLine, Position,
-    parse_document_with_format,
+    Cursor, Document, DocumentFormat, DocumentPath, LineKind, LinkDisplayText, ParsedLine,
+    Position, ScriptLink, parse_document_with_format,
 };
 use bevy::{
     input::{
@@ -73,6 +73,7 @@ const THEME_COLOR_WHEEL_SIZE: f32 = THEME_COLOR_WHEEL_SIZE_PX as f32;
 const THEME_COLOR_SLIDER_WIDTH: f32 = 180.0;
 const THEME_COLOR_SLIDER_HEIGHT: f32 = 14.0;
 const THEME_COLOR_SLIDER_KNOB_WIDTH: f32 = 8.0;
+const PROCESSED_LINE_SPAN_PARTS: usize = 24;
 const MIN_TEXT_BOX_WIDTH: f32 = 120.0;
 const MIN_TEXT_BOX_HEIGHT: f32 = 120.0;
 const PANEL_SPLITTER_WIDTH: f32 = 0.0;
@@ -309,6 +310,7 @@ struct ProcessedPaperText {
 struct ProcessedPaperLineSpan {
     slot: usize,
     line_offset: usize,
+    part_index: usize,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
@@ -340,6 +342,7 @@ enum SettingsAction {
     MarginBottomDecrease,
     MarginBottomIncrease,
     OpenTheme,
+    OpenLinkColors,
     ToggleThemeColorPicker,
     OpenKeybinds,
     BackToSettings,
@@ -716,7 +719,16 @@ struct ThemeColorLabel {
 }
 
 #[derive(Component)]
-struct ThemeSelectionBackgroundValueLabel;
+struct ThemeScreenTitleLabel;
+
+#[derive(Component)]
+struct ThemeScreenDescriptionLabel;
+
+#[derive(Component)]
+struct ThemeColorNameLabel;
+
+#[derive(Component)]
+struct ThemeColorValueLabel;
 
 #[derive(Component)]
 struct ThemeColorPickerPanel;
@@ -739,6 +751,42 @@ enum ThemeSliderChannel {
     Blue,
     Value,
     Alpha,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ThemeColorTarget {
+    SelectionBackground,
+    ProcessedLink,
+}
+
+impl ThemeColorTarget {
+    fn screen_title(self) -> &'static str {
+        match self {
+            Self::SelectionBackground => "Theme",
+            Self::ProcessedLink => "Link Colors",
+        }
+    }
+
+    fn screen_description(self) -> &'static str {
+        match self {
+            Self::SelectionBackground => "Adjust editor selection colors.",
+            Self::ProcessedLink => "Adjust the color used for internal links in processed view.",
+        }
+    }
+
+    fn color_label(self) -> &'static str {
+        match self {
+            Self::SelectionBackground => "Selection background",
+            Self::ProcessedLink => "Processed link text",
+        }
+    }
+
+    fn status_label(self) -> &'static str {
+        match self {
+            Self::SelectionBackground => "selection background",
+            Self::ProcessedLink => "processed link color",
+        }
+    }
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
@@ -783,6 +831,9 @@ struct EditorState {
     top_menu_collapsed: bool,
     selection_bg_rgba: Vec4,
     selection_bg_color: Color,
+    processed_link_rgba: Vec4,
+    processed_link_color: Color,
+    theme_color_target: ThemeColorTarget,
     theme_color_picker_open: bool,
     show_system_titlebar: bool,
     caret_blink: Timer,
@@ -914,12 +965,14 @@ impl Default for PersistentUiState {
 #[derive(Clone, Debug)]
 struct ThemeSettings {
     selection_background: Vec4,
+    processed_link: Vec4,
 }
 
 impl Default for ThemeSettings {
     fn default() -> Self {
         Self {
             selection_background: Vec4::new(0.16, 0.43, 0.88, 0.36),
+            processed_link: Vec4::new(0.10, 0.38, 0.72, 1.0),
         }
     }
 }
@@ -942,6 +995,20 @@ impl ThemeSettings {
             rgba.z,
             rgba.w,
         )
+    }
+
+    fn processed_link_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.processed_link.x.clamp(0.0, 1.0),
+            self.processed_link.y.clamp(0.0, 1.0),
+            self.processed_link.z.clamp(0.0, 1.0),
+            self.processed_link.w.clamp(0.0, 1.0),
+        )
+    }
+
+    fn processed_link_color(&self) -> Color {
+        let rgba = self.processed_link_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 }
 
@@ -1079,6 +1146,9 @@ impl FromWorld for EditorState {
             top_menu_collapsed: ui_state.top_menu_collapsed,
             selection_bg_rgba: theme_settings.selection_background_clamped(),
             selection_bg_color: theme_settings.selection_background_color(),
+            processed_link_rgba: theme_settings.processed_link_clamped(),
+            processed_link_color: theme_settings.processed_link_color(),
+            theme_color_target: ThemeColorTarget::SelectionBackground,
             theme_color_picker_open: false,
             show_system_titlebar: settings.show_system_titlebar,
             caret_blink: Timer::from_seconds(0.5, TimerMode::Repeating),

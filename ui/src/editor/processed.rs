@@ -203,6 +203,75 @@ fn processed_segment_ranges(state: &EditorState) -> Vec<(usize, usize, bool)> {
     ranges
 }
 
+struct PreparedProcessedText {
+    text: String,
+    display_to_raw: Vec<usize>,
+    link_flags: Vec<bool>,
+}
+
+fn identity_link_display_text(input: &str) -> LinkDisplayText {
+    let char_count = input.chars().count();
+    LinkDisplayText {
+        text: input.to_owned(),
+        display_to_raw: (0..=char_count).collect(),
+    }
+}
+
+fn build_link_flags(display_to_raw: &[usize], script_links: &[ScriptLink]) -> Vec<bool> {
+    let ranges = script_links
+        .iter()
+        .map(|link| {
+            let visible = basscript_core::script_link_visible_column_range(link);
+            *visible.start()..visible.end().saturating_add(1)
+        })
+        .collect::<Vec<_>>();
+
+    (0..display_to_raw.len().saturating_sub(1))
+        .map(|index| {
+            let raw_start = display_to_raw[index];
+            let raw_end = display_to_raw[index + 1];
+            ranges
+                .iter()
+                .any(|range| raw_start < range.end && raw_end > range.start)
+        })
+        .collect()
+}
+
+fn prepare_processed_line_text(
+    parsed_line: &ParsedLine,
+    raw_override_active: bool,
+) -> (PreparedProcessedText, Option<bool>) {
+    let (raw_column_base, rendered_raw, checklist_state) = if raw_override_active {
+        (0, parsed_line.raw.clone(), None)
+    } else {
+        markdown_visual_text(parsed_line).unwrap_or_else(|| (0, parsed_line.raw.clone(), None))
+    };
+    let rendered = if raw_override_active {
+        identity_link_display_text(&rendered_raw)
+    } else {
+        basscript_core::render_script_link_text(&rendered_raw)
+    };
+    let display_to_raw = rendered
+        .display_to_raw
+        .iter()
+        .map(|column| raw_column_base.saturating_add(*column))
+        .collect::<Vec<_>>();
+    let link_flags = if raw_override_active {
+        vec![false; rendered.text.chars().count()]
+    } else {
+        build_link_flags(&display_to_raw, &parsed_line.script_links)
+    };
+
+    (
+        PreparedProcessedText {
+            text: rendered.text,
+            display_to_raw,
+            link_flags,
+        },
+        checklist_state,
+    )
+}
+
 fn build_processed_segment_lines(
     state: &EditorState,
     start_line: usize,
@@ -236,22 +305,20 @@ fn build_processed_segment_lines(
                 LineKind::SceneHeading | LineKind::Transition | LineKind::Character
             )
         };
-        let (raw_column_base, rendered_raw, checklist_state) = if raw_override_active {
-            (0, parsed_line.raw.clone(), None)
-        } else {
-            markdown_visual_text(parsed_line).unwrap_or_else(|| (0, parsed_line.raw.clone(), None))
-        };
+        let (prepared_text, checklist_state) =
+            prepare_processed_line_text(parsed_line, raw_override_active);
         let mut wrapped = Vec::<ProcessedVisualLine>::new();
 
         if should_split_on_double_space(state, &parsed_line.kind) {
-            for (raw_start_column, raw_segment) in double_space_segments(&rendered_raw) {
+            for (segment_start, segment_end) in double_space_segments(&prepared_text.text) {
                 push_wrapped_visual_lines(
                     &mut wrapped,
                     source_line,
                     indent_width,
                     uppercase,
-                    raw_column_base.saturating_add(raw_start_column),
-                    &raw_segment,
+                    &prepared_text,
+                    segment_start,
+                    segment_end,
                     wrap_columns,
                 );
             }
@@ -261,8 +328,9 @@ fn build_processed_segment_lines(
                 source_line,
                 indent_width,
                 uppercase,
-                raw_column_base,
-                &rendered_raw,
+                &prepared_text,
+                0,
+                prepared_text.text.chars().count(),
                 wrap_columns,
             );
         }
@@ -476,39 +544,78 @@ fn processed_display_lines(
     lines
 }
 
+fn push_processed_fragment(
+    fragments: &mut Vec<ProcessedVisualFragment>,
+    text: String,
+    is_link: bool,
+) {
+    if text.is_empty() {
+        return;
+    }
+
+    if let Some(previous) = fragments.last_mut() {
+        if previous.is_link == is_link {
+            previous.text.push_str(&text);
+            return;
+        }
+    }
+
+    fragments.push(ProcessedVisualFragment { text, is_link });
+}
+
+fn uppercase_processed_text(input: &str, uppercase: bool) -> String {
+    if uppercase {
+        input.to_ascii_uppercase()
+    } else {
+        input.to_owned()
+    }
+}
+
 fn push_wrapped_visual_lines(
     out: &mut Vec<ProcessedVisualLine>,
     source_line: usize,
     indent_width: usize,
     uppercase: bool,
-    raw_start_column: usize,
-    raw_segment: &str,
+    prepared_text: &PreparedProcessedText,
+    segment_start: usize,
+    segment_end: usize,
     wrap_columns: usize,
 ) {
-    let chars = raw_segment.chars().collect::<Vec<_>>();
+    let chars = prepared_text.text.chars().collect::<Vec<_>>();
     let max_content_columns = wrap_columns.saturating_sub(indent_width).max(1);
+    let segment_start = segment_start.min(chars.len());
+    let segment_end = segment_end.min(chars.len());
 
-    if chars.is_empty() {
+    if segment_start >= segment_end {
         // Keep an actual glyph cell on empty lines so their line box stays stable under zoom.
         let blank_columns = indent_width.max(1);
+        let raw_column = prepared_text
+            .display_to_raw
+            .get(segment_start)
+            .copied()
+            .unwrap_or(0);
         out.push(ProcessedVisualLine {
             source_line,
             text: " ".repeat(blank_columns),
-            display_indent_width: indent_width,
-            raw_start_column,
-            raw_end_column: raw_start_column,
+            fragments: vec![ProcessedVisualFragment {
+                text: " ".repeat(blank_columns),
+                is_link: false,
+            }],
+            display_to_raw: vec![raw_column; blank_columns.saturating_add(1)],
+            raw_start_column: raw_column,
+            raw_end_column: raw_column,
             markdown_checklist_checked: None,
             is_spacer: false,
         });
         return;
     }
 
-    let mut start = 0usize;
-    while start < chars.len() {
-        let max_end = (start + max_content_columns).min(chars.len());
+    let mut start = segment_start;
+    while start < segment_end {
+        let max_end = (start + max_content_columns).min(segment_end);
         let mut split = max_end;
 
-        if max_end < chars.len() {
+        if max_end < segment_end {
             if let Some(space_index) = (start + 1..max_end).rev().find(|&idx| chars[idx] == ' ') {
                 split = space_index;
             }
@@ -518,18 +625,50 @@ fn push_wrapped_visual_lines(
             split = max_end;
         }
 
-        let chunk = chars[start..split].iter().collect::<String>();
-        let display_chunk = if uppercase {
-            chunk.to_uppercase()
-        } else {
-            chunk
-        };
+        let mut fragments = Vec::<ProcessedVisualFragment>::new();
+        if indent_width > 0 {
+            push_processed_fragment(&mut fragments, " ".repeat(indent_width), false);
+        }
+
+        let mut index = start;
+        while index < split {
+            let is_link = prepared_text.link_flags.get(index).copied().unwrap_or(false);
+            let fragment_start = index;
+            index += 1;
+            while index < split
+                && prepared_text.link_flags.get(index).copied().unwrap_or(false) == is_link
+            {
+                index += 1;
+            }
+
+            let fragment_text = chars[fragment_start..index].iter().collect::<String>();
+            push_processed_fragment(
+                &mut fragments,
+                uppercase_processed_text(&fragment_text, uppercase),
+                is_link,
+            );
+        }
+
+        let line_text = fragments
+            .iter()
+            .map(|fragment| fragment.text.as_str())
+            .collect::<String>();
+        let raw_start_column = prepared_text.display_to_raw.get(start).copied().unwrap_or(0);
+        let raw_end_column = prepared_text.display_to_raw.get(split).copied().unwrap_or(raw_start_column);
+        let mut display_to_raw = vec![raw_start_column; indent_width.saturating_add(1)];
+        display_to_raw.extend(
+            prepared_text.display_to_raw[start.saturating_add(1)..=split]
+                .iter()
+                .copied(),
+        );
+
         out.push(ProcessedVisualLine {
             source_line,
-            text: format!("{}{}", " ".repeat(indent_width), display_chunk),
-            display_indent_width: indent_width,
-            raw_start_column: raw_start_column.saturating_add(start),
-            raw_end_column: raw_start_column.saturating_add(split),
+            text: line_text,
+            fragments,
+            display_to_raw,
+            raw_start_column,
+            raw_end_column,
             markdown_checklist_checked: None,
             is_spacer: false,
         });
@@ -547,7 +686,11 @@ fn push_page_spacers(out: &mut Vec<ProcessedVisualLine>, source_line: usize, cou
         out.push(ProcessedVisualLine {
             source_line,
             text: " ".to_owned(),
-            display_indent_width: 0,
+            fragments: vec![ProcessedVisualFragment {
+                text: " ".to_owned(),
+                is_link: false,
+            }],
+            display_to_raw: vec![0, 0],
             raw_start_column: 0,
             raw_end_column: 0,
             markdown_checklist_checked: None,
@@ -752,20 +895,19 @@ fn first_visual_index_for_source_line(
         })
 }
 
-fn double_space_segments(input: &str) -> Vec<(usize, String)> {
+fn double_space_segments(input: &str) -> Vec<(usize, usize)> {
     let chars = input.chars().collect::<Vec<_>>();
     if chars.is_empty() {
-        return vec![(0, String::new())];
+        return vec![(0, 0)];
     }
 
-    let mut segments = Vec::<(usize, String)>::new();
+    let mut segments = Vec::<(usize, usize)>::new();
     let mut start = 0usize;
     let mut index = 0usize;
 
     while index + 1 < chars.len() {
         if chars[index] == ' ' && chars[index + 1] == ' ' {
-            let segment = chars[start..index].iter().collect::<String>();
-            segments.push((start, segment));
+            segments.push((start, index));
             index += 2;
             start = index;
             continue;
@@ -774,8 +916,7 @@ fn double_space_segments(input: &str) -> Vec<(usize, String)> {
         index += 1;
     }
 
-    let tail = chars[start..].iter().collect::<String>();
-    segments.push((start, tail));
+    segments.push((start, chars.len()));
 
     segments
 }
@@ -784,13 +925,31 @@ fn processed_raw_column_from_display(
     visual_line: &ProcessedVisualLine,
     display_column: usize,
 ) -> usize {
-    let segment_len = visual_line
-        .raw_end_column
-        .saturating_sub(visual_line.raw_start_column);
-    let local_column = display_column
-        .saturating_sub(visual_line.display_indent_width)
-        .min(segment_len);
-    visual_line.raw_start_column.saturating_add(local_column)
+    let last_index = visual_line.display_to_raw.len().saturating_sub(1);
+    let display_column = display_column.min(last_index);
+    visual_line
+        .display_to_raw
+        .get(display_column)
+        .copied()
+        .unwrap_or(visual_line.raw_end_column)
+}
+
+fn processed_display_column_from_raw(
+    visual_line: &ProcessedVisualLine,
+    raw_column: usize,
+) -> usize {
+    let mut display_column = 0usize;
+    let clamped = raw_column.clamp(visual_line.raw_start_column, visual_line.raw_end_column);
+
+    for (index, mapped_raw) in visual_line.display_to_raw.iter().enumerate() {
+        if *mapped_raw <= clamped {
+            display_column = index;
+        } else {
+            break;
+        }
+    }
+
+    display_column.min(visual_line.text.chars().count())
 }
 
 fn processed_caret_visual<'a>(
@@ -819,12 +978,6 @@ fn processed_cursor_visual_from_lines<'a>(
         let next_start = relevant
             .get(entry_index + 1)
             .map(|(_, next_line)| next_line.raw_start_column);
-        let segment_len = visual_line
-            .raw_end_column
-            .saturating_sub(visual_line.raw_start_column);
-        let local_column = raw_column
-            .saturating_sub(visual_line.raw_start_column)
-            .min(segment_len);
 
         if raw_column <= visual_line.raw_end_column
             || next_start.is_some_and(|start| raw_column < start)
@@ -832,18 +985,15 @@ fn processed_cursor_visual_from_lines<'a>(
         {
             return Some((
                 *visual_index,
-                visual_line.display_indent_width.saturating_add(local_column),
+                processed_display_column_from_raw(visual_line, raw_column),
                 &visual_line.text,
             ));
         }
     }
 
-    let default_len = default_line
-        .raw_end_column
-        .saturating_sub(default_line.raw_start_column);
     Some((
         default_index,
-        default_line.display_indent_width.saturating_add(default_len),
+        processed_display_column_from_raw(default_line, raw_column),
         &default_line.text,
     ))
 }
@@ -869,6 +1019,45 @@ fn nearest_non_spacer_visual_index(lines: &[ProcessedVisualLine], index: usize) 
     }
 
     None
+}
+
+fn processed_visual_fragment_for_part(
+    visual_line: &ProcessedVisualLine,
+    part_index: usize,
+) -> Option<ProcessedVisualFragment> {
+    if part_index >= PROCESSED_LINE_SPAN_PARTS {
+        return None;
+    }
+
+    if visual_line.fragments.len() <= PROCESSED_LINE_SPAN_PARTS {
+        return visual_line.fragments.get(part_index).cloned();
+    }
+
+    if part_index + 1 < PROCESSED_LINE_SPAN_PARTS {
+        return visual_line.fragments.get(part_index).cloned();
+    }
+
+    let start = PROCESSED_LINE_SPAN_PARTS.saturating_sub(1);
+    let tail = visual_line.fragments.get(start..)?;
+    let all_same_link_state = tail
+        .iter()
+        .all(|fragment| fragment.is_link == tail[0].is_link);
+
+    Some(ProcessedVisualFragment {
+        text: tail
+            .iter()
+            .map(|fragment| fragment.text.as_str())
+            .collect::<String>(),
+        is_link: all_same_link_state && tail[0].is_link,
+    })
+}
+
+fn processed_visual_fragment_count(visual_line: &ProcessedVisualLine) -> usize {
+    visual_line
+        .fragments
+        .len()
+        .min(PROCESSED_LINE_SPAN_PARTS)
+        .max(1)
 }
 
 fn apply_processed_styles(
@@ -914,7 +1103,7 @@ fn apply_processed_styles(
         }
 
         let Some(visual_line) = processed_lines.get(global_index) else {
-            **text_span = if line_offset + 1 < lines_per_page {
+            **text_span = if processed_span.part_index == 0 && line_offset + 1 < lines_per_page {
                 "\n".to_owned()
             } else {
                 String::new()
@@ -925,48 +1114,51 @@ fn apply_processed_styles(
             text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
             continue;
         };
-
-        let mut line_text = visual_line.text.clone();
-        if line_offset + 1 < lines_per_page {
-            line_text.push('\n');
-        }
-
-        **text_span = line_text;
-
-        text_font.font_size = font_size;
-        *text_line_height = LineHeight::Px(line_height);
-        if visual_line.is_spacer {
-            text_font.font =
-                font_for_variant_with_format(fonts, FontVariant::Regular, state.document_format);
-            text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
-            continue;
-        }
-
-        let Some(parsed_line) = state.parsed.get(visual_line.source_line) else {
-            text_font.font =
-                font_for_variant_with_format(fonts, FontVariant::Regular, state.document_format);
-            text_color.0 = COLOR_ACTION;
-            continue;
-        };
-
         let raw_current_line_mode_active =
             state.display_mode == DisplayMode::ProcessedRawCurrentLine
                 && visual_line.source_line == state.cursor.position.line;
-        if raw_current_line_mode_active {
-            text_font.font =
-                font_for_variant_with_format(fonts, FontVariant::Regular, state.document_format);
-            text_font.font_size = font_size;
-            *text_line_height = LineHeight::Px(line_height);
-            text_color.0 = COLOR_ACTION;
-            continue;
-        }
+        let (font_variant, color, font_scale, line_height_scale, allow_link_color) =
+            if visual_line.is_spacer {
+                (
+                    FontVariant::Regular,
+                    Color::srgba(0.0, 0.0, 0.0, 0.0),
+                    1.0,
+                    1.0,
+                    false,
+                )
+            } else if raw_current_line_mode_active {
+                (FontVariant::Regular, COLOR_ACTION, 1.0, 1.0, false)
+            } else if let Some(parsed_line) = state.parsed.get(visual_line.source_line) {
+                let (font_variant, color, font_scale, line_height_scale) =
+                    style_for_line_kind(&parsed_line.kind);
+                (font_variant, color, font_scale, line_height_scale, true)
+            } else {
+                (FontVariant::Regular, COLOR_ACTION, 1.0, 1.0, false)
+            };
 
-        let (font_variant, color, font_scale, line_height_scale) =
-            style_for_line_kind(&parsed_line.kind);
         text_font.font = font_for_variant_with_format(fonts, font_variant, state.document_format);
         text_font.font_size = font_size * font_scale;
         *text_line_height = LineHeight::Px(line_height * line_height_scale);
-        text_color.0 = color;
+
+        let used_fragment_count = processed_visual_fragment_count(visual_line);
+        let Some(mut fragment) =
+            processed_visual_fragment_for_part(visual_line, processed_span.part_index)
+        else {
+            **text_span = String::new();
+            text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
+            continue;
+        };
+
+        if processed_span.part_index + 1 == used_fragment_count && line_offset + 1 < lines_per_page {
+            fragment.text.push('\n');
+        }
+
+        **text_span = fragment.text;
+        text_color.0 = if allow_link_color && fragment.is_link {
+            state.processed_link_color
+        } else {
+            color
+        };
     }
 }
 

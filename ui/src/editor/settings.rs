@@ -244,14 +244,20 @@ fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
     }
 
     let selection_background = theme.selection_background_clamped();
+    let processed_link = theme.processed_link_clamped();
     let contents = format!(
         "(\n\
          \tselection_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tprocessed_link: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          )\n",
         selection_background.x,
         selection_background.y,
         selection_background.z,
-        selection_background.w
+        selection_background.w,
+        processed_link.x,
+        processed_link.y,
+        processed_link.z,
+        processed_link.w
     );
 
     fs::write(&path, contents)?;
@@ -420,6 +426,8 @@ fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSet
                 .unwrap_or(defaults.selection_background.w),
         )
     });
+    let processed_link = parse_ron_vec4(contents, "processed_link")
+        .unwrap_or(defaults.processed_link);
 
     ThemeSettings {
         selection_background: Vec4::new(
@@ -427,6 +435,12 @@ fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSet
             selection_background.y.clamp(0.0, 1.0),
             selection_background.z.clamp(0.0, 1.0),
             selection_background.w.clamp(0.0, 1.0),
+        ),
+        processed_link: Vec4::new(
+            processed_link.x.clamp(0.0, 1.0),
+            processed_link.y.clamp(0.0, 1.0),
+            processed_link.z.clamp(0.0, 1.0),
+            processed_link.w.clamp(0.0, 1.0),
         ),
     }
 }
@@ -556,10 +570,16 @@ fn theme_settings_from_state(state: &EditorState) -> ThemeSettings {
             state.selection_bg_rgba.z.clamp(0.0, 1.0),
             state.selection_bg_rgba.w.clamp(0.0, 1.0),
         ),
+        processed_link: Vec4::new(
+            state.processed_link_rgba.x.clamp(0.0, 1.0),
+            state.processed_link_rgba.y.clamp(0.0, 1.0),
+            state.processed_link_rgba.z.clamp(0.0, 1.0),
+            state.processed_link_rgba.w.clamp(0.0, 1.0),
+        ),
     }
 }
 
-fn sync_selection_background_color(state: &mut EditorState) {
+fn sync_theme_colors(state: &mut EditorState) {
     state.selection_bg_rgba = Vec4::new(
         state.selection_bg_rgba.x.clamp(0.0, 1.0),
         state.selection_bg_rgba.y.clamp(0.0, 1.0),
@@ -572,6 +592,40 @@ fn sync_selection_background_color(state: &mut EditorState) {
         state.selection_bg_rgba.z,
         state.selection_bg_rgba.w,
     );
+    state.processed_link_rgba = Vec4::new(
+        state.processed_link_rgba.x.clamp(0.0, 1.0),
+        state.processed_link_rgba.y.clamp(0.0, 1.0),
+        state.processed_link_rgba.z.clamp(0.0, 1.0),
+        state.processed_link_rgba.w.clamp(0.0, 1.0),
+    );
+    state.processed_link_color = Color::srgba(
+        state.processed_link_rgba.x,
+        state.processed_link_rgba.y,
+        state.processed_link_rgba.z,
+        state.processed_link_rgba.w,
+    );
+}
+
+fn active_theme_rgba(state: &EditorState) -> Vec4 {
+    match state.theme_color_target {
+        ThemeColorTarget::SelectionBackground => state.selection_bg_rgba,
+        ThemeColorTarget::ProcessedLink => state.processed_link_rgba,
+    }
+}
+
+fn active_theme_color(state: &EditorState) -> Color {
+    match state.theme_color_target {
+        ThemeColorTarget::SelectionBackground => state.selection_bg_color,
+        ThemeColorTarget::ProcessedLink => state.processed_link_color,
+    }
+}
+
+fn set_active_theme_rgba(state: &mut EditorState, rgba: Vec4) {
+    match state.theme_color_target {
+        ThemeColorTarget::SelectionBackground => state.selection_bg_rgba = rgba,
+        ThemeColorTarget::ProcessedLink => state.processed_link_rgba = rgba,
+    }
+    sync_theme_colors(state);
 }
 
 fn rgb_to_hsv(rgb: Vec3) -> (f32, f32, f32) {

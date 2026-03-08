@@ -242,6 +242,11 @@ fn setup(
                         SettingsAction::MarginBottomIncrease,
                     ),
                     settings_action_button(font.clone(), "Theme", SettingsAction::OpenTheme),
+                    settings_action_button(
+                        font.clone(),
+                        "Link colors",
+                        SettingsAction::OpenLinkColors,
+                    ),
                     settings_action_button(font.clone(), "Keybinds", SettingsAction::OpenKeybinds),
                     settings_action_button(font.clone(), "Back to editor", SettingsAction::BackToEditor),
                 ],
@@ -371,22 +376,24 @@ fn setup(
                 ThemeScreenRoot,
                 children![
                     (
-                        Text::new("Theme"),
+                        Text::new(""),
                         TextFont {
                             font: font.clone(),
                             font_size: 22.0,
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MAIN),
+                        ThemeScreenTitleLabel,
                     ),
                     (
-                        Text::new("Adjust editor theme colors."),
+                        Text::new(""),
                         TextFont {
                             font: font.clone(),
                             font_size: 13.0,
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MUTED),
+                        ThemeScreenDescriptionLabel,
                     ),
                     (
                         Node {
@@ -402,7 +409,7 @@ fn setup(
                                     row_gap: px(8.0),
                                     ..default()
                                 },
-                                children![theme_selection_background_row(font.clone())],
+                                children![theme_color_row(font.clone())],
                             ),
                             (
                                 Node {
@@ -801,17 +808,23 @@ fn setup_processed_papers(
                             ))
                             .with_children(|text_parent| {
                                 for line_offset in 0..span_capacity {
-                                    text_parent.spawn((
-                                        TextSpan::new(""),
-                                        TextFont {
-                                            font: slot_font.clone(),
-                                            font_size: FONT_SIZE,
-                                            ..default()
-                                        },
-                                        LineHeight::Px(LINE_HEIGHT),
-                                        TextColor(COLOR_ACTION),
-                                        ProcessedPaperLineSpan { slot, line_offset },
-                                    ));
+                                    for part_index in 0..PROCESSED_LINE_SPAN_PARTS {
+                                        text_parent.spawn((
+                                            TextSpan::new(""),
+                                            TextFont {
+                                                font: slot_font.clone(),
+                                                font_size: FONT_SIZE,
+                                                ..default()
+                                            },
+                                            LineHeight::Px(LINE_HEIGHT),
+                                            TextColor(COLOR_ACTION),
+                                            ProcessedPaperLineSpan {
+                                                slot,
+                                                line_offset,
+                                                part_index,
+                                            },
+                                        ));
+                                    }
                                 }
                             });
 
@@ -879,17 +892,23 @@ fn setup_processed_papers(
                 ))
                 .with_children(|text_parent| {
                     for line_offset in 0..span_capacity {
-                        text_parent.spawn((
-                            TextSpan::new(""),
-                            TextFont {
-                                font: regular_font.clone(),
-                                font_size: FONT_SIZE,
-                                ..default()
-                            },
-                            LineHeight::Px(LINE_HEIGHT),
-                            TextColor(COLOR_ACTION),
-                            ProcessedPaperLineSpan { slot, line_offset },
-                        ));
+                        for part_index in 0..PROCESSED_LINE_SPAN_PARTS {
+                            text_parent.spawn((
+                                TextSpan::new(""),
+                                TextFont {
+                                    font: regular_font.clone(),
+                                    font_size: FONT_SIZE,
+                                    ..default()
+                                },
+                                LineHeight::Px(LINE_HEIGHT),
+                                TextColor(COLOR_ACTION),
+                                ProcessedPaperLineSpan {
+                                    slot,
+                                    line_offset,
+                                    part_index,
+                                },
+                            ));
+                        }
                         }
                     });
 
@@ -1104,7 +1123,7 @@ fn margin_setting_row(
     )
 }
 
-fn theme_selection_background_row(font: Handle<Font>) -> impl Bundle {
+fn theme_color_row(font: Handle<Font>) -> impl Bundle {
     (
         Node {
             flex_direction: FlexDirection::Row,
@@ -1114,13 +1133,14 @@ fn theme_selection_background_row(font: Handle<Font>) -> impl Bundle {
         },
         children![
             (
-                Text::new("Selection background"),
+                Text::new(""),
                 TextFont {
                     font: font.clone(),
                     font_size: 13.0,
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
+                ThemeColorNameLabel,
                 Node {
                     width: px(170.0),
                     ..default()
@@ -1134,7 +1154,7 @@ fn theme_selection_background_row(font: Handle<Font>) -> impl Bundle {
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
-                ThemeSelectionBackgroundValueLabel,
+                ThemeColorValueLabel,
                 Node {
                     width: px(220.0),
                     ..default()
@@ -1584,15 +1604,29 @@ fn handle_settings_buttons(
                 settings_changed = true;
             }
             SettingsAction::OpenTheme => {
+                state.theme_color_target = ThemeColorTarget::SelectionBackground;
+                state.theme_color_picker_open = false;
                 next_screen_state.set(UiScreenState::Theme);
                 state.status_message = "Opened theme.".to_string();
+            }
+            SettingsAction::OpenLinkColors => {
+                state.theme_color_target = ThemeColorTarget::ProcessedLink;
+                state.theme_color_picker_open = false;
+                next_screen_state.set(UiScreenState::Theme);
+                state.status_message = "Opened link colors.".to_string();
             }
             SettingsAction::ToggleThemeColorPicker => {
                 state.theme_color_picker_open = !state.theme_color_picker_open;
                 state.status_message = if state.theme_color_picker_open {
-                    "Opened color picker.".to_string()
+                    format!(
+                        "Opened color picker for {}.",
+                        state.theme_color_target.status_label()
+                    )
                 } else {
-                    "Closed color picker.".to_string()
+                    format!(
+                        "Closed color picker for {}.",
+                        state.theme_color_target.status_label()
+                    )
                 };
             }
             SettingsAction::OpenKeybinds => {
@@ -1665,16 +1699,15 @@ fn handle_theme_color_picker_input(
             hue += 1.0;
         }
         let saturation = radius.clamp(0.0, 1.0);
-        let current_rgb = Vec3::new(
-            state.selection_bg_rgba.x,
-            state.selection_bg_rgba.y,
-            state.selection_bg_rgba.z,
-        );
+        let current_rgba = active_theme_rgba(&state);
+        let current_rgb = Vec3::new(current_rgba.x, current_rgba.y, current_rgba.z);
         let (_, _, value) = rgb_to_hsv(current_rgb);
         let next_rgb = hsv_to_rgb(hue, saturation, value);
-        state.selection_bg_rgba.x = next_rgb.x;
-        state.selection_bg_rgba.y = next_rgb.y;
-        state.selection_bg_rgba.z = next_rgb.z;
+        let mut next_rgba = current_rgba;
+        next_rgba.x = next_rgb.x;
+        next_rgba.y = next_rgb.y;
+        next_rgba.z = next_rgb.z;
+        set_active_theme_rgba(&mut state, next_rgba);
         theme_changed = true;
     }
 
@@ -1690,53 +1723,42 @@ fn handle_theme_color_picker_input(
         let usable_width = (track_width - THEME_COLOR_SLIDER_KNOB_WIDTH).max(1.0);
         let cursor_x = (normalized.x + 0.5).clamp(0.0, 1.0) * track_width;
         let next = ((cursor_x - THEME_COLOR_SLIDER_KNOB_WIDTH * 0.5) / usable_width).clamp(0.0, 1.0);
+        let mut next_rgba = active_theme_rgba(&state);
         match slider.channel {
             ThemeSliderChannel::Hue => {
-                let current_rgb = Vec3::new(
-                    state.selection_bg_rgba.x,
-                    state.selection_bg_rgba.y,
-                    state.selection_bg_rgba.z,
-                );
+                let current_rgb = Vec3::new(next_rgba.x, next_rgba.y, next_rgba.z);
                 let (_, saturation, value) = rgb_to_hsv(current_rgb);
                 let next_rgb = hsv_to_rgb(next, saturation, value);
-                state.selection_bg_rgba.x = next_rgb.x;
-                state.selection_bg_rgba.y = next_rgb.y;
-                state.selection_bg_rgba.z = next_rgb.z;
+                next_rgba.x = next_rgb.x;
+                next_rgba.y = next_rgb.y;
+                next_rgba.z = next_rgb.z;
             }
             ThemeSliderChannel::Saturation => {
-                let current_rgb = Vec3::new(
-                    state.selection_bg_rgba.x,
-                    state.selection_bg_rgba.y,
-                    state.selection_bg_rgba.z,
-                );
+                let current_rgb = Vec3::new(next_rgba.x, next_rgba.y, next_rgba.z);
                 let (hue, _, value) = rgb_to_hsv(current_rgb);
                 let next_rgb = hsv_to_rgb(hue, next, value);
-                state.selection_bg_rgba.x = next_rgb.x;
-                state.selection_bg_rgba.y = next_rgb.y;
-                state.selection_bg_rgba.z = next_rgb.z;
+                next_rgba.x = next_rgb.x;
+                next_rgba.y = next_rgb.y;
+                next_rgba.z = next_rgb.z;
             }
-            ThemeSliderChannel::Red => state.selection_bg_rgba.x = next,
-            ThemeSliderChannel::Green => state.selection_bg_rgba.y = next,
-            ThemeSliderChannel::Blue => state.selection_bg_rgba.z = next,
-            ThemeSliderChannel::Alpha => state.selection_bg_rgba.w = next,
+            ThemeSliderChannel::Red => next_rgba.x = next,
+            ThemeSliderChannel::Green => next_rgba.y = next,
+            ThemeSliderChannel::Blue => next_rgba.z = next,
+            ThemeSliderChannel::Alpha => next_rgba.w = next,
             ThemeSliderChannel::Value => {
-                let current_rgb = Vec3::new(
-                    state.selection_bg_rgba.x,
-                    state.selection_bg_rgba.y,
-                    state.selection_bg_rgba.z,
-                );
+                let current_rgb = Vec3::new(next_rgba.x, next_rgba.y, next_rgba.z);
                 let (hue, saturation, _) = rgb_to_hsv(current_rgb);
                 let next_rgb = hsv_to_rgb(hue, saturation, next);
-                state.selection_bg_rgba.x = next_rgb.x;
-                state.selection_bg_rgba.y = next_rgb.y;
-                state.selection_bg_rgba.z = next_rgb.z;
+                next_rgba.x = next_rgb.x;
+                next_rgba.y = next_rgb.y;
+                next_rgba.z = next_rgb.z;
             }
         }
+        set_active_theme_rgba(&mut state, next_rgba);
         theme_changed = true;
     }
 
     if theme_changed {
-        sync_selection_background_color(&mut state);
         let theme = theme_settings_from_state(&state);
         if let Err(error) = save_theme_settings(&theme) {
             state.status_message = format!("Theme save failed: {error}");
@@ -1916,7 +1938,7 @@ fn sync_settings_ui(
             Without<SettingMarginLabel>,
             Without<KeybindBindingLabel>,
             Without<ThemeColorLabel>,
-            Without<ThemeSelectionBackgroundValueLabel>,
+            Without<ThemeColorValueLabel>,
         ),
     >,
     mut margin_label_query: Query<
@@ -1925,7 +1947,7 @@ fn sync_settings_ui(
             Without<SettingToggleLabel>,
             Without<KeybindBindingLabel>,
             Without<ThemeColorLabel>,
-            Without<ThemeSelectionBackgroundValueLabel>,
+            Without<ThemeColorValueLabel>,
         ),
     >,
     mut keybind_label_query: Query<
@@ -2039,14 +2061,20 @@ fn sync_theme_picker_ui(
     mut text_query: Query<
         (
             &mut Text,
-            Option<&ThemeSelectionBackgroundValueLabel>,
+            Option<&ThemeScreenTitleLabel>,
+            Option<&ThemeScreenDescriptionLabel>,
+            Option<&ThemeColorNameLabel>,
+            Option<&ThemeColorValueLabel>,
             Option<&ThemeColorLabel>,
             Option<&ThemeSelectionRgbLabel>,
             Option<&ThemeSelectionHsvLabel>,
             Option<&ThemeSelectionHexLabel>,
         ),
         Or<(
-            With<ThemeSelectionBackgroundValueLabel>,
+            With<ThemeScreenTitleLabel>,
+            With<ThemeScreenDescriptionLabel>,
+            With<ThemeColorNameLabel>,
+            With<ThemeColorValueLabel>,
             With<ThemeColorLabel>,
             With<ThemeSelectionRgbLabel>,
             With<ThemeSelectionHsvLabel>,
@@ -2064,33 +2092,54 @@ fn sync_theme_picker_ui(
             };
     }
 
+    let active_target = state.theme_color_target;
+    let active_rgba = active_theme_rgba(&state);
+    let active_color = active_theme_color(&state);
+
     for mut swatch in color_queries.p0().iter_mut() {
-        swatch.0 = state.selection_bg_color;
+        swatch.0 = active_color;
     }
 
-    let rgb = Vec3::new(
-        state.selection_bg_rgba.x,
-        state.selection_bg_rgba.y,
-        state.selection_bg_rgba.z,
-    );
+    let rgb = Vec3::new(active_rgba.x, active_rgba.y, active_rgba.z);
     let (hue, saturation, value) = rgb_to_hsv(rgb);
     let rgb_255 = (
-        (state.selection_bg_rgba.x * 255.0).round().clamp(0.0, 255.0) as u8,
-        (state.selection_bg_rgba.y * 255.0).round().clamp(0.0, 255.0) as u8,
-        (state.selection_bg_rgba.z * 255.0).round().clamp(0.0, 255.0) as u8,
-        (state.selection_bg_rgba.w * 255.0).round().clamp(0.0, 255.0) as u8,
+        (active_rgba.x * 255.0).round().clamp(0.0, 255.0) as u8,
+        (active_rgba.y * 255.0).round().clamp(0.0, 255.0) as u8,
+        (active_rgba.z * 255.0).round().clamp(0.0, 255.0) as u8,
+        (active_rgba.w * 255.0).round().clamp(0.0, 255.0) as u8,
     );
 
-    for (mut text, value_label, channel_label, rgb_label, hsv_label, hex_label) in
-        text_query.iter_mut()
+    for (
+        mut text,
+        title_label,
+        description_label,
+        name_label,
+        value_label,
+        channel_label,
+        rgb_label,
+        hsv_label,
+        hex_label,
+    ) in text_query.iter_mut()
     {
+        if title_label.is_some() {
+            **text = active_target.screen_title().to_string();
+            continue;
+        }
+
+        if description_label.is_some() {
+            **text = active_target.screen_description().to_string();
+            continue;
+        }
+
+        if name_label.is_some() {
+            **text = active_target.color_label().to_string();
+            continue;
+        }
+
         if value_label.is_some() {
             **text = format!(
                 "({:.3}, {:.3}, {:.3}, {:.3})",
-                state.selection_bg_rgba.x,
-                state.selection_bg_rgba.y,
-                state.selection_bg_rgba.z,
-                state.selection_bg_rgba.w
+                active_rgba.x, active_rgba.y, active_rgba.z, active_rgba.w
             );
             continue;
         }
@@ -2099,10 +2148,10 @@ fn sync_theme_picker_ui(
             let channel_value = match channel_label.channel {
                 ThemeColorChannel::Hue => hue,
                 ThemeColorChannel::Saturation => saturation,
-                ThemeColorChannel::Red => state.selection_bg_rgba.x,
-                ThemeColorChannel::Green => state.selection_bg_rgba.y,
-                ThemeColorChannel::Blue => state.selection_bg_rgba.z,
-                ThemeColorChannel::Alpha => state.selection_bg_rgba.w,
+                ThemeColorChannel::Red => active_rgba.x,
+                ThemeColorChannel::Green => active_rgba.y,
+                ThemeColorChannel::Blue => active_rgba.z,
+                ThemeColorChannel::Alpha => active_rgba.w,
                 ThemeColorChannel::Value => value,
             };
             **text = format!("{channel_value:.3}");
@@ -2170,10 +2219,10 @@ fn sync_theme_picker_ui(
             let t = match knob.channel {
                 ThemeSliderChannel::Hue => hue,
                 ThemeSliderChannel::Saturation => saturation,
-                ThemeSliderChannel::Red => state.selection_bg_rgba.x,
-                ThemeSliderChannel::Green => state.selection_bg_rgba.y,
-                ThemeSliderChannel::Blue => state.selection_bg_rgba.z,
-                ThemeSliderChannel::Alpha => state.selection_bg_rgba.w,
+                ThemeSliderChannel::Red => active_rgba.x,
+                ThemeSliderChannel::Green => active_rgba.y,
+                ThemeSliderChannel::Blue => active_rgba.z,
+                ThemeSliderChannel::Alpha => active_rgba.w,
                 ThemeSliderChannel::Value => value,
             }
             .clamp(0.0, 1.0);

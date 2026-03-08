@@ -437,10 +437,17 @@ fn visible_plain_lines(state: &EditorState, visible_lines: usize) -> Vec<String>
 }
 
 #[derive(Clone, Debug)]
+struct ProcessedVisualFragment {
+    text: String,
+    is_link: bool,
+}
+
+#[derive(Clone, Debug)]
 struct ProcessedVisualLine {
     source_line: usize,
     text: String,
-    display_indent_width: usize,
+    fragments: Vec<ProcessedVisualFragment>,
+    display_to_raw: Vec<usize>,
     raw_start_column: usize,
     raw_end_column: usize,
     markdown_checklist_checked: Option<bool>,

@@ -495,12 +495,8 @@ fn render_selection_rects(
                 continue;
             }
 
-            let display_start = visual_line
-                .display_indent_width
-                .saturating_add(slice_start_raw.saturating_sub(seg_start_raw));
-            let display_end = visual_line
-                .display_indent_width
-                .saturating_add(slice_end_raw.saturating_sub(seg_start_raw));
+            let display_start = processed_display_column_from_raw(visual_line, slice_start_raw);
+            let display_end = processed_display_column_from_raw(visual_line, slice_end_raw);
 
             let global_index = processed_view.start_index.saturating_add(visual_index);
             let page_index = global_index / processed_page_step_lines.max(1);
