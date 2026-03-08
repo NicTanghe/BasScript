@@ -345,6 +345,180 @@ fn handle_mouse_selection(
     apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
 }
 
+fn sync_hovered_processed_link(
+    panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
+    processed_text_layout_query: Query<
+        (&ProcessedPaperText, &TextLayoutInfo, &ComputedNode),
+        (Without<PanelText>, Without<PanelPaper>, Without<PanelCaret>, Without<PanelCanvas>),
+    >,
+    mut state: ResMut<EditorState>,
+) {
+    state.hovered_processed_link = hovered_processed_link_at_cursor(
+        &panel_query,
+        &processed_text_layout_query,
+        &mut state,
+    );
+}
+
+fn hovered_processed_link_at_cursor(
+    panel_query: &Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
+    processed_text_layout_query: &Query<
+        (&ProcessedPaperText, &TextLayoutInfo, &ComputedNode),
+        (Without<PanelText>, Without<PanelPaper>, Without<PanelCaret>, Without<PanelCanvas>),
+    >,
+    state: &mut EditorState,
+) -> Option<HoveredProcessedLink> {
+    if !state.panel_visible(PanelKind::Processed) || state.document.is_empty() {
+        return None;
+    }
+
+    let plain_panel_size = panel_query
+        .iter()
+        .find(|(panel, _, _)| panel.kind == PanelKind::Plain)
+        .map(|(_, _, computed)| computed.size() * computed.inverse_scale_factor());
+    let processed_panel_size = panel_query
+        .iter()
+        .find(|(panel, _, _)| panel.kind == PanelKind::Processed)
+        .map(|(_, _, computed)| computed.size() * computed.inverse_scale_factor());
+    state.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
+
+    let Some(processed_panel_size) = processed_panel_size else {
+        return None;
+    };
+    let Some((_, relative_cursor, computed)) = panel_query.iter().find(|(panel, relative_cursor, _)| {
+        panel.kind == PanelKind::Processed && state.panel_visible(panel.kind) && relative_cursor.cursor_over()
+    }) else {
+        return None;
+    };
+    let Some(normalized) = relative_cursor.normalized else {
+        return None;
+    };
+
+    let processed_layout = processed_page_layout(processed_panel_size, state);
+    let processed_wrap_columns = processed_layout.wrap_columns;
+    let processed_lines_per_page = processed_layout.lines_per_page;
+    let processed_spacer_lines = processed_layout.spacer_lines;
+    let processed_step_lines = processed_layout.page_step_lines.max(1);
+    let processed_view_capacity = processed_step_lines
+        .saturating_mul(PROCESSED_PAPER_CAPACITY)
+        .max(1);
+    let processed_all_lines = processed_display_lines(
+        state,
+        processed_wrap_columns,
+        processed_lines_per_page,
+        processed_spacer_lines,
+    );
+    if processed_all_lines.is_empty() {
+        state.processed_top_visual = 0;
+        return None;
+    }
+
+    state.processed_top_visual = state
+        .processed_top_visual
+        .min(processed_all_lines.len().saturating_sub(1));
+    let processed_view = build_processed_view(
+        &processed_all_lines,
+        state.processed_top_visual,
+        processed_step_lines,
+        processed_view_capacity,
+    );
+    let first_visible_page = processed_view.start_index / processed_step_lines;
+    let processed_line_height = scaled_line_height(state).max(1.0);
+    let processed_char_width = scaled_char_width(state).max(1.0);
+    let anchor_line_in_page = processed_anchor_line_in_page(&processed_view, processed_step_lines);
+    let processed_anchor_offset_px =
+        processed_anchor_scroll_offset_px(anchor_line_in_page, processed_line_height);
+    let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
+    let size = computed.size() * computed.inverse_scale_factor();
+    let panel_x = (normalized.x + 0.5) * size.x;
+    let panel_y = (normalized.y + 0.5) * size.y;
+    let geometry = processed_layout.geometry;
+    let processed_step_px = processed_page_step_px(&geometry, state.zoom);
+    let text_left = geometry.text_left - state.processed_horizontal_scroll;
+    let text_right = text_left + geometry.text_width;
+
+    let mut hovered_page = None;
+    for slot in 0..PROCESSED_PAPER_CAPACITY {
+        let page_index = first_visible_page.saturating_add(slot);
+        let page_top = processed_page_top_for_slot(
+            &geometry,
+            slot,
+            processed_step_px,
+            processed_anchor_offset_px,
+        ) + processed_zoom_bias_px;
+        let page_bottom = page_top + geometry.paper_height;
+
+        if panel_y >= page_top && panel_y <= page_bottom {
+            hovered_page = Some((slot, page_index));
+            break;
+        }
+    }
+
+    let (slot, page_index) = hovered_page?;
+    let text_top = processed_text_top_for_slot(
+        &geometry,
+        slot,
+        processed_step_px,
+        processed_anchor_offset_px,
+    ) + processed_zoom_bias_px;
+    let local_x = (panel_x - text_left).max(0.0);
+    let local_y = (panel_y - text_top).max(0.0);
+    let fallback_line_in_page = ((local_y / processed_line_height).floor().max(0.0) as usize)
+        .min(processed_lines_per_page.saturating_sub(1));
+    let fallback_column = if panel_x <= text_left {
+        0
+    } else {
+        ((panel_x.min(text_right) - text_left) / processed_char_width)
+            .round()
+            .max(0.0) as usize
+    };
+
+    let (line_in_page, display_column) = processed_text_layout_query
+        .iter()
+        .find(|(paper_text, _, _)| paper_text.slot == slot)
+        .map_or((fallback_line_in_page, fallback_column), |(_, layout, text_computed)| {
+            let inverse_scale = text_computed.inverse_scale_factor();
+            let line_in_page = line_index_from_layout_y(
+                layout,
+                local_y,
+                processed_lines_per_page.max(1),
+                inverse_scale,
+            )
+            .unwrap_or(fallback_line_in_page)
+            .min(processed_lines_per_page.saturating_sub(1));
+
+            let global_for_line = page_index
+                .saturating_mul(processed_step_lines)
+                .saturating_add(line_in_page)
+                .min(processed_all_lines.len().saturating_sub(1));
+            let display_line =
+                processed_all_lines.get(global_for_line).map_or("", |line| line.text.as_str());
+            let display_column = column_from_layout_x(
+                layout,
+                line_in_page,
+                local_x,
+                display_line,
+                inverse_scale,
+                processed_char_width,
+            )
+            .unwrap_or(fallback_column);
+            (line_in_page, display_column)
+        });
+
+    let global_index = page_index
+        .saturating_mul(processed_step_lines)
+        .saturating_add(line_in_page)
+        .min(processed_all_lines.len().saturating_sub(1));
+    let global_index = nearest_non_spacer_visual_index(&processed_all_lines, global_index)?;
+    let visual_line = processed_all_lines.get(global_index)?;
+    let raw_column = processed_raw_column_from_display(visual_line, display_column);
+    let line = visual_line.source_line;
+    let max_col = state.document.line_len_chars(line);
+    let column = raw_column.min(max_col);
+
+    state.hovered_processed_link_at(Position { line, column })
+}
+
 fn render_selection_rects(
     selection_rect_query: &mut Query<
         (

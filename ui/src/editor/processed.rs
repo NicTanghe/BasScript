@@ -1077,6 +1077,51 @@ fn processed_visual_fragment_for_part(
     })
 }
 
+fn processed_visual_fragment_raw_range(
+    visual_line: &ProcessedVisualLine,
+    part_index: usize,
+) -> Option<(usize, usize)> {
+    if part_index >= PROCESSED_LINE_SPAN_PARTS {
+        return None;
+    }
+
+    let fragment_index = if visual_line.fragments.len() <= PROCESSED_LINE_SPAN_PARTS
+        || part_index + 1 < PROCESSED_LINE_SPAN_PARTS
+    {
+        part_index
+    } else {
+        PROCESSED_LINE_SPAN_PARTS.saturating_sub(1)
+    };
+    let display_start = visual_line
+        .fragments
+        .iter()
+        .take(fragment_index)
+        .map(|fragment| fragment.text.chars().count())
+        .sum::<usize>();
+    let display_end = if fragment_index == PROCESSED_LINE_SPAN_PARTS.saturating_sub(1)
+        && visual_line.fragments.len() > PROCESSED_LINE_SPAN_PARTS
+    {
+        visual_line.text.chars().count()
+    } else {
+        display_start.saturating_add(
+            visual_line.fragments.get(fragment_index)?.text.chars().count(),
+        )
+    };
+
+    Some((
+        visual_line
+            .display_to_raw
+            .get(display_start)
+            .copied()
+            .unwrap_or(visual_line.raw_start_column),
+        visual_line
+            .display_to_raw
+            .get(display_end)
+            .copied()
+            .unwrap_or(visual_line.raw_end_column),
+    ))
+}
+
 fn processed_visual_fragment_count(visual_line: &ProcessedVisualLine) -> usize {
     visual_line
         .fragments
@@ -1161,10 +1206,6 @@ fn apply_processed_styles(
                 (FontVariant::Regular, COLOR_ACTION, 1.0, 1.0, false)
             };
 
-        text_font.font = font_for_variant_with_format(fonts, font_variant, state.document_format);
-        text_font.font_size = font_size * font_scale;
-        *text_line_height = LineHeight::Px(line_height * line_height_scale);
-
         let used_fragment_count = processed_visual_fragment_count(visual_line);
         let Some(mut fragment) =
             processed_visual_fragment_for_part(visual_line, processed_span.part_index)
@@ -1178,9 +1219,28 @@ fn apply_processed_styles(
             fragment.text.push('\n');
         }
 
+        let effective_variant =
+            font_variant_for_processed_fragment(font_variant, &fragment, state.document_format);
+        let fragment_raw_range =
+            processed_visual_fragment_raw_range(visual_line, processed_span.part_index);
+        text_font.font =
+            font_for_variant_with_format(fonts, effective_variant, state.document_format);
+        text_font.font_size = font_size * font_scale;
+        *text_line_height = LineHeight::Px(line_height * line_height_scale);
         **text_span = fragment.text;
         text_color.0 = if allow_link_color && fragment.is_link {
-            state.processed_link_color_for_target(fragment.link_target.as_deref())
+            let hovered = state.hovered_processed_link.as_ref().is_some_and(|hovered| {
+                fragment_raw_range.is_some_and(|(raw_start, raw_end)| {
+                    hovered.source_line == visual_line.source_line
+                        && raw_start < hovered.raw_end_column
+                        && raw_end > hovered.raw_start_column
+                })
+            });
+            if hovered {
+                state.hovered_processed_link_color_for_target(fragment.link_target.as_deref())
+            } else {
+                state.processed_link_color_for_target(fragment.link_target.as_deref())
+            }
         } else {
             color
         };
@@ -1204,6 +1264,21 @@ fn style_for_line_kind(kind: &LineKind) -> (FontVariant, Color, f32, f32) {
         LineKind::MarkdownRule => (FontVariant::Bold, COLOR_MARKDOWN_RULE, 1.0, 1.0),
         LineKind::MarkdownParagraph => (FontVariant::Regular, COLOR_ACTION, 1.0, 1.0),
         LineKind::Empty => (FontVariant::Regular, COLOR_ACTION, 1.0, 1.0),
+    }
+}
+
+fn font_variant_for_processed_fragment(
+    base: FontVariant,
+    fragment: &ProcessedVisualFragment,
+    format: DocumentFormat,
+) -> FontVariant {
+    if !fragment.is_link || format != DocumentFormat::Fountain {
+        return base;
+    }
+
+    match base {
+        FontVariant::Italic | FontVariant::BoldItalic => FontVariant::BoldItalic,
+        FontVariant::Regular | FontVariant::Bold => FontVariant::Bold,
     }
 }
 

@@ -250,6 +250,7 @@ fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
     let link_character = theme.link_character_clamped();
     let link_faction = theme.link_faction_clamped();
     let link_concept = theme.link_concept_clamped();
+    let link_hover_hsv_value_adjustment = theme.link_hover_hsv_value_adjustment_clamped();
     let contents = format!(
         "(\n\
          \tselection_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
@@ -259,6 +260,7 @@ fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
          \tlink_character: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tlink_faction: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tlink_concept: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tlink_hover_hsv_value_adjustment: {:.3},\n\
          )\n",
         selection_background.x,
         selection_background.y,
@@ -287,7 +289,8 @@ fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
         link_concept.x,
         link_concept.y,
         link_concept.z,
-        link_concept.w
+        link_concept.w,
+        link_hover_hsv_value_adjustment
     );
 
     fs::write(&path, contents)?;
@@ -465,6 +468,9 @@ fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSet
         parse_ron_vec4(contents, "link_character").unwrap_or(defaults.link_character);
     let link_faction = parse_ron_vec4(contents, "link_faction").unwrap_or(defaults.link_faction);
     let link_concept = parse_ron_vec4(contents, "link_concept").unwrap_or(defaults.link_concept);
+    let link_hover_hsv_value_adjustment =
+        parse_ron_f32(contents, "link_hover_hsv_value_adjustment")
+            .unwrap_or(defaults.link_hover_hsv_value_adjustment);
 
     ThemeSettings {
         selection_background: Vec4::new(
@@ -479,6 +485,9 @@ fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSet
         link_character: clamp_vec4_rgba(link_character),
         link_faction: clamp_vec4_rgba(link_faction),
         link_concept: clamp_vec4_rgba(link_concept),
+        link_hover_hsv_value_adjustment: clamp_link_hover_hsv_value_adjustment(
+            link_hover_hsv_value_adjustment,
+        ),
     }
 }
 
@@ -613,6 +622,9 @@ fn theme_settings_from_state(state: &EditorState) -> ThemeSettings {
         link_character: clamp_vec4_rgba(state.link_character_rgba),
         link_faction: clamp_vec4_rgba(state.link_faction_rgba),
         link_concept: clamp_vec4_rgba(state.link_concept_rgba),
+        link_hover_hsv_value_adjustment: clamp_link_hover_hsv_value_adjustment(
+            state.link_hover_hsv_value_adjustment,
+        ),
     }
 }
 
@@ -641,6 +653,8 @@ fn sync_theme_colors(state: &mut EditorState) {
     state.link_faction_color = color_from_rgba(state.link_faction_rgba);
     state.link_concept_rgba = clamp_vec4_rgba(state.link_concept_rgba);
     state.link_concept_color = color_from_rgba(state.link_concept_rgba);
+    state.link_hover_hsv_value_adjustment =
+        clamp_link_hover_hsv_value_adjustment(state.link_hover_hsv_value_adjustment);
 }
 
 fn active_theme_rgba(state: &EditorState) -> Vec4 {
@@ -685,26 +699,38 @@ fn set_active_theme_rgba(state: &mut EditorState, rgba: Vec4) {
 }
 
 impl EditorState {
-    fn processed_link_color_for_target(&self, target: Option<&str>) -> Color {
+    fn processed_link_rgba_for_target(&self, target: Option<&str>) -> Vec4 {
         let Some(target) = target else {
-            return self.link_fallback_color;
+            return self.link_fallback_rgba;
         };
         let Some(entity_type) = self.script_link_target_types.get(target) else {
-            return self.link_fallback_color;
+            return self.link_fallback_rgba;
         };
 
-        self.link_color_for_type(entity_type)
+        self.link_rgba_for_type(entity_type)
     }
 
-    fn link_color_for_type(&self, entity_type: &str) -> Color {
+    fn processed_link_color_for_target(&self, target: Option<&str>) -> Color {
+        color_from_rgba(self.processed_link_rgba_for_target(target))
+    }
+
+    fn hovered_processed_link_color_for_target(&self, target: Option<&str>) -> Color {
+        color_from_rgba(adjust_hsv_value_rgba(
+            self.processed_link_rgba_for_target(target),
+            self.link_hover_hsv_value_adjustment,
+        ))
+    }
+
+
+    fn link_rgba_for_type(&self, entity_type: &str) -> Vec4 {
         match link_color_target_for_entity_type(entity_type) {
-            ThemeColorTarget::LinkFallback => self.link_fallback_color,
-            ThemeColorTarget::LinkProp => self.link_prop_color,
-            ThemeColorTarget::LinkPlace => self.link_place_color,
-            ThemeColorTarget::LinkCharacter => self.link_character_color,
-            ThemeColorTarget::LinkFaction => self.link_faction_color,
-            ThemeColorTarget::LinkConcept => self.link_concept_color,
-            ThemeColorTarget::SelectionBackground => self.link_fallback_color,
+            ThemeColorTarget::LinkFallback => self.link_fallback_rgba,
+            ThemeColorTarget::LinkProp => self.link_prop_rgba,
+            ThemeColorTarget::LinkPlace => self.link_place_rgba,
+            ThemeColorTarget::LinkCharacter => self.link_character_rgba,
+            ThemeColorTarget::LinkFaction => self.link_faction_rgba,
+            ThemeColorTarget::LinkConcept => self.link_concept_rgba,
+            ThemeColorTarget::SelectionBackground => self.link_fallback_rgba,
         }
     }
 }
@@ -751,8 +777,23 @@ fn clamp_vec4_rgba(value: Vec4) -> Vec4 {
     )
 }
 
+fn clamp_link_hover_hsv_value_adjustment(value: f32) -> f32 {
+    value.clamp(0.0, LINK_HOVER_HSV_VALUE_MAX)
+}
+
 fn color_from_rgba(value: Vec4) -> Color {
     Color::srgba(value.x, value.y, value.z, value.w)
+}
+
+fn adjust_hsv_value_rgba(rgba: Vec4, value_adjustment: f32) -> Vec4 {
+    let rgb = Vec3::new(rgba.x, rgba.y, rgba.z);
+    let (hue, saturation, value) = rgb_to_hsv(rgb);
+    let adjusted_rgb = hsv_to_rgb(
+        hue,
+        saturation,
+        (value + value_adjustment).clamp(0.0, 1.0),
+    );
+    Vec4::new(adjusted_rgb.x, adjusted_rgb.y, adjusted_rgb.z, rgba.w)
 }
 
 fn rgb_to_hsv(rgb: Vec3) -> (f32, f32, f32) {

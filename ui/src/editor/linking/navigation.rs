@@ -1,5 +1,6 @@
 use basscript_core::{
     EntityDocument, is_valid_target_key, scaffold_entity, script_link_contains_visible_column,
+    script_link_visible_column_range,
 };
 
 impl EditorState {
@@ -42,16 +43,7 @@ impl EditorState {
     }
 
     fn open_script_link_at(&mut self, position: Position) -> bool {
-        let Some(target) = self
-            .parsed
-            .get(position.line)
-            .and_then(|line| {
-                line.script_links
-                    .iter()
-                    .find(|link| script_link_contains_visible_column(link, position.column))
-            })
-            .map(|link| link.target.clone())
-        else {
+        let Some(target) = self.script_link_target_at(position).map(str::to_string) else {
             return false;
         };
 
@@ -125,6 +117,28 @@ impl EditorState {
             .map(Path::to_path_buf)
             .or_else(|| self.workspace_root.clone())
             .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    fn script_link_at(&self, position: Position) -> Option<&ScriptLink> {
+        self.parsed.get(position.line).and_then(|line| {
+            line.script_links
+                .iter()
+                .find(|link| script_link_contains_visible_column(link, position.column))
+        })
+    }
+
+    fn script_link_target_at(&self, position: Position) -> Option<&str> {
+        self.script_link_at(position).map(|link| link.target.as_str())
+    }
+
+    fn hovered_processed_link_at(&self, position: Position) -> Option<HoveredProcessedLink> {
+        let link = self.script_link_at(position)?;
+        let visible = script_link_visible_column_range(link);
+        Some(HoveredProcessedLink {
+            source_line: position.line,
+            raw_start_column: *visible.start(),
+            raw_end_column: visible.end().saturating_add(1),
+        })
     }
 }
 

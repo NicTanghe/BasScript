@@ -416,7 +416,8 @@ fn setup(
                                     theme_color_row(font.clone(), ThemeColorTarget::LinkPlace),
                                     theme_color_row(font.clone(), ThemeColorTarget::LinkProp),
                                     theme_color_row(font.clone(), ThemeColorTarget::LinkFaction),
-                                    theme_color_row(font.clone(), ThemeColorTarget::LinkConcept)
+                                    theme_color_row(font.clone(), ThemeColorTarget::LinkConcept),
+                                    theme_link_hover_setting_row(font.clone())
                                 ],
                             ),
                             (
@@ -1205,6 +1206,57 @@ fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> impl Bundle 
     )
 }
 
+fn theme_link_hover_setting_row(font: Handle<Font>) -> impl Bundle {
+    (
+        Node {
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            column_gap: px(10.0),
+            ..default()
+        },
+        ThemeLinkHoverSettingRow,
+        children![
+            (
+                Text::new("Link hover HSV value"),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MAIN),
+                Node {
+                    width: px(170.0),
+                    ..default()
+                },
+            ),
+            settings_action_button(
+                font.clone(),
+                "-",
+                SettingsAction::LinkHoverHsvValueDecrease,
+            ),
+            (
+                Text::new(""),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MAIN),
+                ThemeLinkHoverValueLabel,
+                Node {
+                    width: px(220.0),
+                    ..default()
+                },
+            ),
+            settings_action_button(font, "+", SettingsAction::LinkHoverHsvValueIncrease),
+        ],
+    )
+}
+
+fn format_hsv_value_adjustment_label(value: f32) -> String {
+    format!("{:+.1}%", value * 100.0)
+}
+
 fn theme_visual_picker(font: Handle<Font>, hue_sat_wheel: Handle<Image>) -> impl Bundle {
     (
         Node {
@@ -1571,6 +1623,7 @@ fn handle_settings_buttons(
         }
 
         let mut settings_changed = false;
+        let mut theme_changed = false;
         match action {
             SettingsAction::DialogueDoubleSpaceNewline => {
                 state.dialogue_double_space_newline = !state.dialogue_double_space_newline;
@@ -1636,6 +1689,24 @@ fn handle_settings_buttons(
                 adjust_page_margin(&mut state, MarginEdge::Bottom, PAGE_MARGIN_STEP);
                 settings_changed = true;
             }
+            SettingsAction::LinkHoverHsvValueDecrease => {
+                state.link_hover_hsv_value_adjustment -= LINK_HOVER_HSV_VALUE_STEP;
+                sync_theme_colors(&mut state);
+                theme_changed = true;
+                state.status_message = format!(
+                    "Link hover HSV value adjustment: {}.",
+                    format_hsv_value_adjustment_label(state.link_hover_hsv_value_adjustment)
+                );
+            }
+            SettingsAction::LinkHoverHsvValueIncrease => {
+                state.link_hover_hsv_value_adjustment += LINK_HOVER_HSV_VALUE_STEP;
+                sync_theme_colors(&mut state);
+                theme_changed = true;
+                state.status_message = format!(
+                    "Link hover HSV value adjustment: {}.",
+                    format_hsv_value_adjustment_label(state.link_hover_hsv_value_adjustment)
+                );
+            }
             SettingsAction::OpenTheme => {
                 state.theme_color_target = ThemeColorTarget::SelectionBackground;
                 state.theme_color_picker_open = false;
@@ -1670,6 +1741,13 @@ fn handle_settings_buttons(
             let persistent = persistent_settings_from_state(&state);
             if let Err(error) = save_persistent_settings(&persistent) {
                 state.status_message = format!("Settings save failed: {error}");
+            }
+        }
+
+        if theme_changed {
+            let theme = theme_settings_from_state(&state);
+            if let Err(error) = save_theme_settings(&theme) {
+                state.status_message = format!("Theme save failed: {error}");
             }
         }
     }
@@ -2065,6 +2143,7 @@ fn sync_theme_picker_ui(
     mut node_queries: ParamSet<(
         Query<(&ThemeColorRow, &mut Node)>,
         Query<&mut Node, With<ThemeColorPickerPanel>>,
+        Query<&mut Node, With<ThemeLinkHoverSettingRow>>,
         Query<
             (
                 &mut Node,
@@ -2089,6 +2168,7 @@ fn sync_theme_picker_ui(
             Option<&ThemeSelectionRgbLabel>,
             Option<&ThemeSelectionHsvLabel>,
             Option<&ThemeSelectionHexLabel>,
+            Option<&ThemeLinkHoverValueLabel>,
         ),
         Or<(
             With<ThemeScreenTitleLabel>,
@@ -2099,6 +2179,7 @@ fn sync_theme_picker_ui(
             With<ThemeSelectionRgbLabel>,
             With<ThemeSelectionHsvLabel>,
             With<ThemeSelectionHexLabel>,
+            With<ThemeLinkHoverValueLabel>,
         )>,
     >,
     wheel_size_query: Query<&ComputedNode, With<ThemeHueSatWheel>>,
@@ -2118,6 +2199,13 @@ fn sync_theme_picker_ui(
 
     for (row, mut node) in node_queries.p0().iter_mut() {
         node.display = if row.target.is_link_color() == link_colors_page {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    for mut node in node_queries.p2().iter_mut() {
+        node.display = if link_colors_page {
             Display::Flex
         } else {
             Display::None
@@ -2147,6 +2235,7 @@ fn sync_theme_picker_ui(
         rgb_label,
         hsv_label,
         hex_label,
+        hover_value_label,
     ) in text_query.iter_mut()
     {
         if title_label.is_some() {
@@ -2210,6 +2299,11 @@ fn sync_theme_picker_ui(
                 "HEX: #{:02X}{:02X}{:02X}{:02X}",
                 rgb_255.0, rgb_255.1, rgb_255.2, rgb_255.3
             );
+            continue;
+        }
+
+        if hover_value_label.is_some() {
+            **text = format_hsv_value_adjustment_label(state.link_hover_hsv_value_adjustment);
         }
     }
 
@@ -2243,7 +2337,7 @@ fn sync_theme_picker_ui(
     let angle = hue * std::f32::consts::TAU;
     let cursor_x = angle.cos() * saturation;
     let cursor_y = angle.sin() * saturation;
-    for (mut node, slider_knob, wheel_cursor) in node_queries.p2().iter_mut() {
+    for (mut node, slider_knob, wheel_cursor) in node_queries.p3().iter_mut() {
         if let Some(knob) = slider_knob {
             let t = match knob.channel {
                 ThemeSliderChannel::Hue => hue,

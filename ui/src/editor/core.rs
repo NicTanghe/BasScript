@@ -73,6 +73,8 @@ const THEME_COLOR_WHEEL_SIZE: f32 = THEME_COLOR_WHEEL_SIZE_PX as f32;
 const THEME_COLOR_SLIDER_WIDTH: f32 = 180.0;
 const THEME_COLOR_SLIDER_HEIGHT: f32 = 14.0;
 const THEME_COLOR_SLIDER_KNOB_WIDTH: f32 = 8.0;
+const LINK_HOVER_HSV_VALUE_STEP: f32 = 0.02;
+const LINK_HOVER_HSV_VALUE_MAX: f32 = 0.50;
 const PROCESSED_LINE_SPAN_PARTS: usize = 24;
 const MIN_TEXT_BOX_WIDTH: f32 = 120.0;
 const MIN_TEXT_BOX_HEIGHT: f32 = 120.0;
@@ -200,6 +202,9 @@ impl Plugin for UiPlugin {
                     handle_mouse_selection
                         .after(handle_middle_mouse_autoscroll)
                         .after(handle_panel_splitter_drag),
+                    sync_hovered_processed_link
+                        .after(handle_mouse_selection)
+                        .before(render_editor),
                     sync_middle_autoscroll_indicator.after(handle_middle_mouse_autoscroll),
                     style_panel_splitters,
                     blink_caret,
@@ -345,6 +350,8 @@ enum SettingsAction {
     MarginTopIncrease,
     MarginBottomDecrease,
     MarginBottomIncrease,
+    LinkHoverHsvValueDecrease,
+    LinkHoverHsvValueIncrease,
     OpenTheme,
     OpenLinkColors,
     OpenKeybinds,
@@ -756,6 +763,12 @@ struct ThemeColorPickerButton {
 }
 
 #[derive(Component)]
+struct ThemeLinkHoverSettingRow;
+
+#[derive(Component)]
+struct ThemeLinkHoverValueLabel;
+
+#[derive(Component)]
 struct ThemeHueSatWheel;
 
 #[derive(Component)]
@@ -794,7 +807,7 @@ impl ThemeColorTarget {
 
     fn screen_description(self) -> &'static str {
         if self.is_link_color() {
-            "Adjust processed-view link colors by YAML `type`. Unmapped types use Fallback."
+            "Adjust processed-view link colors by YAML `type`. Unmapped types use Fallback, and hover uses the HSV value offset."
         } else {
             "Adjust editor selection colors."
         }
@@ -848,6 +861,13 @@ struct ThemeSelectionRgbLabel;
 #[derive(Component)]
 struct ThemeSelectionHexLabel;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct HoveredProcessedLink {
+    source_line: usize,
+    raw_start_column: usize,
+    raw_end_column: usize,
+}
+
 #[derive(Resource)]
 struct EditorState {
     document: Document,
@@ -883,6 +903,7 @@ struct EditorState {
     link_faction_color: Color,
     link_concept_rgba: Vec4,
     link_concept_color: Color,
+    link_hover_hsv_value_adjustment: f32,
     theme_color_target: ThemeColorTarget,
     theme_color_picker_open: bool,
     show_system_titlebar: bool,
@@ -904,6 +925,7 @@ struct EditorState {
     workspace_expanded_folders: BTreeSet<String>,
     script_link_target_types: BTreeMap<String, String>,
     missing_script_link_targets: BTreeSet<String>,
+    hovered_processed_link: Option<HoveredProcessedLink>,
     workspace_ui_dirty: bool,
     undo_history: Vec<EditorHistorySnapshot>,
     redo_history: Vec<EditorHistorySnapshot>,
@@ -1023,6 +1045,7 @@ struct ThemeSettings {
     link_character: Vec4,
     link_faction: Vec4,
     link_concept: Vec4,
+    link_hover_hsv_value_adjustment: f32,
 }
 
 impl Default for ThemeSettings {
@@ -1035,6 +1058,7 @@ impl Default for ThemeSettings {
             link_character: Vec4::new(0.70, 0.20, 0.24, 1.0),
             link_faction: Vec4::new(0.34, 0.32, 0.68, 1.0),
             link_concept: Vec4::new(0.56, 0.28, 0.14, 1.0),
+            link_hover_hsv_value_adjustment: 0.10,
         }
     }
 }
@@ -1141,6 +1165,11 @@ impl ThemeSettings {
     fn link_concept_color(&self) -> Color {
         let rgba = self.link_concept_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    fn link_hover_hsv_value_adjustment_clamped(&self) -> f32 {
+        self.link_hover_hsv_value_adjustment
+            .clamp(0.0, LINK_HOVER_HSV_VALUE_MAX)
     }
 }
 
@@ -1290,6 +1319,8 @@ impl FromWorld for EditorState {
             link_faction_color: theme_settings.link_faction_color(),
             link_concept_rgba: theme_settings.link_concept_clamped(),
             link_concept_color: theme_settings.link_concept_color(),
+            link_hover_hsv_value_adjustment: theme_settings
+                .link_hover_hsv_value_adjustment_clamped(),
             theme_color_target: ThemeColorTarget::SelectionBackground,
             theme_color_picker_open: false,
             show_system_titlebar: settings.show_system_titlebar,
@@ -1311,6 +1342,7 @@ impl FromWorld for EditorState {
             workspace_expanded_folders: BTreeSet::new(),
             script_link_target_types: BTreeMap::new(),
             missing_script_link_targets: BTreeSet::new(),
+            hovered_processed_link: None,
             workspace_ui_dirty: true,
             undo_history: Vec::new(),
             redo_history: Vec::new(),
