@@ -83,6 +83,7 @@ const PANEL_SPLITTER_PICK_RADIUS: f32 = 18.0;
 const WORKSPACE_WIDTH_DEFAULT: f32 = 280.0;
 const WORKSPACE_WIDTH_MIN: f32 = 180.0;
 const EDITOR_PANEL_MIN_WIDTH: f32 = 220.0;
+const UNDECORATED_WINDOW_CORNER_RADIUS: f32 = 8.0;
 
 const BUTTON_NORMAL: Color = Color::srgb(0.80, 0.82, 0.84);
 const BUTTON_HOVER: Color = Color::srgb(0.74, 0.77, 0.80);
@@ -682,6 +683,9 @@ struct KeybindBindingLabel {
 #[derive(Component)]
 struct EditorScreenRoot;
 
+#[derive(Component)]
+struct WindowSurfaceRoot;
+
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 struct SettingToggleLabel {
     action: SettingsAction,
@@ -698,6 +702,23 @@ struct ThemeScreenRoot;
 
 #[derive(Component)]
 struct TopMenuSection;
+
+fn window_surface_border_radius(show_system_titlebar: bool) -> BorderRadius {
+    let radius = if show_system_titlebar {
+        0.0
+    } else {
+        UNDECORATED_WINDOW_CORNER_RADIUS
+    };
+    BorderRadius::all(px(radius))
+}
+
+fn window_surface_overflow(show_system_titlebar: bool) -> Overflow {
+    if show_system_titlebar {
+        Overflow::visible()
+    } else {
+        Overflow::clip()
+    }
+}
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 enum MarginEdge {
@@ -1863,3 +1884,4 @@ fn is_fountain_hint(trimmed: &str) -> bool {
         .chars()
         .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || " .()'-".contains(ch))
 }
+

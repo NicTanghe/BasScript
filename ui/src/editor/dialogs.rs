@@ -87,6 +87,7 @@ fn handle_window_shortcuts(
 fn sync_window_chrome(
     state: Res<EditorState>,
     mut primary_window_query: Query<(Entity, &mut Window), With<PrimaryWindow>>,
+    mut window_surface_root_query: Query<&mut Node, With<WindowSurfaceRoot>>,
 ) {
     let Ok((window_entity, mut primary_window)) = primary_window_query.single_mut() else {
         return;
@@ -102,6 +103,13 @@ fn sync_window_chrome(
     #[cfg(target_os = "windows")]
     if decorations_changed || state_changed {
         apply_windows_chrome_preferences(window_entity, show_system_titlebar);
+    }
+
+    if (decorations_changed || state_changed)
+        && let Ok(mut root_node) = window_surface_root_query.single_mut()
+    {
+        root_node.border_radius = window_surface_border_radius(show_system_titlebar);
+        root_node.overflow = window_surface_overflow(show_system_titlebar);
     }
 }
 
@@ -381,3 +389,4 @@ fn preferred_dialog_directory(state: &EditorState) -> Option<PathBuf> {
                 .map(|path| path.to_path_buf())
         })
 }
+

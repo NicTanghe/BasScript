@@ -2,6 +2,7 @@ fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut images: ResMut<Assets<Image>>,
+    state: Res<EditorState>,
 ) {
     commands.spawn((Camera2d, IsDefaultUiCamera));
 
@@ -66,9 +67,12 @@ fn setup(
             Node {
                 width: percent(100.0),
                 height: percent(100.0),
+                overflow: window_surface_overflow(state.show_system_titlebar),
+                border_radius: window_surface_border_radius(state.show_system_titlebar),
                 ..default()
             },
             BackgroundColor(COLOR_APP_BG),
+            WindowSurfaceRoot,
         ))
         .with_children(|root| {
             root.spawn((
@@ -2360,3 +2364,4 @@ fn sync_theme_picker_ui(
         }
     }
 }
+
