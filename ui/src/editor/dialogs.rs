@@ -95,14 +95,20 @@ fn sync_window_chrome(
 
     let state_changed = state.is_changed();
     let show_system_titlebar = state.show_system_titlebar;
+    let window_changed = primary_window.is_changed();
     let decorations_changed = primary_window.decorations != show_system_titlebar;
     if decorations_changed {
         primary_window.decorations = show_system_titlebar;
     }
 
     #[cfg(target_os = "windows")]
-    if decorations_changed || state_changed {
-        apply_windows_chrome_preferences(window_entity, show_system_titlebar);
+    if decorations_changed || state_changed || (!show_system_titlebar && window_changed) {
+        apply_windows_chrome_preferences(
+            window_entity,
+            show_system_titlebar,
+            primary_window.physical_size(),
+            primary_window.scale_factor(),
+        );
     }
 
     if (decorations_changed || state_changed)
@@ -114,9 +120,20 @@ fn sync_window_chrome(
 }
 
 #[cfg(target_os = "windows")]
-fn apply_windows_chrome_preferences(window_entity: Entity, show_system_titlebar: bool) {
+fn apply_windows_chrome_preferences(
+    window_entity: Entity,
+    show_system_titlebar: bool,
+    physical_size: UVec2,
+    scale_factor: f32,
+) {
     use bevy::winit::WINIT_WINDOWS;
-    use winit::platform::windows::{CornerPreference, WindowExtWindows};
+    use windows_sys::Win32::Graphics::Gdi::{
+        CreateRoundRectRgn, DeleteObject, SetWindowRgn,
+    };
+    use winit::{
+        platform::windows::{CornerPreference, WindowExtWindows},
+        raw_window_handle::RawWindowHandle,
+    };
 
     WINIT_WINDOWS.with_borrow(|winit_windows| {
         let Some(window) = winit_windows.get_window(window_entity) else {
@@ -125,6 +142,46 @@ fn apply_windows_chrome_preferences(window_entity: Entity, show_system_titlebar:
 
         window.set_corner_preference(CornerPreference::Round);
         window.set_undecorated_shadow(!show_system_titlebar);
+
+        let hwnd = unsafe {
+            let Ok(window_handle) = window.window_handle_any_thread() else {
+                return;
+            };
+            match window_handle.as_raw() {
+                RawWindowHandle::Win32(handle) => handle.hwnd.get() as _,
+                _ => return,
+            }
+        };
+
+        if show_system_titlebar {
+            unsafe {
+                SetWindowRgn(hwnd, std::ptr::null_mut(), 1);
+            }
+            return;
+        }
+
+        let width = physical_size.x.min((i32::MAX - 1) as u32) as i32;
+        let height = physical_size.y.min((i32::MAX - 1) as u32) as i32;
+        if width <= 0 || height <= 0 {
+            return;
+        }
+
+        let corner_diameter = ((UNDECORATED_WINDOW_CORNER_RADIUS * scale_factor).round() as i32)
+            .saturating_mul(2)
+            .max(1);
+        let region = unsafe {
+            CreateRoundRectRgn(0, 0, width + 1, height + 1, corner_diameter, corner_diameter)
+        };
+        if region.is_null() {
+            return;
+        }
+
+        let applied = unsafe { SetWindowRgn(hwnd, region, 1) };
+        if applied == 0 {
+            unsafe {
+                DeleteObject(region as _);
+            }
+        }
     });
 }
 
@@ -389,4 +446,6 @@ fn preferred_dialog_directory(state: &EditorState) -> Option<PathBuf> {
                 .map(|path| path.to_path_buf())
         })
 }
+
+
 

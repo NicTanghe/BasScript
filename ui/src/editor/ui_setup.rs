@@ -1981,6 +1981,92 @@ fn sync_top_menu_visibility(
     }
 }
 
+fn sync_rounded_window_surfaces(
+    state: Res<EditorState>,
+    screen_state: Res<State<UiScreenState>>,
+    mut node_queries: ParamSet<(
+        Query<
+            &mut Node,
+            (
+                With<SettingsScreenRoot>,
+                Without<EditorScreenRoot>,
+                Without<KeybindsScreenRoot>,
+                Without<ThemeScreenRoot>,
+            ),
+        >,
+        Query<
+            &mut Node,
+            (
+                With<KeybindsScreenRoot>,
+                Without<EditorScreenRoot>,
+                Without<SettingsScreenRoot>,
+                Without<ThemeScreenRoot>,
+            ),
+        >,
+        Query<
+            &mut Node,
+            (
+                With<ThemeScreenRoot>,
+                Without<EditorScreenRoot>,
+                Without<SettingsScreenRoot>,
+                Without<KeybindsScreenRoot>,
+            ),
+        >,
+        Query<&mut Node, With<WorkspaceSidebarPane>>,
+        Query<(&PanelBody, &mut Node)>,
+    )>,
+) {
+    let round_window = !state.show_system_titlebar;
+    let editor_top_radius_active =
+        round_window && *screen_state.get() == UiScreenState::Editor && state.top_menu_collapsed;
+
+    if let Ok(mut settings_root) = node_queries.p0().single_mut() {
+        settings_root.border_radius = if round_window {
+            window_surface_border_radius(false)
+        } else {
+            BorderRadius::ZERO
+        };
+    }
+
+    if let Ok(mut keybinds_root) = node_queries.p1().single_mut() {
+        keybinds_root.border_radius = if round_window {
+            window_surface_border_radius(false)
+        } else {
+            BorderRadius::ZERO
+        };
+    }
+
+    if let Ok(mut theme_root) = node_queries.p2().single_mut() {
+        theme_root.border_radius = if round_window {
+            window_surface_border_radius(false)
+        } else {
+            BorderRadius::ZERO
+        };
+    }
+
+    if let Ok(mut workspace_sidebar) = node_queries.p3().single_mut() {
+        workspace_sidebar.border_radius = if editor_top_radius_active && state.workspace_sidebar_visible {
+            window_surface_top_border_radius(true, false)
+        } else {
+            BorderRadius::ZERO
+        };
+    }
+
+    let plain_visible = state.panel_visible(PanelKind::Plain);
+    let processed_visible = state.panel_visible(PanelKind::Processed);
+    for (panel_body, mut node) in node_queries.p4().iter_mut() {
+        let (round_left, round_right) = if !editor_top_radius_active {
+            (false, false)
+        } else {
+            match panel_body.kind {
+                PanelKind::Plain => (!state.workspace_sidebar_visible, !processed_visible),
+                PanelKind::Processed => (!plain_visible && !state.workspace_sidebar_visible, true),
+            }
+        };
+        node.border_radius = window_surface_top_border_radius(round_left, round_right);
+    }
+}
+
 fn sync_panel_display_mode(
     state: Res<EditorState>,
     mut panel_root_query: Query<(&PanelRoot, &mut Node)>,

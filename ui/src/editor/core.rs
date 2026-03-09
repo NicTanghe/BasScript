@@ -151,6 +151,7 @@ impl Plugin for UiPlugin {
                     handle_window_shortcuts,
                     sync_window_chrome,
                     sync_top_menu_visibility,
+                    sync_rounded_window_surfaces,
                     sync_panel_display_mode,
                     sync_panel_split_layout,
                     sync_settings_ui,
@@ -718,6 +719,16 @@ fn window_surface_overflow(show_system_titlebar: bool) -> Overflow {
     } else {
         Overflow::clip()
     }
+}
+
+fn window_surface_top_border_radius(round_left: bool, round_right: bool) -> BorderRadius {
+    let radius = px(UNDECORATED_WINDOW_CORNER_RADIUS);
+    BorderRadius::new(
+        if round_left { radius } else { px(0.0) },
+        if round_right { radius } else { px(0.0) },
+        px(0.0),
+        px(0.0),
+    )
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
