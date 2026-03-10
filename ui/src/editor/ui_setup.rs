@@ -2013,6 +2013,7 @@ fn sync_rounded_window_surfaces(
             ),
         >,
         Query<&mut Node, With<WorkspaceSidebarPane>>,
+        Query<(&PanelRoot, &mut Node)>,
         Query<(&PanelBody, &mut Node)>,
     )>,
 ) {
@@ -2054,7 +2055,19 @@ fn sync_rounded_window_surfaces(
 
     let plain_visible = state.panel_visible(PanelKind::Plain);
     let processed_visible = state.panel_visible(PanelKind::Processed);
-    for (panel_body, mut node) in node_queries.p4().iter_mut() {
+    for (panel_root, mut node) in node_queries.p4().iter_mut() {
+        let (round_left, round_right) = if !editor_top_radius_active {
+            (false, false)
+        } else {
+            match panel_root.kind {
+                PanelKind::Plain => (!state.workspace_sidebar_visible, !processed_visible),
+                PanelKind::Processed => (!plain_visible && !state.workspace_sidebar_visible, true),
+            }
+        };
+        node.border_radius = window_surface_top_border_radius(round_left, round_right);
+    }
+
+    for (panel_body, mut node) in node_queries.p5().iter_mut() {
         let (round_left, round_right) = if !editor_top_radius_active {
             (false, false)
         } else {
