@@ -351,7 +351,7 @@ fn workspace_sidebar_bundle(font: Handle<Font>) -> impl Bundle {
             ..default()
         },
         WorkspaceSidebarPane,
-        BackgroundColor(Color::srgb(0.86, 0.87, 0.89)),
+        BackgroundColor(COLOR_WORKSPACE_BG),
         children![
             (
                 Text::new(WORKSPACE_ROOT_LABEL_EMPTY),

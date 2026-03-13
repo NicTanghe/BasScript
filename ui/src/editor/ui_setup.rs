@@ -93,6 +93,7 @@ fn setup(
                             padding: UiRect::axes(px(12.0), px(8.0)),
                             ..default()
                         },
+                        BackgroundColor(COLOR_APP_BG),
                         TopMenuSection,
                         children![
                             (
@@ -415,6 +416,18 @@ fn setup(
                                 },
                                 children![
                                     theme_color_row(font.clone(), ThemeColorTarget::SelectionBackground),
+                                    theme_only_setting_button(
+                                        font.clone(),
+                                        SettingsAction::ToggleProcessedGlass,
+                                    ),
+                                    theme_only_setting_button(
+                                        font.clone(),
+                                        SettingsAction::ToggleExplorerGlass,
+                                    ),
+                                    theme_only_setting_button(
+                                        font.clone(),
+                                        SettingsAction::ToggleTopMenuGlass,
+                                    ),
                                     theme_color_row(font.clone(), ThemeColorTarget::LinkFallback),
                                     theme_color_row(font.clone(), ThemeColorTarget::LinkCharacter),
                                     theme_color_row(font.clone(), ThemeColorTarget::LinkPlace),
@@ -993,6 +1006,10 @@ fn settings_toggle_button(font: Handle<Font>, action: SettingsAction) -> impl Bu
             SettingToggleLabel { action },
         )],
     )
+}
+
+fn theme_only_setting_button(font: Handle<Font>, action: SettingsAction) -> impl Bundle {
+    (settings_toggle_button(font, action), ThemeOnlySettingControl)
 }
 
 fn settings_action_button(font: Handle<Font>, label: &str, action: SettingsAction) -> impl Bundle {
@@ -1661,6 +1678,30 @@ fn handle_settings_buttons(
                     if state.show_system_titlebar { "ON" } else { "OFF" }
                 );
             }
+            SettingsAction::ToggleProcessedGlass => {
+                state.processed_glass = !state.processed_glass;
+                theme_changed = true;
+                state.status_message = format!(
+                    "Processed background glass: {}",
+                    if state.processed_glass { "ON" } else { "OFF" }
+                );
+            }
+            SettingsAction::ToggleExplorerGlass => {
+                state.explorer_glass = !state.explorer_glass;
+                theme_changed = true;
+                state.status_message = format!(
+                    "Explorer glass: {}",
+                    if state.explorer_glass { "ON" } else { "OFF" }
+                );
+            }
+            SettingsAction::ToggleTopMenuGlass => {
+                state.top_menu_glass = !state.top_menu_glass;
+                theme_changed = true;
+                state.status_message = format!(
+                    "Top menu glass: {}",
+                    if state.top_menu_glass { "ON" } else { "OFF" }
+                );
+            }
             SettingsAction::MarginLeftDecrease => {
                 adjust_page_margin(&mut state, MarginEdge::Left, -PAGE_MARGIN_STEP);
                 settings_changed = true;
@@ -1966,6 +2007,66 @@ fn capture_keybind_input(
     }
 }
 
+fn sync_glass_surfaces(
+    state: Res<EditorState>,
+    mut color_queries: ParamSet<(
+        Query<&mut BackgroundColor, With<WindowSurfaceRoot>>,
+        Query<&mut BackgroundColor, With<TopMenuSection>>,
+        Query<&mut BackgroundColor, With<WorkspaceSidebarPane>>,
+        Query<(&PanelRoot, &mut BackgroundColor)>,
+        Query<(&PanelBody, &mut BackgroundColor)>,
+        Query<&mut BackgroundColor, With<StatusLineRoot>>,
+    )>,
+) {
+    if !state.is_changed() {
+        return;
+    }
+
+    if let Ok(mut color) = color_queries.p0().single_mut() {
+        color.0 = if state.any_glass_enabled() {
+            Color::NONE
+        } else {
+            COLOR_APP_BG
+        };
+    }
+
+    if let Ok(mut color) = color_queries.p1().single_mut() {
+        color.0 = if state.top_menu_glass {
+            Color::NONE
+        } else {
+            COLOR_APP_BG
+        };
+    }
+
+    if let Ok(mut color) = color_queries.p2().single_mut() {
+        color.0 = if state.explorer_glass {
+            Color::NONE
+        } else {
+            COLOR_WORKSPACE_BG
+        };
+    }
+
+    if let Ok(mut color) = color_queries.p5().single_mut() {
+        color.0 = COLOR_APP_BG;
+    }
+
+    for (panel_root, mut color) in color_queries.p3().iter_mut() {
+        color.0 = match panel_root.kind {
+            PanelKind::Plain => COLOR_PANEL_BG,
+            PanelKind::Processed if state.processed_glass => Color::NONE,
+            PanelKind::Processed => COLOR_PANEL_BG,
+        };
+    }
+
+    for (panel_body, mut color) in color_queries.p4().iter_mut() {
+        color.0 = match panel_body.kind {
+            PanelKind::Plain => COLOR_PANEL_BODY_PLAIN,
+            PanelKind::Processed if state.processed_glass => Color::NONE,
+            PanelKind::Processed => COLOR_PANEL_BODY_PROCESSED,
+        };
+    }
+}
+
 fn sync_top_menu_visibility(
     state: Res<EditorState>,
     mut top_menu_query: Query<&mut Node, With<TopMenuSection>>,
@@ -2217,6 +2318,18 @@ fn sync_settings_ui(
                     "OFF"
                 }
             ),
+            SettingsAction::ToggleProcessedGlass => format!(
+                "Processed background glass: {}",
+                if state.processed_glass { "ON" } else { "OFF" }
+            ),
+            SettingsAction::ToggleExplorerGlass => format!(
+                "Explorer glass: {}",
+                if state.explorer_glass { "ON" } else { "OFF" }
+            ),
+            SettingsAction::ToggleTopMenuGlass => format!(
+                "Top menu glass: {}",
+                if state.top_menu_glass { "ON" } else { "OFF" }
+            ),
             _ => String::new(),
         };
     }
@@ -2247,6 +2360,7 @@ fn sync_theme_picker_ui(
         Query<(&ThemeColorRow, &mut Node)>,
         Query<&mut Node, With<ThemeColorPickerPanel>>,
         Query<&mut Node, With<ThemeLinkHoverSettingRow>>,
+        Query<&mut Node, With<ThemeOnlySettingControl>>,
         Query<
             (
                 &mut Node,
@@ -2312,6 +2426,13 @@ fn sync_theme_picker_ui(
             Display::Flex
         } else {
             Display::None
+        };
+    }
+    for mut node in node_queries.p3().iter_mut() {
+        node.display = if link_colors_page {
+            Display::None
+        } else {
+            Display::Flex
         };
     }
 
@@ -2440,7 +2561,7 @@ fn sync_theme_picker_ui(
     let angle = hue * std::f32::consts::TAU;
     let cursor_x = angle.cos() * saturation;
     let cursor_y = angle.sin() * saturation;
-    for (mut node, slider_knob, wheel_cursor) in node_queries.p3().iter_mut() {
+    for (mut node, slider_knob, wheel_cursor) in node_queries.p4().iter_mut() {
         if let Some(knob) = slider_knob {
             let t = match knob.channel {
                 ThemeSliderChannel::Hue => hue,

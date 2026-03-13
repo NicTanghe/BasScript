@@ -28,6 +28,8 @@ fn status_line_bundle(font: Handle<Font>) -> impl Bundle {
             overflow: Overflow::clip(),
             ..default()
         },
+        BackgroundColor(COLOR_APP_BG),
+        StatusLineRoot,
         children![(
             Node {
                 width: percent(100.0),

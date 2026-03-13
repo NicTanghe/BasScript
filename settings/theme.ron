@@ -7,4 +7,7 @@
 	link_faction: (0.340, 0.320, 0.680, 1.000),
 	link_concept: (0.560, 0.280, 0.140, 1.000),
 	link_hover_hsv_value_adjustment: 0.400,
+	processed_glass: true,
+	explorer_glass: true,
+	top_menu_glass: true,
 )

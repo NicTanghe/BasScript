@@ -103,6 +103,7 @@ const COLOR_APP_BG: Color = Color::srgb(0.79, 0.80, 0.82);
 const COLOR_PANEL_BG: Color = Color::srgb(0.89, 0.90, 0.91);
 const COLOR_PANEL_BODY_PLAIN: Color = Color::srgb(0.96, 0.96, 0.97);
 const COLOR_PANEL_BODY_PROCESSED: Color = Color::srgb(0.82, 0.83, 0.84);
+const COLOR_WORKSPACE_BG: Color = Color::srgb(0.86, 0.87, 0.89);
 const COLOR_PAPER: Color = Color::srgb(1.0, 1.0, 1.0);
 const COLOR_TEXT_MAIN: Color = Color::srgb(0.18, 0.19, 0.20);
 const COLOR_TEXT_MUTED: Color = Color::srgb(0.34, 0.36, 0.39);
@@ -150,6 +151,7 @@ impl Plugin for UiPlugin {
                     style_workspace_file_entry_text,
                     handle_window_shortcuts,
                     sync_window_chrome,
+                    sync_glass_surfaces,
                     sync_top_menu_visibility,
                     sync_rounded_window_surfaces,
                     sync_panel_display_mode,
@@ -344,6 +346,9 @@ enum SettingsAction {
     DialogueDoubleSpaceNewline,
     NonDialogueDoubleSpaceNewline,
     ShowSystemTitlebar,
+    ToggleProcessedGlass,
+    ToggleExplorerGlass,
+    ToggleTopMenuGlass,
     MarginLeftDecrease,
     MarginLeftIncrease,
     MarginRightDecrease,
@@ -687,6 +692,9 @@ struct EditorScreenRoot;
 #[derive(Component)]
 struct WindowSurfaceRoot;
 
+#[derive(Component)]
+struct StatusLineRoot;
+
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 struct SettingToggleLabel {
     action: SettingsAction,
@@ -703,6 +711,9 @@ struct ThemeScreenRoot;
 
 #[derive(Component)]
 struct TopMenuSection;
+
+#[derive(Component)]
+struct ThemeOnlySettingControl;
 
 fn window_surface_border_radius(show_system_titlebar: bool) -> BorderRadius {
     let radius = if show_system_titlebar {
@@ -841,7 +852,7 @@ impl ThemeColorTarget {
         if self.is_link_color() {
             "Adjust processed-view link colors by YAML `type`. Unmapped types use Fallback, and hover uses the HSV value offset."
         } else {
-            "Adjust editor selection colors."
+            "Adjust editor selection colors and glass surfaces."
         }
     }
 
@@ -921,6 +932,9 @@ struct EditorState {
     pending_keybind_capture: Option<ShortcutAction>,
     workspace_sidebar_visible: bool,
     top_menu_collapsed: bool,
+    processed_glass: bool,
+    explorer_glass: bool,
+    top_menu_glass: bool,
     selection_bg_rgba: Vec4,
     selection_bg_color: Color,
     link_fallback_rgba: Vec4,
@@ -1078,6 +1092,9 @@ struct ThemeSettings {
     link_faction: Vec4,
     link_concept: Vec4,
     link_hover_hsv_value_adjustment: f32,
+    processed_glass: bool,
+    explorer_glass: bool,
+    top_menu_glass: bool,
 }
 
 impl Default for ThemeSettings {
@@ -1091,6 +1108,9 @@ impl Default for ThemeSettings {
             link_faction: Vec4::new(0.34, 0.32, 0.68, 1.0),
             link_concept: Vec4::new(0.56, 0.28, 0.14, 1.0),
             link_hover_hsv_value_adjustment: 0.10,
+            processed_glass: false,
+            explorer_glass: false,
+            top_menu_glass: false,
         }
     }
 }
@@ -1337,6 +1357,9 @@ impl FromWorld for EditorState {
             pending_keybind_capture: None,
             workspace_sidebar_visible: ui_state.workspace_sidebar_visible,
             top_menu_collapsed: ui_state.top_menu_collapsed,
+            processed_glass: theme_settings.processed_glass,
+            explorer_glass: theme_settings.explorer_glass,
+            top_menu_glass: theme_settings.top_menu_glass,
             selection_bg_rgba: theme_settings.selection_background_clamped(),
             selection_bg_color: theme_settings.selection_background_color(),
             link_fallback_rgba: theme_settings.link_fallback_clamped(),
@@ -1387,6 +1410,10 @@ impl FromWorld for EditorState {
 }
 
 impl EditorState {
+    fn any_glass_enabled(&self) -> bool {
+        self.processed_glass || self.explorer_glass || self.top_menu_glass
+    }
+
     fn set_display_mode(&mut self, mode: DisplayMode) -> bool {
         if self.display_mode == mode {
             return false;

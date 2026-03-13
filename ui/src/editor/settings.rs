@@ -261,6 +261,9 @@ fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
          \tlink_faction: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tlink_concept: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tlink_hover_hsv_value_adjustment: {:.3},\n\
+         \tprocessed_glass: {},\n\
+         \texplorer_glass: {},\n\
+         \ttop_menu_glass: {},\n\
          )\n",
         selection_background.x,
         selection_background.y,
@@ -290,7 +293,10 @@ fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
         link_concept.y,
         link_concept.z,
         link_concept.w,
-        link_hover_hsv_value_adjustment
+        link_hover_hsv_value_adjustment,
+        theme.processed_glass,
+        theme.explorer_glass,
+        theme.top_menu_glass
     );
 
     fs::write(&path, contents)?;
@@ -471,6 +477,12 @@ fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSet
     let link_hover_hsv_value_adjustment =
         parse_ron_f32(contents, "link_hover_hsv_value_adjustment")
             .unwrap_or(defaults.link_hover_hsv_value_adjustment);
+    let processed_glass =
+        parse_ron_bool(contents, "processed_glass").unwrap_or(defaults.processed_glass);
+    let explorer_glass =
+        parse_ron_bool(contents, "explorer_glass").unwrap_or(defaults.explorer_glass);
+    let top_menu_glass =
+        parse_ron_bool(contents, "top_menu_glass").unwrap_or(defaults.top_menu_glass);
 
     ThemeSettings {
         selection_background: Vec4::new(
@@ -488,6 +500,9 @@ fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSet
         link_hover_hsv_value_adjustment: clamp_link_hover_hsv_value_adjustment(
             link_hover_hsv_value_adjustment,
         ),
+        processed_glass,
+        explorer_glass,
+        top_menu_glass,
     }
 }
 
@@ -625,6 +640,9 @@ fn theme_settings_from_state(state: &EditorState) -> ThemeSettings {
         link_hover_hsv_value_adjustment: clamp_link_hover_hsv_value_adjustment(
             state.link_hover_hsv_value_adjustment,
         ),
+        processed_glass: state.processed_glass,
+        explorer_glass: state.explorer_glass,
+        top_menu_glass: state.top_menu_glass,
     }
 }
 
