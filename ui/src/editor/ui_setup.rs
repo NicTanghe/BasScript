@@ -71,7 +71,7 @@ fn setup(
                 border_radius: window_surface_border_radius(state.show_system_titlebar),
                 ..default()
             },
-            BackgroundColor(COLOR_APP_BG),
+            BackgroundColor(state.app_bg_color),
             WindowSurfaceRoot,
         ))
         .with_children(|root| {
@@ -93,7 +93,7 @@ fn setup(
                             padding: UiRect::axes(px(12.0), px(8.0)),
                             ..default()
                         },
-                        BackgroundColor(COLOR_APP_BG),
+                        BackgroundColor(state.top_menu_bg_color),
                         TopMenuSection,
                         children![
                             (
@@ -137,7 +137,7 @@ fn setup(
                         EditorBodyRow,
                         RelativeCursorPosition::default(),
                         children![
-                            workspace_sidebar_bundle(font.clone()),
+                            workspace_sidebar_bundle(font.clone(), state.explorer_bg_color),
                             panel_splitter_bundle(PanelSplitter::Workspace),
                             (
                                 Node {
@@ -174,7 +174,7 @@ fn setup(
                             )
                         ],
                     ),
-                    status_line_bundle(font.clone())
+                    status_line_bundle(font.clone(), state.app_bg_color)
                 ],
             ));
 
@@ -188,7 +188,7 @@ fn setup(
                     padding: UiRect::axes(px(18.0), px(16.0)),
                     ..default()
                 },
-                BackgroundColor(Color::srgb(0.86, 0.88, 0.90)),
+                BackgroundColor(state.app_bg_color),
                 SettingsScreenRoot,
                 children![
                     (
@@ -267,7 +267,7 @@ fn setup(
                     padding: UiRect::axes(px(18.0), px(16.0)),
                     ..default()
                 },
-                BackgroundColor(Color::srgb(0.86, 0.88, 0.90)),
+                BackgroundColor(state.app_bg_color),
                 KeybindsScreenRoot,
                 children![
                     (
@@ -377,7 +377,7 @@ fn setup(
                     padding: UiRect::axes(px(18.0), px(16.0)),
                     ..default()
                 },
-                BackgroundColor(Color::srgb(0.86, 0.88, 0.90)),
+                BackgroundColor(state.app_bg_color),
                 ThemeScreenRoot,
                 children![
                     (
@@ -415,6 +415,10 @@ fn setup(
                                     ..default()
                                 },
                                 children![
+                                    theme_color_row(font.clone(), ThemeColorTarget::AppBackground),
+                                    theme_color_row(font.clone(), ThemeColorTarget::TopMenuBackground),
+                                    theme_color_row(font.clone(), ThemeColorTarget::ExplorerBackground),
+                                    theme_color_row(font.clone(), ThemeColorTarget::ProcessedBackground),
                                     theme_color_row(font.clone(), ThemeColorTarget::SelectionBackground),
                                     theme_only_setting_button(
                                         font.clone(),
@@ -426,7 +430,7 @@ fn setup(
                                     ),
                                     theme_only_setting_button(
                                         font.clone(),
-                                        SettingsAction::ToggleTopMenuGlass,
+                                        SettingsAction::ToggleSettingsGlass,
                                     ),
                                     theme_color_row(font.clone(), ThemeColorTarget::LinkFallback),
                                     theme_color_row(font.clone(), ThemeColorTarget::LinkCharacter),
@@ -1435,6 +1439,10 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
         PanelKind::Plain => COLOR_PANEL_BODY_PLAIN,
         PanelKind::Processed => COLOR_PANEL_BODY_PROCESSED,
     };
+    let root_color = match kind {
+        PanelKind::Plain => COLOR_PANEL_BG,
+        PanelKind::Processed => Color::NONE,
+    };
 
     (
         Node {
@@ -1444,7 +1452,7 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
             ..default()
         },
         PanelRoot { kind },
-        BackgroundColor(COLOR_PANEL_BG),
+        BackgroundColor(root_color),
         children![
             (
                 Node {
@@ -1694,12 +1702,12 @@ fn handle_settings_buttons(
                     if state.explorer_glass { "ON" } else { "OFF" }
                 );
             }
-            SettingsAction::ToggleTopMenuGlass => {
-                state.top_menu_glass = !state.top_menu_glass;
+            SettingsAction::ToggleSettingsGlass => {
+                state.settings_glass = !state.settings_glass;
                 theme_changed = true;
                 state.status_message = format!(
-                    "Top menu glass: {}",
-                    if state.top_menu_glass { "ON" } else { "OFF" }
+                    "Settings glass: {}",
+                    if state.settings_glass { "ON" } else { "OFF" }
                 );
             }
             SettingsAction::MarginLeftDecrease => {
@@ -1753,7 +1761,7 @@ fn handle_settings_buttons(
                 );
             }
             SettingsAction::OpenTheme => {
-                state.theme_color_target = ThemeColorTarget::SelectionBackground;
+                state.theme_color_target = ThemeColorTarget::AppBackground;
                 state.theme_color_picker_open = false;
                 next_screen_state.set(UiScreenState::Theme);
                 state.status_message = "Opened theme.".to_string();
@@ -2009,60 +2017,84 @@ fn capture_keybind_input(
 
 fn sync_glass_surfaces(
     state: Res<EditorState>,
+    native_glass_state: Res<NativeGlassState>,
     mut color_queries: ParamSet<(
         Query<&mut BackgroundColor, With<WindowSurfaceRoot>>,
         Query<&mut BackgroundColor, With<TopMenuSection>>,
         Query<&mut BackgroundColor, With<WorkspaceSidebarPane>>,
         Query<(&PanelRoot, &mut BackgroundColor)>,
         Query<(&PanelBody, &mut BackgroundColor)>,
+        Query<(&PanelPaper, &mut BackgroundColor)>,
         Query<&mut BackgroundColor, With<StatusLineRoot>>,
+        Query<
+            &mut BackgroundColor,
+            Or<(
+                With<SettingsScreenRoot>,
+                With<KeybindsScreenRoot>,
+                With<ThemeScreenRoot>,
+            )>,
+        >,
     )>,
 ) {
-    if !state.is_changed() {
+    if !state.is_changed() && !native_glass_state.is_changed() {
         return;
     }
 
+    let processed_glass_active = state.processed_glass && native_glass_state.active;
+    let settings_glass_active = state.settings_glass && native_glass_state.active;
+
     if let Ok(mut color) = color_queries.p0().single_mut() {
-        color.0 = if state.any_glass_enabled() {
-            Color::NONE
-        } else {
-            COLOR_APP_BG
-        };
+        color.0 = state.app_bg_color;
     }
 
     if let Ok(mut color) = color_queries.p1().single_mut() {
-        color.0 = if state.top_menu_glass {
+        color.0 = if settings_glass_active {
             Color::NONE
         } else {
-            COLOR_APP_BG
+            state.top_menu_bg_color
         };
     }
 
     if let Ok(mut color) = color_queries.p2().single_mut() {
-        color.0 = if state.explorer_glass {
+        color.0 = if state.explorer_glass && native_glass_state.active {
             Color::NONE
         } else {
-            COLOR_WORKSPACE_BG
+            state.explorer_bg_color
         };
     }
 
-    if let Ok(mut color) = color_queries.p5().single_mut() {
-        color.0 = COLOR_APP_BG;
+    if let Ok(mut color) = color_queries.p6().single_mut() {
+        color.0 = state.app_bg_color;
+    }
+
+    for mut color in color_queries.p7().iter_mut() {
+        color.0 = if settings_glass_active {
+            Color::NONE
+        } else {
+            state.app_bg_color
+        };
     }
 
     for (panel_root, mut color) in color_queries.p3().iter_mut() {
         color.0 = match panel_root.kind {
             PanelKind::Plain => COLOR_PANEL_BG,
-            PanelKind::Processed if state.processed_glass => Color::NONE,
-            PanelKind::Processed => COLOR_PANEL_BG,
+            PanelKind::Processed => Color::NONE,
         };
     }
 
     for (panel_body, mut color) in color_queries.p4().iter_mut() {
         color.0 = match panel_body.kind {
             PanelKind::Plain => COLOR_PANEL_BODY_PLAIN,
-            PanelKind::Processed if state.processed_glass => Color::NONE,
-            PanelKind::Processed => COLOR_PANEL_BODY_PROCESSED,
+            PanelKind::Processed if processed_glass_active => Color::NONE,
+            PanelKind::Processed => state.processed_bg_color,
+        };
+    }
+
+    for (panel_paper, mut color) in color_queries.p5().iter_mut() {
+        color.0 = match panel_paper.kind {
+            PanelKind::Processed if processed_glass_active => Color::NONE,
+            PanelKind::Processed => COLOR_PAPER,
+            PanelKind::Plain => COLOR_PAPER,
         };
     }
 }
@@ -2086,6 +2118,15 @@ fn sync_rounded_window_surfaces(
     state: Res<EditorState>,
     screen_state: Res<State<UiScreenState>>,
     mut node_queries: ParamSet<(
+        Query<
+            &mut Node,
+            (
+                With<EditorScreenRoot>,
+                Without<SettingsScreenRoot>,
+                Without<KeybindsScreenRoot>,
+                Without<ThemeScreenRoot>,
+            ),
+        >,
         Query<
             &mut Node,
             (
@@ -2113,40 +2154,68 @@ fn sync_rounded_window_surfaces(
                 Without<KeybindsScreenRoot>,
             ),
         >,
+        Query<&mut Node, With<TopMenuSection>>,
         Query<&mut Node, With<WorkspaceSidebarPane>>,
         Query<(&PanelRoot, &mut Node)>,
         Query<(&PanelBody, &mut Node)>,
     )>,
 ) {
     let round_window = !state.show_system_titlebar;
+    let editor_screen_active = *screen_state.get() == UiScreenState::Editor;
     let editor_top_radius_active =
-        round_window && *screen_state.get() == UiScreenState::Editor && state.top_menu_collapsed;
+        round_window && editor_screen_active && state.top_menu_collapsed;
+    let clipped_overflow = if round_window {
+        window_surface_overflow(false)
+    } else {
+        Overflow::visible()
+    };
 
-    if let Ok(mut settings_root) = node_queries.p0().single_mut() {
+    if let Ok(mut editor_root) = node_queries.p0().single_mut() {
+        editor_root.border_radius = if round_window {
+            window_surface_border_radius(false)
+        } else {
+            BorderRadius::ZERO
+        };
+        editor_root.overflow = clipped_overflow;
+    }
+
+    if let Ok(mut settings_root) = node_queries.p1().single_mut() {
         settings_root.border_radius = if round_window {
             window_surface_border_radius(false)
         } else {
             BorderRadius::ZERO
         };
+        settings_root.overflow = clipped_overflow;
     }
 
-    if let Ok(mut keybinds_root) = node_queries.p1().single_mut() {
+    if let Ok(mut keybinds_root) = node_queries.p2().single_mut() {
         keybinds_root.border_radius = if round_window {
             window_surface_border_radius(false)
         } else {
             BorderRadius::ZERO
         };
+        keybinds_root.overflow = clipped_overflow;
     }
 
-    if let Ok(mut theme_root) = node_queries.p2().single_mut() {
+    if let Ok(mut theme_root) = node_queries.p3().single_mut() {
         theme_root.border_radius = if round_window {
             window_surface_border_radius(false)
         } else {
             BorderRadius::ZERO
         };
+        theme_root.overflow = clipped_overflow;
     }
 
-    if let Ok(mut workspace_sidebar) = node_queries.p3().single_mut() {
+    if let Ok(mut top_menu) = node_queries.p4().single_mut() {
+        top_menu.border_radius = if round_window && editor_screen_active && !state.top_menu_collapsed {
+            window_surface_top_border_radius(true, true)
+        } else {
+            BorderRadius::ZERO
+        };
+        top_menu.overflow = clipped_overflow;
+    }
+
+    if let Ok(mut workspace_sidebar) = node_queries.p5().single_mut() {
         workspace_sidebar.border_radius = if editor_top_radius_active && state.workspace_sidebar_visible {
             window_surface_top_border_radius(true, false)
         } else {
@@ -2156,7 +2225,7 @@ fn sync_rounded_window_surfaces(
 
     let plain_visible = state.panel_visible(PanelKind::Plain);
     let processed_visible = state.panel_visible(PanelKind::Processed);
-    for (panel_root, mut node) in node_queries.p4().iter_mut() {
+    for (panel_root, mut node) in node_queries.p6().iter_mut() {
         let (round_left, round_right) = if !editor_top_radius_active {
             (false, false)
         } else {
@@ -2168,7 +2237,7 @@ fn sync_rounded_window_surfaces(
         node.border_radius = window_surface_top_border_radius(round_left, round_right);
     }
 
-    for (panel_body, mut node) in node_queries.p5().iter_mut() {
+    for (panel_body, mut node) in node_queries.p7().iter_mut() {
         let (round_left, round_right) = if !editor_top_radius_active {
             (false, false)
         } else {
@@ -2326,9 +2395,9 @@ fn sync_settings_ui(
                 "Explorer glass: {}",
                 if state.explorer_glass { "ON" } else { "OFF" }
             ),
-            SettingsAction::ToggleTopMenuGlass => format!(
-                "Top menu glass: {}",
-                if state.top_menu_glass { "ON" } else { "OFF" }
+            SettingsAction::ToggleSettingsGlass => format!(
+                "Settings glass: {}",
+                if state.settings_glass { "ON" } else { "OFF" }
             ),
             _ => String::new(),
         };

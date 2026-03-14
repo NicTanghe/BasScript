@@ -1,4 +1,8 @@
 (
+	app_background: (0.885, 0.901, 0.898, 1.000),
+	top_menu_background: (0.891, 0.907, 0.904, 1.000),
+	explorer_background: (0.860, 0.870, 0.890, 1.000),
+	processed_background: (0.536, 0.545, 0.570, 1.000),
 	selection_background: (0.517, 0.680, 1.000, 0.558),
 	link_fallback: (0.100, 0.380, 0.720, 1.000),
 	link_prop: (0.680, 0.400, 0.100, 1.000),
@@ -7,7 +11,7 @@
 	link_faction: (0.340, 0.320, 0.680, 1.000),
 	link_concept: (0.560, 0.280, 0.140, 1.000),
 	link_hover_hsv_value_adjustment: 0.400,
-	processed_glass: true,
-	explorer_glass: true,
-	top_menu_glass: true,
+	processed_glass: false,
+	explorer_glass: false,
+	settings_glass: false,
 )

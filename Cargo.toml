@@ -2,3 +2,7 @@
 members = ["core", "ui", "app"]
 default-members = ["app"]
 resolver = "2"
+
+[patch.crates-io]
+bevy_winit = { path = "vendor/bevy_winit" }
+wgpu-hal = { path = "vendor/wgpu-hal" }

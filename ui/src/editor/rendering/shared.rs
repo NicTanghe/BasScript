@@ -184,7 +184,6 @@ fn render_editor(
         processed_anchor_scroll_offset_px(anchor_line_in_page, processed_line_height);
     let processed_page_step_pixels = processed_page_step_px(&processed_geometry, state.zoom);
     let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
-
     for (_, mut transform) in canvas_query.iter_mut() {
         transform.scale = Vec2::ONE;
         transform.translation = Val2::ZERO;

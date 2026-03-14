@@ -337,7 +337,7 @@ fn is_workspace_file_candidate(path: &Path) -> bool {
     )
 }
 
-fn workspace_sidebar_bundle(font: Handle<Font>) -> impl Bundle {
+fn workspace_sidebar_bundle(font: Handle<Font>, background: Color) -> impl Bundle {
     (
         Node {
             width: px(WORKSPACE_WIDTH_DEFAULT),
@@ -351,7 +351,7 @@ fn workspace_sidebar_bundle(font: Handle<Font>) -> impl Bundle {
             ..default()
         },
         WorkspaceSidebarPane,
-        BackgroundColor(COLOR_WORKSPACE_BG),
+        BackgroundColor(background),
         children![
             (
                 Text::new(WORKSPACE_ROOT_LABEL_EMPTY),

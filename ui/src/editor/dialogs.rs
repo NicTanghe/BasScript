@@ -86,6 +86,7 @@ fn handle_window_shortcuts(
 
 fn sync_window_chrome(
     state: Res<EditorState>,
+    mut native_glass_state: ResMut<NativeGlassState>,
     mut primary_window_query: Query<(Entity, &mut Window), With<PrimaryWindow>>,
     mut window_surface_root_query: Query<&mut Node, With<WindowSurfaceRoot>>,
 ) {
@@ -101,15 +102,33 @@ fn sync_window_chrome(
         primary_window.decorations = show_system_titlebar;
     }
 
+    let should_sync_native = decorations_changed
+        || state_changed
+        || (!show_system_titlebar && window_changed)
+        || !native_glass_state.initialized;
+
     #[cfg(any(target_os = "windows", target_os = "macos"))]
-    if decorations_changed || state_changed || (!show_system_titlebar && window_changed) {
-        apply_native_window_preferences(
+    if should_sync_native {
+        if let Some(native_glass_active) = apply_native_window_preferences(
             window_entity,
             show_system_titlebar,
             state.any_glass_enabled(),
             primary_window.physical_size(),
             primary_window.scale_factor(),
-        );
+        ) {
+            native_glass_state.initialized = true;
+            if native_glass_state.active != native_glass_active {
+                native_glass_state.active = native_glass_active;
+            }
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    if should_sync_native {
+        native_glass_state.initialized = true;
+        if native_glass_state.active {
+            native_glass_state.active = false;
+        }
     }
 
     if (decorations_changed || state_changed)
@@ -127,12 +146,12 @@ fn apply_native_window_preferences(
     glass_enabled: bool,
     physical_size: UVec2,
     scale_factor: f32,
-) {
+) -> Option<bool> {
     use bevy::winit::WINIT_WINDOWS;
 
     WINIT_WINDOWS.with_borrow(|winit_windows| {
         let Some(window) = winit_windows.get_window(window_entity) else {
-            return;
+            return None;
         };
 
         #[cfg(target_os = "macos")]
@@ -142,20 +161,27 @@ fn apply_native_window_preferences(
             };
 
             if glass_enabled {
-                let _ = apply_vibrancy(
+                if let Err(error) = apply_vibrancy(
                     &**window,
                     NSVisualEffectMaterial::UnderWindowBackground,
                     Some(NSVisualEffectState::Active),
                     None,
-                );
-            } else {
-                let _ = clear_vibrancy(&**window);
+                ) {
+                    warn!("[window] Failed applying macOS vibrancy effect: {error}");
+                    return Some(false);
+                }
+                return Some(true);
             }
+
+            if let Err(error) = clear_vibrancy(&**window) {
+                warn!("[window] Failed clearing macOS vibrancy effect: {error}");
+            }
+            return Some(false);
         }
 
         #[cfg(target_os = "windows")]
         {
-            use window_vibrancy::{apply_mica, clear_mica};
+            use window_vibrancy::{apply_acrylic, apply_blur, clear_acrylic, clear_blur};
             use windows_sys::Win32::Graphics::Gdi::{
                 CreateRoundRectRgn, DeleteObject, SetWindowRgn,
             };
@@ -164,36 +190,54 @@ fn apply_native_window_preferences(
                 raw_window_handle::RawWindowHandle,
             };
 
-            if glass_enabled {
-                let _ = apply_mica(&**window, None);
-            } else {
-                let _ = clear_mica(&**window);
-            }
-
             window.set_corner_preference(CornerPreference::Round);
             window.set_undecorated_shadow(!show_system_titlebar);
 
             let hwnd = unsafe {
                 let Ok(window_handle) = window.window_handle_any_thread() else {
-                    return;
+                    return Some(false);
                 };
                 match window_handle.as_raw() {
                     RawWindowHandle::Win32(handle) => handle.hwnd.get() as _,
-                    _ => return,
+                    _ => return Some(false),
                 }
+            };
+
+            const WINDOWS_GLASS_TINT: (u8, u8, u8, u8) = (202, 204, 209, 140);
+            let glass_active = if glass_enabled {
+                match apply_acrylic(&**window, Some(WINDOWS_GLASS_TINT)) {
+                    Ok(()) => true,
+                    Err(acrylic_error) => match apply_blur(&**window, Some(WINDOWS_GLASS_TINT)) {
+                        Ok(()) => {
+                            info!("[window] Acrylic unavailable, using blur fallback: {acrylic_error}");
+                            true
+                        }
+                        Err(blur_error) => {
+                            warn!("[window] Failed applying Windows glass effect. acrylic: {acrylic_error}; blur fallback: {blur_error}");
+                            false
+                        }
+                    },
+                }
+            } else {
+                if let Err(acrylic_error) = clear_acrylic(&**window) {
+                    if let Err(blur_error) = clear_blur(&**window) {
+                        warn!("[window] Failed clearing Windows glass effect. acrylic: {acrylic_error}; blur fallback: {blur_error}");
+                    }
+                }
+                false
             };
 
             if show_system_titlebar {
                 unsafe {
                     SetWindowRgn(hwnd, std::ptr::null_mut(), 1);
                 }
-                return;
+                return Some(glass_active);
             }
 
             let width = physical_size.x.min((i32::MAX - 1) as u32) as i32;
             let height = physical_size.y.min((i32::MAX - 1) as u32) as i32;
             if width <= 0 || height <= 0 {
-                return;
+                return Some(glass_active);
             }
 
             let corner_diameter = ((UNDECORATED_WINDOW_CORNER_RADIUS * scale_factor).round() as i32)
@@ -203,7 +247,7 @@ fn apply_native_window_preferences(
                 CreateRoundRectRgn(0, 0, width + 1, height + 1, corner_diameter, corner_diameter)
             };
             if region.is_null() {
-                return;
+                return Some(glass_active);
             }
 
             let applied = unsafe { SetWindowRgn(hwnd, region, 1) };
@@ -212,8 +256,13 @@ fn apply_native_window_preferences(
                     DeleteObject(region as _);
                 }
             }
+
+            return Some(glass_active);
         }
-    });
+
+        #[allow(unreachable_code)]
+        Some(false)
+    })
 }
 
 fn handle_file_shortcuts(

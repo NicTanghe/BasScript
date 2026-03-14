@@ -1669,8 +1669,6 @@ dependencies = [
 [[package]]
 name = "bevy_winit"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8142a3749fc491eeae481c30bb3830cf5a71d2fa3dba4d450a42792f6d39eb2d"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -5643,8 +5641,6 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "27.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b21cb61c57ee198bc4aff71aeadff4cbb80b927beb912506af9c780d64313ce"
 dependencies = [
  "android_system_properties",
  "arrayvec",

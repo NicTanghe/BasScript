@@ -15,7 +15,7 @@ fn status_path_label(path: &Path) -> String {
         .unwrap_or_else(|| "<unnamed>".to_string())
 }
 
-fn status_line_bundle(font: Handle<Font>) -> impl Bundle {
+fn status_line_bundle(font: Handle<Font>, background: Color) -> impl Bundle {
     (
         Node {
             width: percent(100.0),
@@ -28,7 +28,7 @@ fn status_line_bundle(font: Handle<Font>) -> impl Bundle {
             overflow: Overflow::clip(),
             ..default()
         },
-        BackgroundColor(COLOR_APP_BG),
+        BackgroundColor(background),
         StatusLineRoot,
         children![(
             Node {

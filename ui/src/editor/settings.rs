@@ -243,6 +243,10 @@ fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
         fs::create_dir_all(parent)?;
     }
 
+    let app_background = theme.app_background_clamped();
+    let top_menu_background = theme.top_menu_background_clamped();
+    let explorer_background = theme.explorer_background_clamped();
+    let processed_background = theme.processed_background_clamped();
     let selection_background = theme.selection_background_clamped();
     let link_fallback = theme.link_fallback_clamped();
     let link_prop = theme.link_prop_clamped();
@@ -253,6 +257,10 @@ fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
     let link_hover_hsv_value_adjustment = theme.link_hover_hsv_value_adjustment_clamped();
     let contents = format!(
         "(\n\
+         \tapp_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \ttop_menu_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \texplorer_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tprocessed_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tselection_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tlink_fallback: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tlink_prop: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
@@ -263,8 +271,24 @@ fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
          \tlink_hover_hsv_value_adjustment: {:.3},\n\
          \tprocessed_glass: {},\n\
          \texplorer_glass: {},\n\
-         \ttop_menu_glass: {},\n\
+         \tsettings_glass: {},\n\
          )\n",
+        app_background.x,
+        app_background.y,
+        app_background.z,
+        app_background.w,
+        top_menu_background.x,
+        top_menu_background.y,
+        top_menu_background.z,
+        top_menu_background.w,
+        explorer_background.x,
+        explorer_background.y,
+        explorer_background.z,
+        explorer_background.w,
+        processed_background.x,
+        processed_background.y,
+        processed_background.z,
+        processed_background.w,
         selection_background.x,
         selection_background.y,
         selection_background.z,
@@ -296,7 +320,7 @@ fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
         link_hover_hsv_value_adjustment,
         theme.processed_glass,
         theme.explorer_glass,
-        theme.top_menu_glass
+        theme.settings_glass
     );
 
     fs::write(&path, contents)?;
@@ -453,6 +477,14 @@ fn persistent_ui_state_from_ron(
 }
 
 fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSettings {
+    let app_background =
+        parse_ron_vec4(contents, "app_background").unwrap_or(defaults.app_background);
+    let top_menu_background =
+        parse_ron_vec4(contents, "top_menu_background").unwrap_or(defaults.top_menu_background);
+    let explorer_background =
+        parse_ron_vec4(contents, "explorer_background").unwrap_or(defaults.explorer_background);
+    let processed_background = parse_ron_vec4(contents, "processed_background")
+        .unwrap_or(defaults.processed_background);
     let selection_background = parse_ron_vec4(contents, "selection_background").unwrap_or_else(|| {
         Vec4::new(
             parse_ron_f32(contents, "selection_background_r")
@@ -481,10 +513,15 @@ fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSet
         parse_ron_bool(contents, "processed_glass").unwrap_or(defaults.processed_glass);
     let explorer_glass =
         parse_ron_bool(contents, "explorer_glass").unwrap_or(defaults.explorer_glass);
-    let top_menu_glass =
-        parse_ron_bool(contents, "top_menu_glass").unwrap_or(defaults.top_menu_glass);
+    let settings_glass = parse_ron_bool(contents, "settings_glass")
+        .or_else(|| parse_ron_bool(contents, "top_menu_glass"))
+        .unwrap_or(defaults.settings_glass);
 
     ThemeSettings {
+        app_background: clamp_vec4_rgba(app_background),
+        top_menu_background: clamp_vec4_rgba(top_menu_background),
+        explorer_background: clamp_vec4_rgba(explorer_background),
+        processed_background: clamp_vec4_rgba(processed_background),
         selection_background: Vec4::new(
             selection_background.x.clamp(0.0, 1.0),
             selection_background.y.clamp(0.0, 1.0),
@@ -502,7 +539,7 @@ fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSet
         ),
         processed_glass,
         explorer_glass,
-        top_menu_glass,
+        settings_glass,
     }
 }
 
@@ -625,6 +662,10 @@ fn persistent_ui_state_from_state(state: &EditorState) -> PersistentUiState {
 
 fn theme_settings_from_state(state: &EditorState) -> ThemeSettings {
     ThemeSettings {
+        app_background: clamp_vec4_rgba(state.app_bg_rgba),
+        top_menu_background: clamp_vec4_rgba(state.top_menu_bg_rgba),
+        explorer_background: clamp_vec4_rgba(state.explorer_bg_rgba),
+        processed_background: clamp_vec4_rgba(state.processed_bg_rgba),
         selection_background: Vec4::new(
             state.selection_bg_rgba.x.clamp(0.0, 1.0),
             state.selection_bg_rgba.y.clamp(0.0, 1.0),
@@ -642,11 +683,19 @@ fn theme_settings_from_state(state: &EditorState) -> ThemeSettings {
         ),
         processed_glass: state.processed_glass,
         explorer_glass: state.explorer_glass,
-        top_menu_glass: state.top_menu_glass,
+        settings_glass: state.settings_glass,
     }
 }
 
 fn sync_theme_colors(state: &mut EditorState) {
+    state.app_bg_rgba = clamp_vec4_rgba(state.app_bg_rgba);
+    state.app_bg_color = color_from_rgba(state.app_bg_rgba);
+    state.top_menu_bg_rgba = clamp_vec4_rgba(state.top_menu_bg_rgba);
+    state.top_menu_bg_color = color_from_rgba(state.top_menu_bg_rgba);
+    state.explorer_bg_rgba = clamp_vec4_rgba(state.explorer_bg_rgba);
+    state.explorer_bg_color = color_from_rgba(state.explorer_bg_rgba);
+    state.processed_bg_rgba = clamp_vec4_rgba(state.processed_bg_rgba);
+    state.processed_bg_color = color_from_rgba(state.processed_bg_rgba);
     state.selection_bg_rgba = Vec4::new(
         state.selection_bg_rgba.x.clamp(0.0, 1.0),
         state.selection_bg_rgba.y.clamp(0.0, 1.0),
@@ -681,6 +730,10 @@ fn active_theme_rgba(state: &EditorState) -> Vec4 {
 
 fn theme_rgba_for_target(state: &EditorState, target: ThemeColorTarget) -> Vec4 {
     match target {
+        ThemeColorTarget::AppBackground => state.app_bg_rgba,
+        ThemeColorTarget::TopMenuBackground => state.top_menu_bg_rgba,
+        ThemeColorTarget::ExplorerBackground => state.explorer_bg_rgba,
+        ThemeColorTarget::ProcessedBackground => state.processed_bg_rgba,
         ThemeColorTarget::SelectionBackground => state.selection_bg_rgba,
         ThemeColorTarget::LinkFallback => state.link_fallback_rgba,
         ThemeColorTarget::LinkProp => state.link_prop_rgba,
@@ -693,6 +746,10 @@ fn theme_rgba_for_target(state: &EditorState, target: ThemeColorTarget) -> Vec4 
 
 fn theme_color_for_target(state: &EditorState, target: ThemeColorTarget) -> Color {
     match target {
+        ThemeColorTarget::AppBackground => state.app_bg_color,
+        ThemeColorTarget::TopMenuBackground => state.top_menu_bg_color,
+        ThemeColorTarget::ExplorerBackground => state.explorer_bg_color,
+        ThemeColorTarget::ProcessedBackground => state.processed_bg_color,
         ThemeColorTarget::SelectionBackground => state.selection_bg_color,
         ThemeColorTarget::LinkFallback => state.link_fallback_color,
         ThemeColorTarget::LinkProp => state.link_prop_color,
@@ -705,6 +762,10 @@ fn theme_color_for_target(state: &EditorState, target: ThemeColorTarget) -> Colo
 
 fn set_active_theme_rgba(state: &mut EditorState, rgba: Vec4) {
     match state.theme_color_target {
+        ThemeColorTarget::AppBackground => state.app_bg_rgba = rgba,
+        ThemeColorTarget::TopMenuBackground => state.top_menu_bg_rgba = rgba,
+        ThemeColorTarget::ExplorerBackground => state.explorer_bg_rgba = rgba,
+        ThemeColorTarget::ProcessedBackground => state.processed_bg_rgba = rgba,
         ThemeColorTarget::SelectionBackground => state.selection_bg_rgba = rgba,
         ThemeColorTarget::LinkFallback => state.link_fallback_rgba = rgba,
         ThemeColorTarget::LinkProp => state.link_prop_rgba = rgba,
@@ -748,7 +809,11 @@ impl EditorState {
             ThemeColorTarget::LinkCharacter => self.link_character_rgba,
             ThemeColorTarget::LinkFaction => self.link_faction_rgba,
             ThemeColorTarget::LinkConcept => self.link_concept_rgba,
-            ThemeColorTarget::SelectionBackground => self.link_fallback_rgba,
+            ThemeColorTarget::AppBackground
+            | ThemeColorTarget::TopMenuBackground
+            | ThemeColorTarget::ExplorerBackground
+            | ThemeColorTarget::ProcessedBackground
+            | ThemeColorTarget::SelectionBackground => self.link_fallback_rgba,
         }
     }
 }

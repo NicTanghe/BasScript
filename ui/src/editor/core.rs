@@ -99,11 +99,9 @@ const COLOR_MARKDOWN_LIST: Color = Color::srgb(0.16, 0.22, 0.31);
 const COLOR_MARKDOWN_QUOTE: Color = Color::srgb(0.22, 0.29, 0.26);
 const COLOR_MARKDOWN_CODE: Color = Color::srgb(0.29, 0.17, 0.18);
 const COLOR_MARKDOWN_RULE: Color = Color::srgb(0.35, 0.35, 0.38);
-const COLOR_APP_BG: Color = Color::srgb(0.79, 0.80, 0.82);
 const COLOR_PANEL_BG: Color = Color::srgb(0.89, 0.90, 0.91);
 const COLOR_PANEL_BODY_PLAIN: Color = Color::srgb(0.96, 0.96, 0.97);
 const COLOR_PANEL_BODY_PROCESSED: Color = Color::srgb(0.82, 0.83, 0.84);
-const COLOR_WORKSPACE_BG: Color = Color::srgb(0.86, 0.87, 0.89);
 const COLOR_PAPER: Color = Color::srgb(1.0, 1.0, 1.0);
 const COLOR_TEXT_MAIN: Color = Color::srgb(0.18, 0.19, 0.20);
 const COLOR_TEXT_MUTED: Color = Color::srgb(0.34, 0.36, 0.39);
@@ -128,6 +126,7 @@ enum UiScreenState {
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EditorState>()
+            .init_resource::<NativeGlassState>()
             .init_resource::<DialogState>()
             .init_resource::<MiddleAutoscrollState>()
             .init_resource::<NavigationRepeatState>()
@@ -348,7 +347,7 @@ enum SettingsAction {
     ShowSystemTitlebar,
     ToggleProcessedGlass,
     ToggleExplorerGlass,
-    ToggleTopMenuGlass,
+    ToggleSettingsGlass,
     MarginLeftDecrease,
     MarginLeftIncrease,
     MarginRightDecrease,
@@ -830,6 +829,10 @@ enum ThemeSliderChannel {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ThemeColorTarget {
+    AppBackground,
+    TopMenuBackground,
+    ExplorerBackground,
+    ProcessedBackground,
     SelectionBackground,
     LinkFallback,
     LinkProp,
@@ -852,12 +855,16 @@ impl ThemeColorTarget {
         if self.is_link_color() {
             "Adjust processed-view link colors by YAML `type`. Unmapped types use Fallback, and hover uses the HSV value offset."
         } else {
-            "Adjust editor selection colors and glass surfaces."
+            "Adjust editor shell colors, selection colors, and glass surfaces."
         }
     }
 
     fn color_label(self) -> &'static str {
         match self {
+            Self::AppBackground => "App background",
+            Self::TopMenuBackground => "Top menu",
+            Self::ExplorerBackground => "Explorer",
+            Self::ProcessedBackground => "Processed pane",
             Self::SelectionBackground => "Selection background",
             Self::LinkFallback => "Fallback",
             Self::LinkProp => "Prop",
@@ -870,6 +877,10 @@ impl ThemeColorTarget {
 
     fn status_label(self) -> &'static str {
         match self {
+            Self::AppBackground => "app background",
+            Self::TopMenuBackground => "top menu background",
+            Self::ExplorerBackground => "explorer background",
+            Self::ProcessedBackground => "processed pane background",
             Self::SelectionBackground => "selection background",
             Self::LinkFallback => "fallback link color",
             Self::LinkProp => "prop link color",
@@ -881,7 +892,15 @@ impl ThemeColorTarget {
     }
 
     fn is_link_color(self) -> bool {
-        !matches!(self, Self::SelectionBackground)
+        matches!(
+            self,
+            Self::LinkFallback
+                | Self::LinkProp
+                | Self::LinkPlace
+                | Self::LinkCharacter
+                | Self::LinkFaction
+                | Self::LinkConcept
+        )
     }
 }
 
@@ -934,7 +953,15 @@ struct EditorState {
     top_menu_collapsed: bool,
     processed_glass: bool,
     explorer_glass: bool,
-    top_menu_glass: bool,
+    settings_glass: bool,
+    app_bg_rgba: Vec4,
+    app_bg_color: Color,
+    top_menu_bg_rgba: Vec4,
+    top_menu_bg_color: Color,
+    explorer_bg_rgba: Vec4,
+    explorer_bg_color: Color,
+    processed_bg_rgba: Vec4,
+    processed_bg_color: Color,
     selection_bg_rgba: Vec4,
     selection_bg_color: Color,
     link_fallback_rgba: Vec4,
@@ -995,6 +1022,12 @@ struct DialogState {
     opened_at: Option<Instant>,
     last_watchdog_log_at: Option<Instant>,
     poll_count: u64,
+}
+
+#[derive(Resource, Default)]
+struct NativeGlassState {
+    active: bool,
+    initialized: bool,
 }
 
 #[derive(Resource, Default)]
@@ -1084,6 +1117,10 @@ impl Default for PersistentUiState {
 
 #[derive(Clone, Debug)]
 struct ThemeSettings {
+    app_background: Vec4,
+    top_menu_background: Vec4,
+    explorer_background: Vec4,
+    processed_background: Vec4,
     selection_background: Vec4,
     link_fallback: Vec4,
     link_prop: Vec4,
@@ -1094,12 +1131,16 @@ struct ThemeSettings {
     link_hover_hsv_value_adjustment: f32,
     processed_glass: bool,
     explorer_glass: bool,
-    top_menu_glass: bool,
+    settings_glass: bool,
 }
 
 impl Default for ThemeSettings {
     fn default() -> Self {
         Self {
+            app_background: Vec4::new(0.79, 0.80, 0.82, 1.0),
+            top_menu_background: Vec4::new(0.79, 0.80, 0.82, 1.0),
+            explorer_background: Vec4::new(0.86, 0.87, 0.89, 1.0),
+            processed_background: Vec4::new(0.82, 0.83, 0.84, 1.0),
             selection_background: Vec4::new(0.16, 0.43, 0.88, 0.36),
             link_fallback: Vec4::new(0.10, 0.38, 0.72, 1.0),
             link_prop: Vec4::new(0.68, 0.40, 0.10, 1.0),
@@ -1110,12 +1151,68 @@ impl Default for ThemeSettings {
             link_hover_hsv_value_adjustment: 0.10,
             processed_glass: false,
             explorer_glass: false,
-            top_menu_glass: false,
+            settings_glass: false,
         }
     }
 }
 
 impl ThemeSettings {
+    fn app_background_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.app_background.x.clamp(0.0, 1.0),
+            self.app_background.y.clamp(0.0, 1.0),
+            self.app_background.z.clamp(0.0, 1.0),
+            self.app_background.w.clamp(0.0, 1.0),
+        )
+    }
+
+    fn app_background_color(&self) -> Color {
+        let rgba = self.app_background_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    fn top_menu_background_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.top_menu_background.x.clamp(0.0, 1.0),
+            self.top_menu_background.y.clamp(0.0, 1.0),
+            self.top_menu_background.z.clamp(0.0, 1.0),
+            self.top_menu_background.w.clamp(0.0, 1.0),
+        )
+    }
+
+    fn top_menu_background_color(&self) -> Color {
+        let rgba = self.top_menu_background_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    fn explorer_background_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.explorer_background.x.clamp(0.0, 1.0),
+            self.explorer_background.y.clamp(0.0, 1.0),
+            self.explorer_background.z.clamp(0.0, 1.0),
+            self.explorer_background.w.clamp(0.0, 1.0),
+        )
+    }
+
+    fn processed_background_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.processed_background.x.clamp(0.0, 1.0),
+            self.processed_background.y.clamp(0.0, 1.0),
+            self.processed_background.z.clamp(0.0, 1.0),
+            self.processed_background.w.clamp(0.0, 1.0),
+        )
+    }
+
+    fn explorer_background_color(&self) -> Color {
+        let rgba = self.explorer_background_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    fn processed_background_color(&self) -> Color {
+        let rgba = self.processed_background_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
     fn selection_background_clamped(&self) -> Vec4 {
         Vec4::new(
             self.selection_background.x.clamp(0.0, 1.0),
@@ -1359,7 +1456,15 @@ impl FromWorld for EditorState {
             top_menu_collapsed: ui_state.top_menu_collapsed,
             processed_glass: theme_settings.processed_glass,
             explorer_glass: theme_settings.explorer_glass,
-            top_menu_glass: theme_settings.top_menu_glass,
+            settings_glass: theme_settings.settings_glass,
+            app_bg_rgba: theme_settings.app_background_clamped(),
+            app_bg_color: theme_settings.app_background_color(),
+            top_menu_bg_rgba: theme_settings.top_menu_background_clamped(),
+            top_menu_bg_color: theme_settings.top_menu_background_color(),
+            explorer_bg_rgba: theme_settings.explorer_background_clamped(),
+            explorer_bg_color: theme_settings.explorer_background_color(),
+            processed_bg_rgba: theme_settings.processed_background_clamped(),
+            processed_bg_color: theme_settings.processed_background_color(),
             selection_bg_rgba: theme_settings.selection_background_clamped(),
             selection_bg_color: theme_settings.selection_background_color(),
             link_fallback_rgba: theme_settings.link_fallback_clamped(),
@@ -1376,7 +1481,7 @@ impl FromWorld for EditorState {
             link_concept_color: theme_settings.link_concept_color(),
             link_hover_hsv_value_adjustment: theme_settings
                 .link_hover_hsv_value_adjustment_clamped(),
-            theme_color_target: ThemeColorTarget::SelectionBackground,
+            theme_color_target: ThemeColorTarget::AppBackground,
             theme_color_picker_open: false,
             show_system_titlebar: settings.show_system_titlebar,
             caret_blink: Timer::from_seconds(0.5, TimerMode::Repeating),
@@ -1411,7 +1516,7 @@ impl FromWorld for EditorState {
 
 impl EditorState {
     fn any_glass_enabled(&self) -> bool {
-        self.processed_glass || self.explorer_glass || self.top_menu_glass
+        self.processed_glass || self.explorer_glass || self.settings_glass
     }
 
     fn set_display_mode(&mut self, mode: DisplayMode) -> bool {
