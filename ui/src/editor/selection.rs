@@ -46,6 +46,11 @@ fn handle_mouse_selection(
     >,
     mut state: ResMut<EditorState>,
 ) {
+    if state.workspace_prompt.is_some() {
+        mouse_selection.active = false;
+        return;
+    }
+
     if splitter_drag.suppress_next_left_click && !mouse_buttons.pressed(MouseButton::Left) {
         splitter_drag.suppress_next_left_click = false;
     }
@@ -317,6 +322,10 @@ fn handle_mouse_selection(
     let Some((_panel, position)) = hit else {
         return;
     };
+
+    if is_start {
+        state.workspace_focused = false;
+    }
 
     if consume_script_link_click(&mut state, &mut mouse_selection, &keys, is_start, position) {
         return;

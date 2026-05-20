@@ -4,6 +4,10 @@ fn handle_text_input(
     body_query: Query<(&PanelBody, &ComputedNode)>,
     mut state: ResMut<EditorState>,
 ) {
+    if state.workspace_focused || state.workspace_prompt.is_some() {
+        return;
+    }
+
     if shortcut_modifier_pressed(&keys) {
         return;
     }
@@ -132,6 +136,10 @@ fn handle_navigation_input(
     mut navigation_repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
 ) {
+    if state.workspace_prompt.is_some() {
+        return;
+    }
+
     let visible_lines = viewport_lines(
         &body_query,
         state.display_mode,
@@ -227,6 +235,10 @@ fn handle_navigation_input(
             state.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
             return;
         }
+    }
+
+    if state.workspace_focused {
+        return;
     }
 
     let previous_active_arrow = navigation_repeat.active_arrow;

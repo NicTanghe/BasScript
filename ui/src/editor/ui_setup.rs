@@ -117,6 +117,7 @@ fn setup(
                                         "Open Folder",
                                         ToolbarAction::OpenWorkspace,
                                     ),
+                                    toolbar_button(font.clone(), "Save", ToolbarAction::Save),
                                     toolbar_button(font.clone(), "Save As", ToolbarAction::SaveAs),
                                     toolbar_button(font.clone(), "Zoom -", ToolbarAction::ZoomOut),
                                     toolbar_button(font.clone(), "Zoom +", ToolbarAction::ZoomIn),
@@ -307,6 +308,7 @@ fn setup(
                         TextColor(COLOR_TEXT_MUTED),
                     ),
                     keybind_setting_row(font.clone(), ShortcutAction::OpenWorkspace),
+                    keybind_setting_row(font.clone(), ShortcutAction::Save),
                     keybind_setting_row(font.clone(), ShortcutAction::SaveAs),
                     keybind_setting_row(font.clone(), ShortcutAction::Undo),
                     keybind_setting_row(font.clone(), ShortcutAction::Redo),
@@ -321,6 +323,12 @@ fn setup(
                     ),
                     keybind_setting_row(font.clone(), ShortcutAction::ToggleExplorer),
                     keybind_setting_row(font.clone(), ShortcutAction::ToggleTopMenu),
+                    keybind_row(font.clone(), "Explorer: j / k", "Move selected row"),
+                    keybind_row(font.clone(), "Explorer: Enter / o / l", "Open selected row"),
+                    keybind_row(font.clone(), "Explorer: n", "New file or folder"),
+                    keybind_row(font.clone(), "Explorer: d", "Delete selected row"),
+                    keybind_row(font.clone(), "Explorer: R", "Refresh workspace tree"),
+                    keybind_row(font.clone(), "Explorer: q / Esc", "Leave explorer focus"),
                     keybind_row(font.clone(), "Arrow keys", "Move cursor"),
                     keybind_row(font.clone(), "Home / End", "Move to line start/end"),
                     keybind_row(font.clone(), "Page Up / Page Down", "Move by viewport"),
@@ -618,6 +626,8 @@ fn setup(
                     ),
                 ],
             ));
+
+            root.spawn(workspace_prompt_bundle(font.clone()));
         });
 }
 
@@ -1575,6 +1585,7 @@ fn handle_toolbar_buttons(
             ToolbarAction::OpenWorkspace => {
                 open_workspace_dialog(&mut state, &mut dialogs, parent_handle)
             }
+            ToolbarAction::Save => state.save_current(),
             ToolbarAction::SaveAs => open_save_dialog(&mut state, &mut dialogs, parent_handle),
             ToolbarAction::ZoomOut => {
                 let next_zoom = state.zoom - ZOOM_STEP;

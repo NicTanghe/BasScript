@@ -115,6 +115,8 @@ When the explorer is focused and `d` is pressed, prompt before deleting the sele
 Acceptance
 
 - Files and folders can be deleted from the explorer.
+- `Enter` confirms deletion from the delete prompt.
+- `n` or `Esc` cancels deletion from the delete prompt.
 - Delete acts on the selected row, even if a different file is active/open in the editor viewport.
 - Folder deletion requires explicit confirmation and shows that the folder is non-empty when applicable.
 - Deleting the currently open file clears or redirects the editor state safely instead of leaving a stale path.

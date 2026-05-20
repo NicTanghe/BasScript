@@ -36,6 +36,10 @@ fn handle_window_shortcuts(
     let explorer_binding = state.keybinds.binding(ShortcutAction::ToggleExplorer);
     if shortcut_just_pressed(&keys, explorer_binding) {
         state.workspace_sidebar_visible = !state.workspace_sidebar_visible;
+        state.workspace_focused = state.workspace_sidebar_visible;
+        if state.workspace_sidebar_visible {
+            state.normalize_workspace_selected_row();
+        }
         let visibility = if state.workspace_sidebar_visible {
             "VISIBLE"
         } else {
@@ -283,9 +287,14 @@ fn handle_file_shortcuts(
         open_workspace_dialog(&mut state, &mut dialogs, parent_handle);
     }
 
+    if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::Save)) {
+        info!("[dialog] Save shortcut detected");
+        state.save_current();
+    }
+
     if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::SaveAs)) {
         info!(
-            "[dialog] Save shortcut detected (parent_handle: {}, has_pending: {})",
+            "[dialog] Save-as shortcut detected (parent_handle: {}, has_pending: {})",
             parent_handle.is_some(),
             dialogs.pending.is_some()
         );

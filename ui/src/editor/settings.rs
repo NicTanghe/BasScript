@@ -555,6 +555,13 @@ fn apply_keybind_settings_from_ron(contents: &str, keybinds: &mut KeybindSetting
         };
         keybinds.set_binding(action, binding);
     }
+
+    if keybinds.save == keybinds.save_as {
+        keybinds.save_as = ShortcutBinding {
+            key: KeyCode::KeyS,
+            shift: true,
+        };
+    }
 }
 
 fn load_legacy_persistent_settings_ron() -> Option<PersistentSettings> {

@@ -18,6 +18,7 @@ include!("linking/mod.rs");
 include!("selection.rs");
 // Text panel-specific logic.
 include!("../pannels/text/explorer.rs");
+include!("../pannels/text/explorer_actions.rs");
 include!("../pannels/text/plain.rs");
 include!("../pannels/text/processed.rs");
 // Scroll mode input handlers and overlays.

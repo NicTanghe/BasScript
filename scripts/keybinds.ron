@@ -1,6 +1,7 @@
 (
 	open_workspace: "O",
-	save_as: "S",
+	save: "S",
+	save_as: "Shift+S",
 	undo: "Z",
 	redo: "Shift+Z",
 	zoom_in: "=",

@@ -108,6 +108,12 @@ const COLOR_TEXT_MUTED: Color = Color::srgb(0.34, 0.36, 0.39);
 const COLOR_WORKSPACE_FILE: Color = Color::srgb(0.18, 0.19, 0.20);
 const COLOR_WORKSPACE_FILE_HOVER: Color = Color::srgb(0.10, 0.35, 0.62);
 const COLOR_WORKSPACE_FILE_SELECTED: Color = Color::srgb(0.69, 0.28, 0.22);
+const COLOR_WORKSPACE_ROW_ACTIVE_BG: Color = Color::srgba(0.69, 0.28, 0.22, 0.15);
+const COLOR_WORKSPACE_ROW_SELECTED_BG: Color = Color::srgba(0.10, 0.35, 0.62, 0.16);
+const COLOR_WORKSPACE_ROW_SELECTED_ACTIVE_BG: Color = Color::srgba(0.69, 0.28, 0.22, 0.24);
+const COLOR_WORKSPACE_PROMPT_BACKDROP: Color = Color::srgba(0.0, 0.0, 0.0, 0.28);
+const COLOR_WORKSPACE_PROMPT_BG: Color = Color::srgb(0.94, 0.95, 0.96);
+const COLOR_WORKSPACE_PROMPT_INPUT_BG: Color = Color::srgb(0.99, 0.99, 1.0);
 const COLOR_SPLITTER_IDLE: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
 const COLOR_SPLITTER_HOVER: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
 const COLOR_SPLITTER_ACTIVE: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
@@ -148,6 +154,7 @@ impl Plugin for UiPlugin {
                 (
                     style_toolbar_buttons,
                     style_workspace_file_entry_text,
+                    sync_workspace_prompt_ui,
                     handle_window_shortcuts,
                     sync_window_chrome,
                     sync_glass_surfaces,
@@ -195,6 +202,8 @@ impl Plugin for UiPlugin {
                 Update,
                 (
                     handle_file_shortcuts,
+                    handle_workspace_prompt_input,
+                    handle_workspace_keyboard_input,
                     resolve_dialog_results,
                     handle_text_input,
                     handle_navigation_input,
@@ -334,6 +343,7 @@ struct ProcessedChecklistIcon {
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 enum ToolbarAction {
     OpenWorkspace,
+    Save,
     SaveAs,
     ZoomOut,
     ZoomIn,
@@ -368,6 +378,7 @@ enum SettingsAction {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum ShortcutAction {
     OpenWorkspace,
+    Save,
     SaveAs,
     Undo,
     Redo,
@@ -380,8 +391,9 @@ enum ShortcutAction {
     ToggleTopMenu,
 }
 
-const SHORTCUT_ACTIONS: [ShortcutAction; 11] = [
+const SHORTCUT_ACTIONS: [ShortcutAction; 12] = [
     ShortcutAction::OpenWorkspace,
+    ShortcutAction::Save,
     ShortcutAction::SaveAs,
     ShortcutAction::Undo,
     ShortcutAction::Redo,
@@ -403,6 +415,7 @@ struct ShortcutBinding {
 #[derive(Clone, Debug)]
 struct KeybindSettings {
     open_workspace: ShortcutBinding,
+    save: ShortcutBinding,
     save_as: ShortcutBinding,
     undo: ShortcutBinding,
     redo: ShortcutBinding,
@@ -422,9 +435,13 @@ impl Default for KeybindSettings {
                 key: KeyCode::KeyO,
                 shift: false,
             },
-            save_as: ShortcutBinding {
+            save: ShortcutBinding {
                 key: KeyCode::KeyS,
                 shift: false,
+            },
+            save_as: ShortcutBinding {
+                key: KeyCode::KeyS,
+                shift: true,
             },
             undo: ShortcutBinding {
                 key: KeyCode::KeyZ,
@@ -470,6 +487,7 @@ impl KeybindSettings {
     fn binding(&self, action: ShortcutAction) -> ShortcutBinding {
         match action {
             ShortcutAction::OpenWorkspace => self.open_workspace,
+            ShortcutAction::Save => self.save,
             ShortcutAction::SaveAs => self.save_as,
             ShortcutAction::Undo => self.undo,
             ShortcutAction::Redo => self.redo,
@@ -486,6 +504,7 @@ impl KeybindSettings {
     fn set_binding(&mut self, action: ShortcutAction, binding: ShortcutBinding) {
         match action {
             ShortcutAction::OpenWorkspace => self.open_workspace = binding,
+            ShortcutAction::Save => self.save = binding,
             ShortcutAction::SaveAs => self.save_as = binding,
             ShortcutAction::Undo => self.undo = binding,
             ShortcutAction::Redo => self.redo = binding,
@@ -505,6 +524,7 @@ impl KeybindSettings {
 fn shortcut_action_label(action: ShortcutAction) -> &'static str {
     match action {
         ShortcutAction::OpenWorkspace => "Open Workspace Folder",
+        ShortcutAction::Save => "Save",
         ShortcutAction::SaveAs => "Save As Dialog",
         ShortcutAction::Undo => "Undo",
         ShortcutAction::Redo => "Redo",
@@ -521,6 +541,7 @@ fn shortcut_action_label(action: ShortcutAction) -> &'static str {
 fn shortcut_action_description(action: ShortcutAction) -> &'static str {
     match action {
         ShortcutAction::OpenWorkspace => "Open workspace folder",
+        ShortcutAction::Save => "Save current file",
         ShortcutAction::SaveAs => "Save As dialog",
         ShortcutAction::Undo => "Undo",
         ShortcutAction::Redo => "Redo",
@@ -537,6 +558,7 @@ fn shortcut_action_description(action: ShortcutAction) -> &'static str {
 fn shortcut_action_settings_key(action: ShortcutAction) -> &'static str {
     match action {
         ShortcutAction::OpenWorkspace => "open_workspace",
+        ShortcutAction::Save => "save",
         ShortcutAction::SaveAs => "save_as",
         ShortcutAction::Undo => "undo",
         ShortcutAction::Redo => "redo",
@@ -930,6 +952,18 @@ struct HoveredProcessedLink {
     raw_end_column: usize,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum WorkspaceSelectedRow {
+    Folder(String),
+    File(PathBuf),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum WorkspacePrompt {
+    Create { input: String },
+    Delete { target: WorkspaceSelectedRow },
+}
+
 #[derive(Resource)]
 struct EditorState {
     document: Document,
@@ -993,8 +1027,12 @@ struct EditorState {
     processed_cache: Option<ProcessedCache>,
     processed_cache_dirty_from_line: Option<usize>,
     workspace_root: Option<PathBuf>,
+    workspace_folders: Vec<WorkspaceFolderEntry>,
     workspace_files: Vec<WorkspaceFileEntry>,
-    workspace_selected: Option<usize>,
+    workspace_active_file: Option<usize>,
+    workspace_selected_row: Option<WorkspaceSelectedRow>,
+    workspace_focused: bool,
+    workspace_prompt: Option<WorkspacePrompt>,
     workspace_expanded_folders: BTreeSet<String>,
     script_link_target_types: BTreeMap<String, String>,
     missing_script_link_targets: BTreeSet<String>,
@@ -1497,8 +1535,12 @@ impl FromWorld for EditorState {
             processed_cache: None,
             processed_cache_dirty_from_line: Some(0),
             workspace_root: None,
+            workspace_folders: Vec::new(),
             workspace_files: Vec::new(),
-            workspace_selected: None,
+            workspace_active_file: None,
+            workspace_selected_row: None,
+            workspace_focused: false,
+            workspace_prompt: None,
             workspace_expanded_folders: BTreeSet::new(),
             script_link_target_types: BTreeMap::new(),
             missing_script_link_targets: BTreeSet::new(),
@@ -1716,7 +1758,11 @@ impl EditorState {
 
         match self.document.save(&path) {
             Ok(()) => {
+                self.paths.load_path = path.clone();
                 self.paths.save_path = path.clone();
+                self.document_format = detect_document_format(&path, &self.document);
+                self.reparse();
+                self.refresh_workspace_after_path_change();
                 self.status_message = format!("Saved {}", status_path_label(&path));
             }
             Err(error) => {
@@ -1724,6 +1770,10 @@ impl EditorState {
                     format!("Save failed for {}: {error}", status_path_label(&path));
             }
         }
+    }
+
+    fn save_current(&mut self) {
+        self.save_to_path(self.paths.save_path.clone());
     }
 
     fn load_from_path(&mut self, path: PathBuf) {
@@ -1750,7 +1800,7 @@ impl EditorState {
                     status_path_label(&path),
                     document_format_label(self.document_format)
                 );
-                self.sync_workspace_selection();
+                self.sync_workspace_active_file();
                 self.reset_blink();
             }
             Err(error) => {
