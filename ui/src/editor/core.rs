@@ -54,6 +54,8 @@ const ZOOM_MAX: f32 = 1.8;
 const ZOOM_STEP: f32 = 0.1;
 const NAVIGATION_REPEAT_INITIAL_DELAY_SECS: f32 = 0.30;
 const NAVIGATION_REPEAT_INTERVAL_SECS: f32 = 0.045;
+const WORKSPACE_SELECTION_REPEAT_INITIAL_DELAY_SECS: f32 = 0.10;
+const WORKSPACE_SELECTION_REPEAT_INTERVAL_SECS: f32 = 0.045;
 const HISTORY_LIMIT: usize = 512;
 const MM_PER_INCH: f32 = 25.4;
 const POINTS_PER_INCH: f32 = 72.0;
@@ -136,6 +138,7 @@ impl Plugin for UiPlugin {
             .init_resource::<DialogState>()
             .init_resource::<MiddleAutoscrollState>()
             .init_resource::<NavigationRepeatState>()
+            .init_resource::<WorkspaceSelectionRepeatState>()
             .init_resource::<MouseSelectionState>()
             .init_resource::<PanelLayoutState>()
             .init_resource::<PanelSplitterDragState>()
@@ -1078,6 +1081,12 @@ struct MiddleAutoscrollState {
 
 #[derive(Resource, Default, Clone, Copy, Debug)]
 struct NavigationRepeatState {
+    active_arrow: Option<KeyCode>,
+    repeat_cooldown_secs: f32,
+}
+
+#[derive(Resource, Default, Clone, Copy, Debug)]
+struct WorkspaceSelectionRepeatState {
     active_arrow: Option<KeyCode>,
     repeat_cooldown_secs: f32,
 }

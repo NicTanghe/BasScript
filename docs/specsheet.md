@@ -273,6 +273,58 @@ Acceptance
 
 View state is preserved across switches
 
+F3. Configurable key combos
+
+Depends: F1
+Status: todo
+
+Settings menu supports editing full key combos for shortcuts.
+
+Shortcut bindings can choose:
+
+- Primary key
+
+- Optional Shift
+
+- Modifier key mode: Ctrl, Alt, Super/Cmd, or platform default
+
+Acceptance
+
+Shortcut handling does not hardcode Ctrl as the only modifier
+
+Settings UI shows the full combo that will trigger each action
+
+Changed bindings persist across app launches
+
+Conflicting shortcut combos are rejected or clearly reported
+
+F4. Space key combo-safe text input
+
+Depends: F1, F3
+Status: todo
+
+Space is inserted into the document only on Space key release.
+
+If Space is used as part of a shortcut/combo, it must not also type a space.
+
+Rules
+
+- Pressing Space starts a pending-space state instead of immediately inserting text
+
+- If any other key is pressed before Space is released, cancel the pending text insertion
+
+- If Space is released with no intervening keypresses, insert one space at the cursor
+
+- Shortcut handlers may use Space as a modifier/leader without leaking text into the editor
+
+Acceptance
+
+Tapping Space types exactly one space
+
+Holding Space and pressing another key triggers the relevant combo behavior without typing a space
+
+Canceled pending spaces do not affect undo history
+
 Constraints (explicit)
 
 - No Fountain library (custom parser provided later)
