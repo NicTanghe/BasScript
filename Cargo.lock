@@ -425,7 +425,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "basscript-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "basscript-core",
  "basscript-ui",
@@ -434,11 +434,11 @@ dependencies = [
 
 [[package]]
 name = "basscript-core"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "basscript-ui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "basscript-core",
  "bevy",
@@ -455,6 +455,7 @@ version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec689b5a79452b6f777b889bbff22d3216b82a8d2ab7814d4a0eb571e9938d97"
 dependencies = [
+ "bevy_dylib",
  "bevy_internal",
 ]
 
@@ -769,6 +770,15 @@ dependencies = [
  "log",
  "serde",
  "sysinfo",
+]
+
+[[package]]
+name = "bevy_dylib"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f142f72bbbc1a61338bf6da5dc7cf6dcf223683b9d53bcd635ebff4bfeb5308f"
+dependencies = [
+ "bevy_internal",
 ]
 
 [[package]]
