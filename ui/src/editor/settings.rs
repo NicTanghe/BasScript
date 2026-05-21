@@ -557,10 +557,7 @@ fn apply_keybind_settings_from_ron(contents: &str, keybinds: &mut KeybindSetting
     }
 
     if keybinds.save == keybinds.save_as {
-        keybinds.save_as = ShortcutBinding {
-            key: KeyCode::KeyS,
-            shift: true,
-        };
+        keybinds.save_as = ShortcutBinding::platform(KeyCode::KeyS, true);
     }
 }
 

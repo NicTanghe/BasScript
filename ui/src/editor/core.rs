@@ -410,9 +410,19 @@ const SHORTCUT_ACTIONS: [ShortcutAction; 12] = [
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShortcutModifier {
+    Platform,
+    Ctrl,
+    Alt,
+    Super,
+    Space,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ShortcutBinding {
     key: KeyCode,
     shift: bool,
+    modifier: ShortcutModifier,
 }
 
 #[derive(Clone, Debug)]
@@ -434,54 +444,28 @@ struct KeybindSettings {
 impl Default for KeybindSettings {
     fn default() -> Self {
         Self {
-            open_workspace: ShortcutBinding {
-                key: KeyCode::KeyO,
-                shift: false,
-            },
-            save: ShortcutBinding {
-                key: KeyCode::KeyS,
-                shift: false,
-            },
-            save_as: ShortcutBinding {
-                key: KeyCode::KeyS,
-                shift: true,
-            },
-            undo: ShortcutBinding {
-                key: KeyCode::KeyZ,
-                shift: false,
-            },
-            redo: ShortcutBinding {
-                key: KeyCode::KeyZ,
-                shift: true,
-            },
-            zoom_in: ShortcutBinding {
-                key: KeyCode::Equal,
-                shift: false,
-            },
-            zoom_out: ShortcutBinding {
-                key: KeyCode::Minus,
-                shift: false,
-            },
-            plain_view: ShortcutBinding {
-                key: KeyCode::KeyT,
-                shift: false,
-            },
-            processed_view: ShortcutBinding {
-                key: KeyCode::KeyR,
-                shift: false,
-            },
-            processed_raw_current_line_view: ShortcutBinding {
-                key: KeyCode::Digit1,
-                shift: false,
-            },
-            toggle_explorer: ShortcutBinding {
-                key: KeyCode::KeyE,
-                shift: false,
-            },
-            toggle_top_menu: ShortcutBinding {
-                key: KeyCode::KeyB,
-                shift: false,
-            },
+            open_workspace: ShortcutBinding::platform(KeyCode::KeyO, false),
+            save: ShortcutBinding::platform(KeyCode::KeyS, false),
+            save_as: ShortcutBinding::platform(KeyCode::KeyS, true),
+            undo: ShortcutBinding::platform(KeyCode::KeyZ, false),
+            redo: ShortcutBinding::platform(KeyCode::KeyZ, true),
+            zoom_in: ShortcutBinding::platform(KeyCode::Equal, false),
+            zoom_out: ShortcutBinding::platform(KeyCode::Minus, false),
+            plain_view: ShortcutBinding::platform(KeyCode::KeyT, false),
+            processed_view: ShortcutBinding::platform(KeyCode::KeyR, false),
+            processed_raw_current_line_view: ShortcutBinding::platform(KeyCode::Digit1, false),
+            toggle_explorer: ShortcutBinding::platform(KeyCode::KeyE, false),
+            toggle_top_menu: ShortcutBinding::platform(KeyCode::KeyB, false),
+        }
+    }
+}
+
+impl ShortcutBinding {
+    const fn platform(key: KeyCode, shift: bool) -> Self {
+        Self {
+            key,
+            shift,
+            modifier: ShortcutModifier::Platform,
         }
     }
 }
@@ -615,6 +599,7 @@ fn binding_key_name(key: KeyCode) -> Option<&'static str> {
         KeyCode::Digit9 | KeyCode::Numpad9 => Some("9"),
         KeyCode::Equal => Some("="),
         KeyCode::Minus => Some("-"),
+        KeyCode::Space => Some("Space"),
         _ => None,
     }
 }
@@ -659,6 +644,7 @@ fn binding_key_from_name(name: &str) -> Option<KeyCode> {
         "9" => Some(KeyCode::Digit9),
         "=" => Some(KeyCode::Equal),
         "-" => Some(KeyCode::Minus),
+        "SPACE" => Some(KeyCode::Space),
         _ => None,
     }
 }
@@ -669,35 +655,100 @@ fn parse_binding_spec(spec: &str) -> Option<ShortcutBinding> {
         return None;
     }
 
-    let (shift, key_name) = if trimmed
-        .to_ascii_uppercase()
-        .starts_with("SHIFT+")
-        && trimmed.len() > "SHIFT+".len()
-    {
-        (true, &trimmed["SHIFT+".len()..])
-    } else {
-        (false, trimmed)
-    };
+    let parts = trimmed
+        .split('+')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    let key_name = parts.last().copied()?;
+    let mut shift = false;
+    let mut modifier = ShortcutModifier::Platform;
+
+    for modifier_name in parts.iter().take(parts.len().saturating_sub(1)) {
+        match modifier_name.to_ascii_uppercase().as_str() {
+            "SHIFT" => shift = true,
+            "MOD" | "PLATFORM" | "CMD/CTRL" | "CTRL/CMD" | "COMMAND/CONTROL" => {
+                modifier = ShortcutModifier::Platform
+            }
+            "CTRL" | "CONTROL" => modifier = ShortcutModifier::Ctrl,
+            "ALT" | "OPTION" => modifier = ShortcutModifier::Alt,
+            "SUPER" | "CMD" | "COMMAND" | "WIN" | "WINDOWS" => {
+                modifier = ShortcutModifier::Super
+            }
+            "SPACE" => modifier = ShortcutModifier::Space,
+            _ => return None,
+        }
+    }
+
     let key = binding_key_from_name(key_name)?;
-    Some(ShortcutBinding { key, shift })
+    Some(ShortcutBinding {
+        key,
+        shift,
+        modifier,
+    })
 }
 
 fn binding_spec(binding: ShortcutBinding) -> String {
-    let key_name = binding_key_name(binding.key).unwrap_or("?");
+    let mut parts = vec![binding_modifier_spec(binding.modifier).to_string()];
     if binding.shift {
-        format!("Shift+{key_name}")
-    } else {
-        key_name.to_string()
+        parts.push("Shift".to_string());
+    }
+    parts.push(binding_key_name(binding.key).unwrap_or("?").to_string());
+    parts.join("+")
+}
+
+fn binding_modifier_spec(modifier: ShortcutModifier) -> &'static str {
+    match modifier {
+        ShortcutModifier::Platform => "Mod",
+        ShortcutModifier::Ctrl => "Ctrl",
+        ShortcutModifier::Alt => "Alt",
+        ShortcutModifier::Super => "Super",
+        ShortcutModifier::Space => "Space",
+    }
+}
+
+fn binding_modifier_display(modifier: ShortcutModifier) -> &'static str {
+    match modifier {
+        ShortcutModifier::Platform => "Cmd/Ctrl",
+        ShortcutModifier::Ctrl => "Ctrl",
+        ShortcutModifier::Alt => "Alt",
+        ShortcutModifier::Super => "Super/Cmd",
+        ShortcutModifier::Space => "Space",
+    }
+}
+
+fn capture_shortcut_modifier(
+    keys: &ButtonInput<KeyCode>,
+    primary_key: KeyCode,
+) -> Result<ShortcutModifier, &'static str> {
+    let mut pressed = Vec::new();
+    if keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
+        pressed.push(ShortcutModifier::Ctrl);
+    }
+    if keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]) {
+        pressed.push(ShortcutModifier::Alt);
+    }
+    if keys.any_pressed([KeyCode::SuperLeft, KeyCode::SuperRight]) {
+        pressed.push(ShortcutModifier::Super);
+    }
+    if primary_key != KeyCode::Space && keys.pressed(KeyCode::Space) {
+        pressed.push(ShortcutModifier::Space);
+    }
+
+    match pressed.as_slice() {
+        [] => Ok(ShortcutModifier::Platform),
+        [modifier] => Ok(*modifier),
+        _ => Err("Use only one shortcut modifier: Ctrl, Alt, Super/Cmd, or Space."),
     }
 }
 
 fn binding_display(binding: ShortcutBinding) -> String {
-    let mut text = String::from("Cmd/Ctrl+");
+    let mut parts = vec![binding_modifier_display(binding.modifier).to_string()];
     if binding.shift {
-        text.push_str("Shift+");
+        parts.push("Shift".to_string());
     }
-    text.push_str(binding_key_name(binding.key).unwrap_or("?"));
-    text
+    parts.push(binding_key_name(binding.key).unwrap_or("?").to_string());
+    parts.join("+")
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
@@ -986,6 +1037,8 @@ struct EditorState {
     status_message: String,
     keybinds: KeybindSettings,
     pending_keybind_capture: Option<ShortcutAction>,
+    pending_space_insert: bool,
+    pending_space_combo_canceled: bool,
     workspace_sidebar_visible: bool,
     top_menu_collapsed: bool,
     processed_glass: bool,
@@ -1499,6 +1552,8 @@ impl FromWorld for EditorState {
             status_message,
             keybinds,
             pending_keybind_capture: None,
+            pending_space_insert: false,
+            pending_space_combo_canceled: false,
             workspace_sidebar_visible: ui_state.workspace_sidebar_visible,
             top_menu_collapsed: ui_state.top_menu_collapsed,
             processed_glass: theme_settings.processed_glass,

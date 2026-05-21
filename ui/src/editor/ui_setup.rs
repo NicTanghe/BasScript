@@ -299,7 +299,7 @@ fn setup(
                         TextColor(COLOR_TEXT_MAIN),
                     ),
                     (
-                        Text::new("Click a binding button, then press a key (Esc cancels)."),
+                        Text::new("Click a binding button, then press a key. Hold Ctrl, Alt, Super/Cmd, or Space to choose that modifier."),
                         TextFont {
                             font: font.clone(),
                             font_size: 12.0,
@@ -1941,7 +1941,7 @@ fn handle_keybind_buttons(
 
         state.pending_keybind_capture = Some(button.action);
         state.status_message = format!(
-            "Press a key for {} (Esc to cancel).",
+            "Press a key for {}. Hold Ctrl, Alt, Super/Cmd, or Space to choose that modifier. Esc cancels.",
             shortcut_action_label(button.action)
         );
     }
@@ -1984,10 +1984,13 @@ fn capture_keybind_input(
         ) {
             continue;
         }
+        if key_code == KeyCode::Space && !text_input_modifier_pressed(&keys) {
+            continue;
+        }
 
         if binding_key_name(key_code).is_none() {
             state.status_message = format!(
-                "Unsupported key for {}. Use letters, digits, '=' or '-'.",
+                "Unsupported key for {}. Use letters, digits, Space, '=' or '-'.",
                 shortcut_action_label(action)
             );
             continue;
@@ -1996,6 +1999,13 @@ fn capture_keybind_input(
         let binding = ShortcutBinding {
             key: key_code,
             shift: shift_modifier_pressed(&keys),
+            modifier: match capture_shortcut_modifier(&keys, key_code) {
+                Ok(modifier) => modifier,
+                Err(message) => {
+                    state.status_message = message.to_string();
+                    continue;
+                }
+            },
         };
         let conflict = SHORTCUT_ACTIONS.iter().copied().find(|candidate| {
             *candidate != action && state.keybinds.binding(*candidate) == binding

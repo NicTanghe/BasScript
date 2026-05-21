@@ -183,7 +183,7 @@ fn handle_workspace_prompt_input(
     let mut action = None::<PromptAction>;
     match prompt {
         WorkspacePrompt::Create { input } => {
-            if shortcut_modifier_pressed(&keys) {
+            if text_input_modifier_pressed(&keys) {
                 return;
             }
 

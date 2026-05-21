@@ -1,7 +1,22 @@
-fn shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+fn platform_shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
     keys.any_pressed([
         KeyCode::ControlLeft,
         KeyCode::ControlRight,
+        KeyCode::SuperLeft,
+        KeyCode::SuperRight,
+    ])
+}
+
+fn shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+    text_input_modifier_pressed(keys) || keys.pressed(KeyCode::Space)
+}
+
+fn text_input_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+    keys.any_pressed([
+        KeyCode::ControlLeft,
+        KeyCode::ControlRight,
+        KeyCode::AltLeft,
+        KeyCode::AltRight,
         KeyCode::SuperLeft,
         KeyCode::SuperRight,
     ])
@@ -12,7 +27,7 @@ fn shift_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
 }
 
 fn shortcut_just_pressed(keys: &ButtonInput<KeyCode>, binding: ShortcutBinding) -> bool {
-    if !shortcut_modifier_pressed(keys) {
+    if !shortcut_binding_modifier_pressed(keys, binding) {
         return false;
     }
 
@@ -25,6 +40,24 @@ fn shortcut_just_pressed(keys: &ButtonInput<KeyCode>, binding: ShortcutBinding) 
     }
 
     keys.just_pressed(binding.key)
+}
+
+fn shortcut_binding_modifier_pressed(
+    keys: &ButtonInput<KeyCode>,
+    binding: ShortcutBinding,
+) -> bool {
+    let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
+    let alt = keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]);
+    let super_pressed = keys.any_pressed([KeyCode::SuperLeft, KeyCode::SuperRight]);
+    let space = binding.key != KeyCode::Space && keys.pressed(KeyCode::Space);
+
+    match binding.modifier {
+        ShortcutModifier::Platform => (ctrl || super_pressed) && !alt && !space,
+        ShortcutModifier::Ctrl => ctrl && !alt && !super_pressed && !space,
+        ShortcutModifier::Alt => alt && !ctrl && !super_pressed && !space,
+        ShortcutModifier::Super => super_pressed && !ctrl && !alt && !space,
+        ShortcutModifier::Space => space && !ctrl && !alt && !super_pressed,
+    }
 }
 
 fn handle_window_shortcuts(

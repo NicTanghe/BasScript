@@ -286,7 +286,7 @@ Shortcut bindings can choose:
 
 - Optional Shift
 
-- Modifier key mode: Ctrl, Alt, Super/Cmd, or platform default
+- Modifier key mode: Ctrl, Alt, Super/Cmd, Space/leader, or platform default
 
 Acceptance
 

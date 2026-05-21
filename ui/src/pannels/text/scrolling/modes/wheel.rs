@@ -11,7 +11,7 @@ fn handle_mouse_scroll(
         panel_context.processed_panel_size,
     );
 
-    if shortcut_modifier_pressed(&keys) {
+    if platform_shortcut_modifier_pressed(&keys) {
         let mut zoom_steps = 0.0_f32;
 
         for wheel in mouse_wheels.read() {

@@ -5,10 +5,8 @@ fn handle_text_input(
     mut state: ResMut<EditorState>,
 ) {
     if state.workspace_focused || state.workspace_prompt.is_some() {
-        return;
-    }
-
-    if shortcut_modifier_pressed(&keys) {
+        state.pending_space_insert = false;
+        state.pending_space_combo_canceled = false;
         return;
     }
 
@@ -28,6 +26,51 @@ fn handle_text_input(
 
     for input in keyboard_inputs.read() {
         if !input.state.is_pressed() {
+            if input.key_code == KeyCode::Space && state.pending_space_insert {
+                let should_insert_space = !state.pending_space_combo_canceled;
+                state.pending_space_insert = false;
+                state.pending_space_combo_canceled = false;
+
+                if !should_insert_space {
+                    continue;
+                }
+
+                if undo_snapshot.is_none() {
+                    undo_snapshot = Some(state.history_snapshot());
+                }
+
+                let cursor_pos = state.cursor.position;
+                let mut dirty_candidate = cursor_pos.line;
+                if let Some(next) = state.delete_selection() {
+                    dirty_candidate = next.line.min(dirty_candidate);
+                }
+                let insert_position = state.cursor.position;
+                let next = state.document.insert_text(insert_position, " ");
+                state.set_cursor(next, true);
+                dirty_from_line =
+                    Some(dirty_from_line.map_or(dirty_candidate, |line| line.min(dirty_candidate)));
+                edited = true;
+            }
+            continue;
+        }
+
+        if input.key_code == KeyCode::Space {
+            if keys.just_pressed(KeyCode::Space)
+                && !state.pending_space_insert
+                && !text_input_modifier_pressed(&keys)
+            {
+                state.pending_space_insert = true;
+                state.pending_space_combo_canceled = false;
+            }
+            continue;
+        }
+
+        if state.pending_space_insert {
+            state.pending_space_combo_canceled = true;
+            continue;
+        }
+
+        if text_input_modifier_pressed(&keys) {
             continue;
         }
 
@@ -235,6 +278,8 @@ fn handle_navigation_input(
             state.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
             return;
         }
+
+        return;
     }
 
     if state.workspace_focused {
