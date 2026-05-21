@@ -259,13 +259,7 @@ fn handle_workspace_keyboard_input(
         return;
     }
 
-    if keys.just_pressed(KeyCode::KeyJ) {
-        move_workspace_selection(&mut state, 1);
-    }
-    if keys.just_pressed(KeyCode::KeyK) {
-        move_workspace_selection(&mut state, -1);
-    }
-    handle_workspace_arrow_selection_repeat(&keys, &time, &mut repeat, &mut state);
+    handle_workspace_selection_repeat(&keys, &time, &mut repeat, &mut state);
     if keys.just_pressed(KeyCode::KeyH) {
         collapse_or_select_workspace_parent(&mut state);
     }
@@ -291,30 +285,31 @@ fn handle_workspace_keyboard_input(
     }
 }
 
-fn handle_workspace_arrow_selection_repeat(
+fn handle_workspace_selection_repeat(
     keys: &ButtonInput<KeyCode>,
     time: &Time,
     repeat: &mut WorkspaceSelectionRepeatState,
     state: &mut EditorState,
 ) {
     let previous_active_arrow = repeat.active_arrow;
-    if keys.just_pressed(KeyCode::ArrowUp) {
-        move_workspace_selection(state, -1);
-        repeat.active_arrow = Some(KeyCode::ArrowUp);
-        repeat.repeat_cooldown_secs = WORKSPACE_SELECTION_REPEAT_INITIAL_DELAY_SECS;
-        return;
-    }
-    if keys.just_pressed(KeyCode::ArrowDown) {
-        move_workspace_selection(state, 1);
-        repeat.active_arrow = Some(KeyCode::ArrowDown);
-        repeat.repeat_cooldown_secs = WORKSPACE_SELECTION_REPEAT_INITIAL_DELAY_SECS;
-        return;
+    for key in [
+        KeyCode::ArrowUp,
+        KeyCode::ArrowDown,
+        KeyCode::KeyK,
+        KeyCode::KeyJ,
+    ] {
+        if keys.just_pressed(key) {
+            move_workspace_selection(state, workspace_selection_key_delta(key));
+            repeat.active_arrow = Some(key);
+            repeat.repeat_cooldown_secs = WORKSPACE_SELECTION_REPEAT_INITIAL_DELAY_SECS;
+            return;
+        }
     }
 
     let active_arrow = repeat
         .active_arrow
         .filter(|arrow| keys.pressed(*arrow))
-        .or_else(|| held_workspace_arrow(keys));
+        .or_else(|| held_workspace_selection_key(keys));
 
     if active_arrow != previous_active_arrow {
         repeat.repeat_cooldown_secs = WORKSPACE_SELECTION_REPEAT_INITIAL_DELAY_SECS;
@@ -328,16 +323,27 @@ fn handle_workspace_arrow_selection_repeat(
 
     repeat.repeat_cooldown_secs -= time.delta_secs().max(0.0);
     while repeat.repeat_cooldown_secs <= 0.0 {
-        let delta = if arrow == KeyCode::ArrowUp { -1 } else { 1 };
-        move_workspace_selection(state, delta);
+        move_workspace_selection(state, workspace_selection_key_delta(arrow));
         repeat.repeat_cooldown_secs += WORKSPACE_SELECTION_REPEAT_INTERVAL_SECS;
     }
 }
 
-fn held_workspace_arrow(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
-    [KeyCode::ArrowUp, KeyCode::ArrowDown]
+fn held_workspace_selection_key(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
+    [
+        KeyCode::ArrowUp,
+        KeyCode::ArrowDown,
+        KeyCode::KeyK,
+        KeyCode::KeyJ,
+    ]
         .into_iter()
         .find(|key| keys.pressed(*key))
+}
+
+fn workspace_selection_key_delta(key: KeyCode) -> isize {
+    match key {
+        KeyCode::ArrowUp | KeyCode::KeyK => -1,
+        _ => 1,
+    }
 }
 
 fn move_workspace_selection(state: &mut EditorState, delta: isize) {

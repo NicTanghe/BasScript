@@ -45,8 +45,8 @@ These must not be used interchangeably.
 
 Rules
 
-- `j` and `k` move the selected row only.
-- Holding Up or Down for the normal repeat delay, approximately 0.1 seconds, keeps moving the selected row.
+- `j`, `k`, Up, and Down move the selected row only.
+- Holding `j`, `k`, Up, or Down for the normal repeat delay, approximately 0.1 seconds, keeps moving the selected row.
 - Moving the selected row never opens a file by itself.
 - Pressing `Enter`, `o`, or `l` on a selected file opens it and makes it the active/open document.
 - Clicking a file selects that row and opens it.
@@ -143,7 +143,7 @@ Status: todo
 
 Explorer focused bindings:
 
-- `j` / `k`: move selection down/up
+- `j` / `k`: move selection down/up, repeating while held
 - `Up` / `Down`: move selection up/down, repeating while held
 - `h`: collapse selected folder or move selection to parent
 - `l` / `o` / `Enter`: expand/open selected row

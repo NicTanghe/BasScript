@@ -130,6 +130,9 @@ fn setup(
                         Node {
                             width: percent(100.0),
                             flex_grow: 1.0,
+                            flex_shrink: 1.0,
+                            flex_basis: px(0.0),
+                            min_height: px(0.0),
                             flex_direction: FlexDirection::Row,
                             column_gap: px(0.0),
                             padding: UiRect::all(px(0.0)),

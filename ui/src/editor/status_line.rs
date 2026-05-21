@@ -4,6 +4,8 @@ const STATUS_LINE_PADDING_RIGHT: f32 = 0.0;
 const STATUS_LINE_PADDING_TOP: f32 = 4.0;
 const STATUS_LINE_PADDING_BOTTOM: f32 = 0.0;
 const STATUS_LINE_LINE_HEIGHT: f32 = 11.0;
+const STATUS_LINE_MIN_HEIGHT: f32 =
+    STATUS_LINE_PADDING_TOP + STATUS_LINE_LINE_HEIGHT + STATUS_LINE_PADDING_BOTTOM;
 
 #[derive(Component)]
 struct StatusText;
@@ -19,6 +21,8 @@ fn status_line_bundle(font: Handle<Font>, background: Color) -> impl Bundle {
     (
         Node {
             width: percent(100.0),
+            min_height: px(STATUS_LINE_MIN_HEIGHT),
+            flex_shrink: 0.0,
             padding: UiRect::new(
                 px(STATUS_LINE_PADDING_LEFT),
                 px(STATUS_LINE_PADDING_RIGHT),
