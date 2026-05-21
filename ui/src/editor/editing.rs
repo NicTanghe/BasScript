@@ -60,8 +60,12 @@ fn handle_text_input(
                 && !text_input_modifier_pressed(&keys)
             {
                 state.pending_space_insert = true;
-                state.pending_space_combo_canceled = false;
             }
+            continue;
+        }
+
+        if keys.pressed(KeyCode::Space) {
+            state.pending_space_combo_canceled = true;
             continue;
         }
 

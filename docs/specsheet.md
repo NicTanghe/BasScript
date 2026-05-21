@@ -313,7 +313,11 @@ Rules
 
 - If any other key is pressed before Space is released, cancel the pending text insertion
 
+- While Space is held, the next key pressed for a Space combo is also blocked from text insertion
+
 - If Space is released with no intervening keypresses, insert one space at the cursor
+
+- Holding Space must not repeat-insert spaces
 
 - Shortcut handlers may use Space as a modifier/leader without leaking text into the editor
 
@@ -322,6 +326,8 @@ Acceptance
 Tapping Space types exactly one space
 
 Holding Space and pressing another key triggers the relevant combo behavior without typing a space
+
+Holding Space and pressing another key does not type that second key into the document
 
 Canceled pending spaces do not affect undo history
 
