@@ -817,6 +817,16 @@ fn window_surface_top_border_radius(round_left: bool, round_right: bool) -> Bord
     )
 }
 
+fn window_surface_bottom_border_radius(round_left: bool, round_right: bool) -> BorderRadius {
+    let radius = px(UNDECORATED_WINDOW_CORNER_RADIUS);
+    BorderRadius::new(
+        px(0.0),
+        px(0.0),
+        if round_right { radius } else { px(0.0) },
+        if round_left { radius } else { px(0.0) },
+    )
+}
+
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 enum MarginEdge {
     Left,

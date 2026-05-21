@@ -311,7 +311,10 @@ mod tests {
     #[test]
     fn delete_range_within_single_line() {
         let mut doc = Document::from_text("abcdef");
-        let cursor = doc.delete_range(Position { line: 0, column: 2 }, Position { line: 0, column: 5 });
+        let cursor = doc.delete_range(
+            Position { line: 0, column: 2 },
+            Position { line: 0, column: 5 },
+        );
 
         assert_eq!(cursor, Position { line: 0, column: 2 });
         assert_eq!(doc.line_count(), 1);
@@ -321,7 +324,10 @@ mod tests {
     #[test]
     fn delete_range_across_multiple_lines() {
         let mut doc = Document::from_text("abc\ndef\nghi");
-        let cursor = doc.delete_range(Position { line: 0, column: 1 }, Position { line: 2, column: 1 });
+        let cursor = doc.delete_range(
+            Position { line: 0, column: 1 },
+            Position { line: 2, column: 1 },
+        );
 
         assert_eq!(cursor, Position { line: 0, column: 1 });
         assert_eq!(doc.line_count(), 1);
@@ -331,7 +337,10 @@ mod tests {
     #[test]
     fn delete_range_swaps_reversed_bounds() {
         let mut doc = Document::from_text("abc\ndef");
-        let cursor = doc.delete_range(Position { line: 1, column: 1 }, Position { line: 0, column: 2 });
+        let cursor = doc.delete_range(
+            Position { line: 1, column: 1 },
+            Position { line: 0, column: 2 },
+        );
 
         assert_eq!(cursor, Position { line: 0, column: 2 });
         assert_eq!(doc.line_count(), 1);

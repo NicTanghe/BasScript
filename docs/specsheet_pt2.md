@@ -133,11 +133,34 @@ Make saving predictable after explorer-created files.
 Acceptance
 
 - `Save` writes directly to the current save path without opening a dialog.
+- `Ctrl+S` writes directly to the current save path without opening a dialog.
 - `Save As` remains available for choosing a new path.
 - Newly created files become the current save path immediately.
 - Status messages distinguish `Saved`, `Save As canceled`, and `Save failed`.
 
-G7. Keybind surface
+G7. Command menu
+
+Status: todo
+
+Add an in-app command menu for file workflow commands.
+
+Rules
+
+- Pressing `<Space>:` opens the command menu.
+- The command menu accepts short text commands.
+- The first registered command must be `w`, short for write.
+- Running `w` saves the current file to the current save path, matching `Ctrl+S` and direct `Save` behavior.
+- Running `w` must not open a native save dialog.
+- If the current document has no save path, `w` should use the same fallback behavior as direct `Save`.
+
+Acceptance
+
+- Pressing `<Space>:` opens the command menu from the editor without changing the document.
+- Typing `w` and confirming saves the current file.
+- `w`, `Ctrl+S`, and `Save` share the same save implementation and status messages.
+- Command failures show a useful status message.
+
+G8. Keybind surface
 
 Status: todo
 
@@ -152,6 +175,15 @@ Explorer focused bindings:
 - `r`: rename selected row, optional after create/delete lands
 - `R`: refresh workspace tree
 - `q` or `Esc`: leave explorer focus
+
+Global/editor bindings:
+
+- `Ctrl+S`: save the current file to the current save path
+- `<Space>:`: open the command menu
+
+Command menu entries:
+
+- `w`: write/save the current file to the current save path
 
 Acceptance
 

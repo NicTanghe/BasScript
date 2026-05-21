@@ -1,16 +1,12 @@
 use basscript_ui::UiPlugin;
-use bevy::{
-    asset::AssetPlugin,
-    prelude::*,
-    window::WindowPlugin,
-};
-#[cfg(target_os = "windows")]
-use bevy::window::CompositeAlphaMode;
 #[cfg(target_os = "windows")]
 use bevy::render::{
     RenderPlugin,
     settings::{Backends, WgpuSettings},
 };
+#[cfg(target_os = "windows")]
+use bevy::window::CompositeAlphaMode;
+use bevy::{asset::AssetPlugin, prelude::*, window::WindowPlugin};
 
 fn main() {
     #[cfg(target_os = "windows")]
@@ -51,4 +47,3 @@ fn main() {
         .add_plugins(UiPlugin)
         .run();
 }
-

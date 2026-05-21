@@ -351,7 +351,10 @@ fn parse_front_matter(path: &Path, lines: &[String]) -> Result<EntityFrontMatter
 
     for (index, line) in lines.iter().enumerate() {
         let line_number = index + 2;
-        let indent = line.chars().take_while(|ch| ch.is_ascii_whitespace()).count();
+        let indent = line
+            .chars()
+            .take_while(|ch| ch.is_ascii_whitespace())
+            .count();
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
@@ -400,9 +403,7 @@ fn parse_front_matter(path: &Path, lines: &[String]) -> Result<EntityFrontMatter
             }
             "status" => status = Some(parse_yaml_scalar(value)),
             _ => {
-                if value.is_empty()
-                    || matches!(value.chars().next(), Some('|') | Some('>'))
-                {
+                if value.is_empty() || matches!(value.chars().next(), Some('|') | Some('>')) {
                     active_block = Some((indent, FrontMatterBlock::Ignore));
                 }
             }

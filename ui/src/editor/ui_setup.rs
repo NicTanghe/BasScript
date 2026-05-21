@@ -2183,6 +2183,20 @@ fn sync_rounded_window_surfaces(
         Query<(&PanelRoot, &mut Node)>,
         Query<(&PanelBody, &mut Node)>,
     )>,
+    mut status_line_query: Query<
+        &mut Node,
+        (
+            With<StatusLineRoot>,
+            Without<EditorScreenRoot>,
+            Without<SettingsScreenRoot>,
+            Without<KeybindsScreenRoot>,
+            Without<ThemeScreenRoot>,
+            Without<TopMenuSection>,
+            Without<WorkspaceSidebarPane>,
+            Without<PanelRoot>,
+            Without<PanelBody>,
+        ),
+    >,
 ) {
     let round_window = !state.show_system_titlebar;
     let editor_screen_active = *screen_state.get() == UiScreenState::Editor;
@@ -2271,6 +2285,15 @@ fn sync_rounded_window_surfaces(
             }
         };
         node.border_radius = window_surface_top_border_radius(round_left, round_right);
+    }
+
+    if let Ok(mut status_line) = status_line_query.single_mut() {
+        status_line.border_radius = if round_window && editor_screen_active {
+            window_surface_bottom_border_radius(true, true)
+        } else {
+            BorderRadius::ZERO
+        };
+        status_line.overflow = clipped_overflow;
     }
 }
 
