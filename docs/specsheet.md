@@ -256,9 +256,21 @@ Keyboard input (text + navigation)
 
 Mouse click + drag selection
 
+Track the last selected editor panel for navigation context.
+
+When the formatted / processed panel was the last selected panel, `ArrowUp` and `ArrowDown` move by visible rendered lines, not only by hardcoded document line breaks. This must include soft line wraps introduced by formatting, panel width, font metrics, indentation, and styling.
+
+When a raw text panel or raw focus line was the last selected panel, arrow navigation keeps the raw/logical line behavior.
+
 Acceptance
 
 Typing and navigation never block rendering
+
+Formatted-panel vertical arrow navigation follows the same visual line breaks the user sees on screen.
+
+Explicit line breaks and formatting-introduced wraps are both respected.
+
+Resizing the formatted panel or changing layout-affecting style updates the visual-line movement naturally.
 
 F2. Tabs / view switcher
 

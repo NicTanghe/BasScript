@@ -901,10 +901,12 @@ fn processed_cursor_visual_from_lines<'a>(
             .get(entry_index + 1)
             .map(|(_, next_line)| next_line.raw_start_column);
 
-        if raw_column <= visual_line.raw_end_column
-            || next_start.is_some_and(|start| raw_column < start)
-            || entry_index + 1 == relevant.len()
-        {
+        let is_last_entry = entry_index + 1 == relevant.len();
+        let inside_visual_line = raw_column < visual_line.raw_end_column;
+        let before_next_line = next_start.is_some_and(|start| raw_column < start);
+        let at_final_line_end = is_last_entry && raw_column <= visual_line.raw_end_column;
+
+        if inside_visual_line || before_next_line || at_final_line_end {
             return Some((
                 *visual_index,
                 processed_display_column_from_raw(visual_line, raw_column),

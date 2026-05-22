@@ -1038,6 +1038,7 @@ struct EditorState {
     top_line: usize,
     processed_top_line: usize,
     processed_top_visual: usize,
+    processed_preferred_column: Option<usize>,
     display_mode: DisplayMode,
     focused_panel: PanelKind,
     plain_horizontal_scroll: f32,
@@ -1553,6 +1554,7 @@ impl FromWorld for EditorState {
             top_line: 0,
             processed_top_line: 0,
             processed_top_visual: 0,
+            processed_preferred_column: None,
             display_mode: DisplayMode::Split,
             focused_panel: PanelKind::Plain,
             plain_horizontal_scroll: 0.0,
@@ -1644,6 +1646,7 @@ impl EditorState {
         if !self.panel_visible(self.focused_panel) {
             self.focused_panel = self.active_panel_for_display_mode();
         }
+        self.processed_preferred_column = None;
         self.reset_blink();
         true
     }
@@ -1810,6 +1813,7 @@ impl EditorState {
             None
         };
         let clamped = self.document.clamp_position(position);
+        self.processed_preferred_column = None;
 
         if update_preferred {
             self.cursor.set_position(clamped);
@@ -1863,6 +1867,7 @@ impl EditorState {
                 self.top_line = 0;
                 self.processed_top_line = 0;
                 self.processed_top_visual = 0;
+                self.processed_preferred_column = None;
                 self.plain_horizontal_scroll = 0.0;
                 self.processed_horizontal_scroll = 0.0;
                 self.processed_zoom_anchor_bias_px = 0.0;
@@ -1930,6 +1935,7 @@ impl EditorState {
             .preferred_column
             .min(self.document.line_len_chars(self.cursor.position.line));
         self.selection_anchor = None;
+        self.processed_preferred_column = None;
 
         self.top_line = snapshot.top_line;
         self.processed_top_line = snapshot.processed_top_line;

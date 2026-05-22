@@ -292,7 +292,12 @@ fn handle_navigation_input(
 
     let previous_active_arrow = navigation_repeat.active_arrow;
     if let Some(arrow) = just_pressed_navigation_arrow(&keys) {
-        moved |= move_cursor_by_arrow_key(&mut state, arrow, extend_selection);
+        moved |= move_cursor_by_arrow_key(
+            &mut state,
+            arrow,
+            extend_selection,
+            processed_panel_size,
+        );
         navigation_repeat.active_arrow = Some(arrow);
         navigation_repeat.repeat_cooldown_secs = NAVIGATION_REPEAT_INITIAL_DELAY_SECS;
     } else {
@@ -310,7 +315,12 @@ fn handle_navigation_input(
         if let Some(arrow) = active_arrow {
             navigation_repeat.repeat_cooldown_secs -= time.delta_secs().max(0.0);
             while navigation_repeat.repeat_cooldown_secs <= 0.0 {
-                moved |= move_cursor_by_arrow_key(&mut state, arrow, extend_selection);
+                moved |= move_cursor_by_arrow_key(
+                    &mut state,
+                    arrow,
+                    extend_selection,
+                    processed_panel_size,
+                );
                 navigation_repeat.repeat_cooldown_secs += NAVIGATION_REPEAT_INTERVAL_SECS;
             }
         } else {
@@ -406,7 +416,15 @@ fn move_cursor_by_arrow_key(
     state: &mut EditorState,
     arrow: KeyCode,
     extend_selection: bool,
+    processed_panel_size: Option<Vec2>,
 ) -> bool {
+    if let Some(moved) =
+        move_processed_cursor_by_visual_arrow_key(state, arrow, extend_selection, processed_panel_size)
+    {
+        return moved;
+    }
+
+    state.processed_preferred_column = None;
     let current = state.cursor.position;
     let next = match arrow {
         KeyCode::ArrowLeft => state.document.move_left(current),
@@ -422,4 +440,95 @@ fn move_cursor_by_arrow_key(
         extend_selection,
     );
     next != current
+}
+
+fn move_processed_cursor_by_visual_arrow_key(
+    state: &mut EditorState,
+    arrow: KeyCode,
+    extend_selection: bool,
+    processed_panel_size: Option<Vec2>,
+) -> Option<bool> {
+    let direction = match arrow {
+        KeyCode::ArrowUp => -1,
+        KeyCode::ArrowDown => 1,
+        _ => return None,
+    };
+    if state.focused_panel != PanelKind::Processed || !state.panel_visible(PanelKind::Processed) {
+        return None;
+    }
+
+    let panel_size = processed_panel_size?;
+    let layout = processed_page_layout(panel_size, state);
+    let processed_lines = processed_display_lines(
+        state,
+        layout.wrap_columns,
+        layout.lines_per_page,
+        layout.spacer_lines,
+    );
+    if processed_lines.is_empty() {
+        state.processed_preferred_column = None;
+        return Some(false);
+    }
+
+    let (current_visual_index, current_display_column) =
+        processed_cursor_visual_index_and_display_column(state, &processed_lines)?;
+    let preferred_display_column = state
+        .processed_preferred_column
+        .unwrap_or(current_display_column);
+    state.processed_preferred_column = Some(preferred_display_column);
+
+    let Some(target_visual_index) =
+        adjacent_processed_visual_line_index(&processed_lines, current_visual_index, direction)
+    else {
+        return Some(false);
+    };
+    let Some(visual_line) = processed_lines.get(target_visual_index) else {
+        return Some(false);
+    };
+
+    let display_column = preferred_display_column.min(visual_line.text.chars().count());
+    let raw_column = processed_raw_column_from_display(visual_line, display_column);
+    let next = Position {
+        line: visual_line.source_line,
+        column: raw_column.min(state.document.line_len_chars(visual_line.source_line)),
+    };
+    let current = state.cursor.position;
+
+    state.set_cursor_with_selection(next, false, extend_selection);
+    state.cursor.preferred_column = next.column;
+    state.processed_preferred_column = Some(preferred_display_column);
+    Some(next != current)
+}
+
+fn processed_cursor_visual_index_and_display_column(
+    state: &EditorState,
+    lines: &[ProcessedVisualLine],
+) -> Option<(usize, usize)> {
+    if let Some((visual_index, display_column, _)) =
+        processed_cursor_visual_from_lines(state, lines)
+    {
+        return Some((visual_index, display_column));
+    }
+
+    let visual_index = first_visual_index_for_source_line(lines, state.cursor.position.line)?;
+    let visual_line = lines.get(visual_index)?;
+    Some((
+        visual_index,
+        processed_display_column_from_raw(visual_line, state.cursor.position.column),
+    ))
+}
+
+fn adjacent_processed_visual_line_index(
+    lines: &[ProcessedVisualLine],
+    current_index: usize,
+    direction: isize,
+) -> Option<usize> {
+    if direction < 0 {
+        (0..current_index)
+            .rev()
+            .find(|index| lines.get(*index).is_some_and(|line| !line.is_spacer))
+    } else {
+        (current_index.saturating_add(1)..lines.len())
+            .find(|index| lines.get(*index).is_some_and(|line| !line.is_spacer))
+    }
 }

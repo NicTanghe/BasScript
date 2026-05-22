@@ -134,7 +134,45 @@ fn apply_cursor_follow_scroll_policy(
             }
         }
         PanelKind::Processed => {
-            // Processed is the anchor: adjust only plain top-line.
+            // Processed is the anchor: keep the formatted caret visible and let plain follow.
+            if let Some(panel_size) = processed_panel_size {
+                let processed_layout = processed_page_layout(panel_size, state);
+                let all_lines = processed_display_lines(
+                    state,
+                    processed_layout.wrap_columns,
+                    processed_layout.lines_per_page,
+                    processed_layout.spacer_lines,
+                );
+                if all_lines.is_empty() {
+                    state.processed_top_visual = 0;
+                    state.processed_top_line = 0;
+                } else if let Some((target_visual, _, _)) =
+                    processed_cursor_visual_from_lines(state, &all_lines)
+                {
+                    let visible_visual_lines = visible_lines.max(1);
+                    let max_visual = all_lines.len().saturating_sub(1);
+                    let current_top = state.processed_top_visual.min(max_visual);
+                    let past_bottom = current_top.saturating_add(visible_visual_lines);
+
+                    if target_visual < current_top {
+                        state.processed_top_visual = target_visual;
+                        state.processed_zoom_anchor_bias_px = 0.0;
+                    } else if target_visual >= past_bottom {
+                        state.processed_top_visual =
+                            target_visual.saturating_sub(visible_visual_lines.saturating_sub(1));
+                        state.processed_zoom_anchor_bias_px = 0.0;
+                    } else {
+                        state.processed_top_visual = current_top;
+                    }
+
+                    let source_line = all_lines
+                        .get(state.processed_top_visual)
+                        .map_or(0, |line| line.source_line)
+                        .min(state.document.line_count().saturating_sub(1));
+                    state.processed_top_line = source_line;
+                }
+            }
+
             state.ensure_cursor_visible(visible_lines);
             state.clamp_processed_top_line();
         }
