@@ -180,6 +180,7 @@ fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
          \tpage_margin_top: {:.3},\n\
          \tpage_margin_bottom: {:.3},\n\
          \tworkspace_root_path: \"{}\",\n\
+         \tvim_mode_enabled: {},\n\
          )\n",
         settings.dialogue_double_space_newline,
         settings.non_dialogue_double_space_newline,
@@ -189,6 +190,7 @@ fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
         settings.page_margin_top,
         settings.page_margin_bottom,
         workspace_root_path,
+        settings.vim_mode_enabled,
     );
 
     fs::write(&path, contents)?;
@@ -448,6 +450,8 @@ fn persistent_settings_from_ron(contents: &str, defaults: &PersistentSettings) -
     let workspace_root_path = parse_ron_string(contents, "workspace_root_path")
         .and_then(|value| if value.trim().is_empty() { None } else { Some(value) })
         .or_else(|| defaults.workspace_root_path.clone());
+    let vim_mode_enabled =
+        parse_ron_bool(contents, "vim_mode_enabled").unwrap_or(defaults.vim_mode_enabled);
 
     PersistentSettings {
         dialogue_double_space_newline: dialogue_value,
@@ -458,6 +462,7 @@ fn persistent_settings_from_ron(contents: &str, defaults: &PersistentSettings) -
         page_margin_top,
         page_margin_bottom,
         workspace_root_path,
+        vim_mode_enabled,
     }
 }
 
@@ -600,6 +605,8 @@ fn load_legacy_toml_settings() -> Option<PersistentSettings> {
         page_margin_bottom: parse_toml_f32(&contents, "page_margin_bottom")
             .unwrap_or(defaults.page_margin_bottom),
         workspace_root_path: None,
+        vim_mode_enabled: parse_toml_bool(&contents, "vim_mode_enabled")
+            .unwrap_or(defaults.vim_mode_enabled),
     })
 }
 
@@ -654,6 +661,7 @@ fn persistent_settings_from_state(state: &EditorState) -> PersistentSettings {
             .workspace_root
             .as_ref()
             .map(|path| path.to_string_lossy().replace('\\', "/")),
+        vim_mode_enabled: state.vim_enabled,
     }
 }
 

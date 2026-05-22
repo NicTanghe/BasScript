@@ -245,7 +245,10 @@ fn handle_workspace_keyboard_input(
     mut repeat: ResMut<WorkspaceSelectionRepeatState>,
     mut state: ResMut<EditorState>,
 ) {
-    if !state.workspace_focused || state.workspace_prompt.is_some() || shortcut_modifier_pressed(&keys)
+    if !state.workspace_focused
+        || state.workspace_prompt.is_some()
+        || state.command_menu.is_some()
+        || shortcut_modifier_pressed(&keys)
     {
         repeat.active_arrow = None;
         repeat.repeat_cooldown_secs = 0.0;

@@ -165,6 +165,7 @@ impl Plugin for UiPlugin {
                     sync_rounded_window_surfaces,
                     sync_panel_display_mode,
                     sync_panel_split_layout,
+                    sync_command_menu_ui,
                     sync_settings_ui,
                     sync_theme_picker_ui,
                     sync_workspace_sidebar,
@@ -206,8 +207,11 @@ impl Plugin for UiPlugin {
                 (
                     handle_file_shortcuts,
                     handle_workspace_prompt_input,
+                    handle_command_menu_input,
+                    handle_command_menu_open_input,
                     handle_workspace_keyboard_input,
                     resolve_dialog_results,
+                    handle_vim_input,
                     handle_text_input,
                     handle_navigation_input,
                     handle_mouse_scroll,
@@ -357,6 +361,7 @@ enum ToolbarAction {
 enum SettingsAction {
     DialogueDoubleSpaceNewline,
     NonDialogueDoubleSpaceNewline,
+    ToggleVimMode,
     ShowSystemTitlebar,
     ToggleProcessedGlass,
     ToggleExplorerGlass,
@@ -1028,6 +1033,42 @@ enum WorkspacePrompt {
     Delete { target: WorkspaceSelectedRow },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum VimMode {
+    Normal,
+    Insert,
+    VisualChar,
+    VisualLine,
+}
+
+impl VimMode {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Normal => "NORMAL",
+            Self::Insert => "INSERT",
+            Self::VisualChar => "VISUAL",
+            Self::VisualLine => "V-LINE",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum VimPendingOperator {
+    Yank,
+    Delete,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum VimRegister {
+    Characterwise(String),
+    Linewise(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CommandMenu {
+    input: String,
+}
+
 #[derive(Resource)]
 struct EditorState {
     document: Document,
@@ -1050,6 +1091,13 @@ struct EditorState {
     pending_keybind_capture: Option<ShortcutAction>,
     pending_space_insert: bool,
     pending_space_combo_canceled: bool,
+    vim_enabled: bool,
+    vim_mode: VimMode,
+    vim_pending_operator: Option<VimPendingOperator>,
+    vim_register: Option<VimRegister>,
+    vim_visual_anchor: Option<Position>,
+    vim_visual_head: Option<Position>,
+    command_menu: Option<CommandMenu>,
     workspace_sidebar_visible: bool,
     top_menu_collapsed: bool,
     processed_glass: bool,
@@ -1194,6 +1242,7 @@ struct PersistentSettings {
     page_margin_top: f32,
     page_margin_bottom: f32,
     workspace_root_path: Option<String>,
+    vim_mode_enabled: bool,
 }
 
 impl Default for PersistentSettings {
@@ -1207,6 +1256,7 @@ impl Default for PersistentSettings {
             page_margin_top: PAGE_TEXT_MARGIN_TOP,
             page_margin_bottom: PAGE_TEXT_MARGIN_BOTTOM,
             workspace_root_path: None,
+            vim_mode_enabled: false,
         }
     }
 }
@@ -1566,6 +1616,13 @@ impl FromWorld for EditorState {
             pending_keybind_capture: None,
             pending_space_insert: false,
             pending_space_combo_canceled: false,
+            vim_enabled: settings.vim_mode_enabled,
+            vim_mode: VimMode::Normal,
+            vim_pending_operator: None,
+            vim_register: None,
+            vim_visual_anchor: None,
+            vim_visual_head: None,
+            command_menu: None,
             workspace_sidebar_visible: ui_state.workspace_sidebar_visible,
             top_menu_collapsed: ui_state.top_menu_collapsed,
             processed_glass: theme_settings.processed_glass,
@@ -1864,6 +1921,10 @@ impl EditorState {
                 self.reparse();
                 self.cursor = Cursor::default();
                 self.selection_anchor = None;
+                self.vim_pending_operator = None;
+                self.vim_visual_anchor = None;
+                self.vim_visual_head = None;
+                self.command_menu = None;
                 self.top_line = 0;
                 self.processed_top_line = 0;
                 self.processed_top_visual = 0;

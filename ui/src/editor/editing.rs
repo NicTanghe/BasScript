@@ -4,7 +4,11 @@ fn handle_text_input(
     body_query: Query<(&PanelBody, &ComputedNode)>,
     mut state: ResMut<EditorState>,
 ) {
-    if state.workspace_focused || state.workspace_prompt.is_some() {
+    if state.workspace_focused
+        || state.workspace_prompt.is_some()
+        || state.command_menu.is_some()
+        || (state.vim_enabled && state.vim_mode != VimMode::Insert)
+    {
         state.pending_space_insert = false;
         state.pending_space_combo_canceled = false;
         return;
@@ -183,7 +187,10 @@ fn handle_navigation_input(
     mut navigation_repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
 ) {
-    if state.workspace_prompt.is_some() {
+    if state.workspace_prompt.is_some()
+        || state.command_menu.is_some()
+        || (state.vim_enabled && state.vim_mode != VimMode::Insert)
+    {
         return;
     }
 

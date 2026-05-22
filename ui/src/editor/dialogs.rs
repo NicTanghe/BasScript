@@ -64,6 +64,10 @@ fn handle_window_shortcuts(
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<EditorState>,
 ) {
+    if state.command_menu.is_some() {
+        return;
+    }
+
     let mut handled = false;
 
     let explorer_binding = state.keybinds.binding(ShortcutAction::ToggleExplorer);
@@ -309,6 +313,10 @@ fn handle_file_shortcuts(
     mut state: ResMut<EditorState>,
     mut dialogs: ResMut<DialogState>,
 ) {
+    if state.command_menu.is_some() {
+        return;
+    }
+
     let parent_handle = primary_window_query.iter().next();
 
     if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::OpenWorkspace)) {

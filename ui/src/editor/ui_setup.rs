@@ -221,6 +221,7 @@ fn setup(
                         font.clone(),
                         SettingsAction::NonDialogueDoubleSpaceNewline,
                     ),
+                    settings_toggle_button(font.clone(), SettingsAction::ToggleVimMode),
                     settings_toggle_button(font.clone(), SettingsAction::ShowSystemTitlebar),
                     margin_setting_row(
                         font.clone(),
@@ -336,6 +337,13 @@ fn setup(
                     keybind_row(font.clone(), "Home / End", "Move to line start/end"),
                     keybind_row(font.clone(), "Page Up / Page Down", "Move by viewport"),
                     keybind_row(font.clone(), "Escape", "Cancel middle-click autoscroll"),
+                    keybind_row(font.clone(), "Vim: Esc / i", "Normal mode / insert mode"),
+                    keybind_row(font.clone(), "Vim: j k l m", "Move down / up / right / left"),
+                    keybind_row(font.clone(), "Vim: v / V", "Visual / visual line mode"),
+                    keybind_row(font.clone(), "Vim: yy / y", "Yank line / visual selection"),
+                    keybind_row(font.clone(), "Vim: p", "Paste Vim register"),
+                    keybind_row(font.clone(), "Vim: dd / d", "Delete line / visual selection"),
+                    keybind_row(font.clone(), "Vim: :", "Open command menu"),
                     (
                         Text::new("Mouse"),
                         TextFont {
@@ -631,6 +639,7 @@ fn setup(
             ));
 
             root.spawn(workspace_prompt_bundle(font.clone()));
+            root.spawn(command_menu_bundle(font.clone()));
         });
 }
 
@@ -1692,6 +1701,19 @@ fn handle_settings_buttons(
                     }
                 );
             }
+            SettingsAction::ToggleVimMode => {
+                state.vim_enabled = !state.vim_enabled;
+                state.vim_mode = VimMode::Normal;
+                state.vim_pending_operator = None;
+                state.vim_visual_anchor = None;
+                state.vim_visual_head = None;
+                state.selection_anchor = None;
+                settings_changed = true;
+                state.status_message = format!(
+                    "Vim mode: {}",
+                    if state.vim_enabled { "ON" } else { "OFF" }
+                );
+            }
             SettingsAction::ShowSystemTitlebar => {
                 state.show_system_titlebar = !state.show_system_titlebar;
                 settings_changed = true;
@@ -2425,6 +2447,10 @@ fn sync_settings_ui(
                 } else {
                     "OFF"
                 }
+            ),
+            SettingsAction::ToggleVimMode => format!(
+                "Vim mode: {}",
+                if state.vim_enabled { "ON" } else { "OFF" }
             ),
             SettingsAction::ShowSystemTitlebar => format!(
                 "Show system titlebar: {}",

@@ -56,9 +56,22 @@ fn status_line_bundle(font: Handle<Font>, background: Color) -> impl Bundle {
 
 impl EditorState {
     fn visible_status(&self) -> String {
+        let vim_label = if self.vim_enabled {
+            format!(" | vim: {}", self.vim_mode.label())
+        } else {
+            String::new()
+        };
+        let command_label = if self.command_menu.is_some() {
+            " | command".to_string()
+        } else {
+            String::new()
+        };
+
         format!(
-            "{} | format: {} | line {}, col {} | load: {} | save: {}",
+            "{}{}{} | format: {} | line {}, col {} | load: {} | save: {}",
             self.status_message,
+            vim_label,
+            command_label,
             document_format_label(self.document_format),
             self.cursor.position.line + 1,
             self.cursor.position.column + 1,

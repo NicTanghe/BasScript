@@ -2,6 +2,8 @@
 include!("core.rs");
 // Status bar formatting and layout.
 include!("status_line.rs");
+// In-app command menu prompt and command dispatch.
+include!("command_menu.rs");
 // Processed pane pagination/cache/styling and text layout helpers.
 include!("processed.rs");
 // Caret component, blink timer, and caret placement logic.
@@ -28,6 +30,8 @@ include!("../pannels/text/scrolling/modes/ctrl_left_drag.rs");
 include!("../pannels/text/scrolling/modes/middle_autoscroll.rs");
 // Native file dialog and shortcut handling.
 include!("dialogs.rs");
+// Optional Vim-style modal editing commands.
+include!("vim.rs");
 // Text editing/navigation/mouse interaction systems.
 include!("editing.rs");
 // Rendering systems.
