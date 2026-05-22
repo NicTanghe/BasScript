@@ -187,11 +187,11 @@ Status: todo
 
 Rules
 
-- Support the requested `j` / `k` / `l` / `m` directional cluster:
+- Support the standard `h` / `j` / `k` / `l` directional cluster:
+  - `h`: move left
   - `j`: move down
   - `k`: move up
   - `l`: move right
-  - `m`: move left
 - Arrow keys continue to move the cursor.
 - Repeating held movement keys should use the same repeat behavior as arrow navigation.
 - Vertical movement follows the last selected editor panel:
@@ -314,7 +314,7 @@ Vim mode bindings, when enabled and editor text focus is active:
 
 - `Esc`: Normal mode / leave Visual mode
 - `i`: Insert mode
-- `j` / `k` / `l` / `m`: down / up / right / left
+- `h` / `j` / `k` / `l`: left / down / up / right
 - Arrow keys: cursor movement
 - `v`: characterwise Visual mode
 - `V`: linewise Visual mode

@@ -338,7 +338,7 @@ fn setup(
                     keybind_row(font.clone(), "Page Up / Page Down", "Move by viewport"),
                     keybind_row(font.clone(), "Escape", "Cancel middle-click autoscroll"),
                     keybind_row(font.clone(), "Vim: Esc / i", "Normal mode / insert mode"),
-                    keybind_row(font.clone(), "Vim: j k l m", "Move down / up / right / left"),
+                    keybind_row(font.clone(), "Vim: h j k l", "Move left / down / up / right"),
                     keybind_row(font.clone(), "Vim: v / V", "Visual / visual line mode"),
                     keybind_row(font.clone(), "Vim: yy / y", "Yank line / visual selection"),
                     keybind_row(font.clone(), "Vim: p", "Paste Vim register"),

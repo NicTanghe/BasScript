@@ -557,7 +557,7 @@ fn vim_movement_keys() -> [KeyCode; 8] {
         KeyCode::KeyJ,
         KeyCode::KeyK,
         KeyCode::KeyL,
-        KeyCode::KeyM,
+        KeyCode::KeyH,
         KeyCode::ArrowDown,
         KeyCode::ArrowUp,
         KeyCode::ArrowRight,
@@ -570,7 +570,7 @@ fn vim_movement_key_to_arrow(key: KeyCode) -> Option<KeyCode> {
         KeyCode::KeyJ | KeyCode::ArrowDown => Some(KeyCode::ArrowDown),
         KeyCode::KeyK | KeyCode::ArrowUp => Some(KeyCode::ArrowUp),
         KeyCode::KeyL | KeyCode::ArrowRight => Some(KeyCode::ArrowRight),
-        KeyCode::KeyM | KeyCode::ArrowLeft => Some(KeyCode::ArrowLeft),
+        KeyCode::KeyH | KeyCode::ArrowLeft => Some(KeyCode::ArrowLeft),
         _ => None,
     }
 }
