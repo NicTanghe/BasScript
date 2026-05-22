@@ -1,4 +1,5 @@
 const CARET_WIDTH: f32 = 2.0;
+const VIM_NORMAL_CARET_WIDTH: f32 = 8.0;
 const CARET_X_OFFSET: f32 = -1.0;
 // Negative moves the caret up, positive moves it down.
 const CARET_VERTICAL_OFFSET_LINES: f32 = -0.48;
@@ -16,6 +17,22 @@ fn blink_caret(time: Res<Time>, mut state: ResMut<EditorState>) {
 
 fn caret_vertical_offset(line_height: f32) -> f32 {
     CARET_VERTICAL_OFFSET_LINES * line_height
+}
+
+fn caret_width_for_state(state: &EditorState, char_width: f32) -> f32 {
+    if state.vim_enabled && state.vim_mode != VimMode::Insert {
+        char_width.max(VIM_NORMAL_CARET_WIDTH).max(CARET_WIDTH)
+    } else {
+        CARET_WIDTH.max(1.0)
+    }
+}
+
+fn caret_x_offset_for_state(state: &EditorState) -> f32 {
+    if state.vim_enabled && state.vim_mode != VimMode::Insert {
+        0.0
+    } else {
+        CARET_X_OFFSET
+    }
 }
 
 fn render_panel_carets(
@@ -100,8 +117,8 @@ fn render_panel_carets(
                     plain_origin_y,
                     plain_char_width,
                     plain_line_height,
-                    CARET_X_OFFSET,
-                    CARET_WIDTH.max(1.0),
+                    caret_x_offset_for_state(state),
+                    caret_width_for_state(state, plain_char_width),
                     true,
                     true,
                 )
@@ -149,8 +166,8 @@ fn render_panel_carets(
                     processed_origin_y,
                     processed_char_width,
                     processed_line_height,
-                    CARET_X_OFFSET,
-                    CARET_WIDTH.max(1.0),
+                    caret_x_offset_for_state(state),
+                    caret_width_for_state(state, processed_char_width),
                     true,
                     true,
                 )

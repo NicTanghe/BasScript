@@ -172,12 +172,14 @@ Rules
 - In Normal mode, printable command keys must not insert text into the document.
 - Mouse clicks still place the cursor in the selected editor panel; Vim mode remains active.
 - Existing explorer focus rules take priority when the explorer is focused.
+- Normal mode uses a wide/block-style caret so it is visually distinct from Insert mode.
 
 Acceptance
 
 - Pressing `i` in Normal mode allows text entry.
 - Pressing `Esc` from Insert mode stops text entry and returns to Normal mode.
 - Normal-mode commands never leak command characters into the document.
+- The caret clearly changes shape between Normal mode and Insert mode.
 
 H3. Normal-mode movement
 
