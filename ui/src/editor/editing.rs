@@ -187,10 +187,7 @@ fn handle_navigation_input(
     mut navigation_repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
 ) {
-    if state.workspace_prompt.is_some()
-        || state.command_menu.is_some()
-        || (state.vim_enabled && state.vim_mode != VimMode::Insert)
-    {
+    if state.workspace_prompt.is_some() || state.command_menu.is_some() {
         return;
     }
 
@@ -290,6 +287,10 @@ fn handle_navigation_input(
             return;
         }
 
+        return;
+    }
+
+    if state.vim_enabled && state.vim_mode != VimMode::Insert {
         return;
     }
 
