@@ -678,8 +678,16 @@ fn render_selection_rects(
                 continue;
             }
 
-            let display_start = processed_display_column_from_raw(visual_line, slice_start_raw);
-            let display_end = processed_display_column_from_raw(visual_line, slice_end_raw);
+            let (display_start, display_end) = processed_selection_display_range(
+                visual_line,
+                slice_start_raw,
+                slice_end_raw,
+                selected_start_raw,
+                selected_end_raw,
+            );
+            if display_end <= display_start {
+                continue;
+            }
 
             let global_index = processed_view.start_index.saturating_add(visual_index);
             let page_index = global_index / processed_page_step_lines.max(1);
@@ -744,7 +752,7 @@ fn render_selection_rects(
 
             processed_rects.push((
                 text_left + left_x.min(right_x),
-                text_top + line_top,
+                text_top + line_top - line_height * 0.5,
                 (right_x - left_x).abs().max(1.0),
                 line_height.max(1.0),
             ));
@@ -768,4 +776,37 @@ fn render_selection_rects(
         color.0 = state.selection_bg_color;
         *visibility = Visibility::Visible;
     }
+}
+
+fn processed_selection_display_range(
+    visual_line: &ProcessedVisualLine,
+    slice_start_raw: usize,
+    slice_end_raw: usize,
+    selected_start_raw: usize,
+    selected_end_raw: usize,
+) -> (usize, usize) {
+    let full_visual_line_selected = selected_start_raw <= visual_line.raw_start_column
+        && selected_end_raw >= visual_line.raw_end_column;
+
+    if full_visual_line_selected {
+        return processed_visible_content_display_range(visual_line);
+    }
+
+    (
+        processed_display_column_from_raw(visual_line, slice_start_raw),
+        processed_display_column_from_raw(visual_line, slice_end_raw),
+    )
+}
+
+fn processed_visible_content_display_range(visual_line: &ProcessedVisualLine) -> (usize, usize) {
+    let chars = visual_line.text.chars().collect::<Vec<_>>();
+    let Some(first) = chars.iter().position(|ch| !ch.is_whitespace()) else {
+        return (0, chars.len());
+    };
+    let last = chars
+        .iter()
+        .rposition(|ch| !ch.is_whitespace())
+        .map_or(first, |index| index.saturating_add(1));
+
+    (first, last)
 }
