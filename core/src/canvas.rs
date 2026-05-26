@@ -1,0 +1,172 @@
+use serde_json::Value;
+use std::{error::Error, fmt};
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CanvasDocument {
+    pub nodes: Vec<CanvasNode>,
+    pub edges: Vec<CanvasEdge>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CanvasNode {
+    pub id: String,
+    pub kind: CanvasNodeKind,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum CanvasNodeKind {
+    Text { text: String },
+    File { file: String },
+    Link { url: String },
+    Group { label: Option<String> },
+    Unknown { node_type: String },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CanvasEdge {
+    pub id: String,
+    pub from_node: String,
+    pub to_node: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CanvasParseError {
+    message: String,
+}
+
+impl CanvasParseError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for CanvasParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl Error for CanvasParseError {}
+
+pub fn parse_canvas_document(input: &str) -> Result<CanvasDocument, CanvasParseError> {
+    let root = serde_json::from_str::<Value>(input)
+        .map_err(|error| CanvasParseError::new(format!("invalid canvas JSON: {error}")))?;
+    let object = root
+        .as_object()
+        .ok_or_else(|| CanvasParseError::new("canvas root must be a JSON object"))?;
+
+    let nodes = object
+        .get("nodes")
+        .and_then(Value::as_array)
+        .map(|nodes| {
+            nodes
+                .iter()
+                .filter_map(parse_canvas_node)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let edges = object
+        .get("edges")
+        .and_then(Value::as_array)
+        .map(|edges| {
+            edges
+                .iter()
+                .filter_map(parse_canvas_edge)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    Ok(CanvasDocument { nodes, edges })
+}
+
+fn parse_canvas_node(value: &Value) -> Option<CanvasNode> {
+    let object = value.as_object()?;
+    let id = object.get("id")?.as_str()?.to_owned();
+    let node_type = object.get("type")?.as_str()?.to_owned();
+    let x = numeric_field(object.get("x")).unwrap_or(0.0);
+    let y = numeric_field(object.get("y")).unwrap_or(0.0);
+    let width = numeric_field(object.get("width")).unwrap_or(240.0);
+    let height = numeric_field(object.get("height")).unwrap_or(120.0);
+    let kind = match node_type.as_str() {
+        "text" => CanvasNodeKind::Text {
+            text: object
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+        },
+        "file" => CanvasNodeKind::File {
+            file: object
+                .get("file")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+        },
+        "link" => CanvasNodeKind::Link {
+            url: object
+                .get("url")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+        },
+        "group" => CanvasNodeKind::Group {
+            label: object
+                .get("label")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        },
+        _ => CanvasNodeKind::Unknown { node_type },
+    };
+
+    Some(CanvasNode {
+        id,
+        kind,
+        x,
+        y,
+        width,
+        height,
+    })
+}
+
+fn parse_canvas_edge(value: &Value) -> Option<CanvasEdge> {
+    let object = value.as_object()?;
+    Some(CanvasEdge {
+        id: object.get("id")?.as_str()?.to_owned(),
+        from_node: object.get("fromNode")?.as_str()?.to_owned(),
+        to_node: object.get("toNode")?.as_str()?.to_owned(),
+    })
+}
+
+fn numeric_field(value: Option<&Value>) -> Option<f32> {
+    value.and_then(Value::as_f64).map(|value| value as f32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_json_canvas_nodes() {
+        let canvas = parse_canvas_document(
+            r##"{
+                "nodes": [
+                    {"id":"a","type":"text","text":"# Title","x":10,"y":20,"width":300,"height":80},
+                    {"id":"b","type":"file","file":"refs/door.png","x":40,"y":60,"width":0,"height":0}
+                ],
+                "edges": [{"id":"e","fromNode":"a","toNode":"b"}]
+            }"##,
+        )
+        .expect("valid canvas");
+
+        assert_eq!(canvas.nodes.len(), 2);
+        assert_eq!(canvas.edges.len(), 1);
+        assert!(matches!(canvas.nodes[0].kind, CanvasNodeKind::Text { .. }));
+        assert!(matches!(canvas.nodes[1].kind, CanvasNodeKind::File { .. }));
+    }
+}

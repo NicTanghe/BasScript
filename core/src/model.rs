@@ -22,6 +22,15 @@ impl Cursor {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImageEmbed {
+    pub raw_start_column: usize,
+    pub raw_end_column: usize,
+    pub alt: String,
+    pub target: String,
+    pub title: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LineKind {
     Empty,
     SceneHeading,
@@ -43,6 +52,7 @@ pub enum LineKind {
 pub enum DocumentFormat {
     Fountain,
     Markdown,
+    Canvas,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,6 +60,7 @@ pub struct ParsedLine {
     pub kind: LineKind,
     pub raw: String,
     pub script_links: Vec<ScriptLink>,
+    pub image_embeds: Vec<ImageEmbed>,
     pub markdown_heading_level: Option<u8>,
 }
 
@@ -114,6 +125,7 @@ impl DocumentFormat {
             .map(|ext| ext.to_ascii_lowercase());
         match extension.as_deref() {
             Some("md") | Some("markdown") => Self::Markdown,
+            Some("canvas") => Self::Canvas,
             _ => Self::Fountain,
         }
     }

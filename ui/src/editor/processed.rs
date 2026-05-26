@@ -253,6 +253,10 @@ fn prepare_processed_line_text(
     parsed_line: &ParsedLine,
     raw_override_active: bool,
 ) -> (PreparedProcessedText, Option<bool>) {
+    if !raw_override_active && !parsed_line.image_embeds.is_empty() {
+        return (prepare_image_embed_line_text(parsed_line), None);
+    }
+
     let (raw_column_base, rendered_raw, checklist_state) = if raw_override_active {
         (0, parsed_line.raw.clone(), None)
     } else {
@@ -282,6 +286,52 @@ fn prepare_processed_line_text(
         },
         checklist_state,
     )
+}
+
+fn prepare_image_embed_line_text(parsed_line: &ParsedLine) -> PreparedProcessedText {
+    let chars = parsed_line.raw.chars().collect::<Vec<_>>();
+    let mut filtered = String::new();
+    let mut filtered_to_raw = vec![0usize];
+    let mut image_index = 0usize;
+    let mut index = 0usize;
+
+    while index < chars.len() {
+        let next_embed = parsed_line.image_embeds.get(image_index);
+        if let Some(embed) = next_embed {
+            if index == embed.raw_start_column {
+                index = embed.raw_end_column.min(chars.len());
+                image_index += 1;
+                continue;
+            }
+            if index > embed.raw_start_column {
+                image_index += 1;
+                continue;
+            }
+        }
+
+        filtered.push(chars[index]);
+        filtered_to_raw.push(index + 1);
+        index += 1;
+    }
+
+    let rendered = basscript_core::render_script_link_text(&filtered);
+    let display_to_raw = rendered
+        .display_to_raw
+        .iter()
+        .map(|column| {
+            filtered_to_raw
+                .get(*column)
+                .copied()
+                .unwrap_or_else(|| *filtered_to_raw.last().unwrap_or(&0))
+        })
+        .collect::<Vec<_>>();
+    let link_targets = build_link_targets(&display_to_raw, &parsed_line.script_links);
+
+    PreparedProcessedText {
+        text: rendered.text,
+        display_to_raw,
+        link_targets,
+    }
 }
 
 fn build_processed_segment_lines(
@@ -351,7 +401,13 @@ fn build_processed_segment_lines(
         };
         let mut wrapped = Vec::<ProcessedVisualLine>::new();
 
-        if should_split_on_double_space(state, &parsed_line.kind) {
+        let image_embed_line = !raw_override_active && !parsed_line.image_embeds.is_empty();
+        let should_render_text_for_line =
+            !image_embed_line || !prepared_text.text.trim().is_empty();
+
+        if !should_render_text_for_line {
+            // Image-only lines use the image block itself as the visible processed row.
+        } else if should_split_on_double_space(state, &parsed_line.kind) {
             for (segment_start, segment_end) in double_space_segments(&prepared_text.text) {
                 push_wrapped_visual_lines(
                     &mut wrapped,
@@ -389,15 +445,18 @@ fn build_processed_segment_lines(
             }
         }
 
-        for visual_line in wrapped {
-            if lines_in_page >= lines_per_page {
-                push_page_spacers(&mut paged_lines, source_line, spacer_lines);
-                lines_in_page = 0;
-            }
-
-            paged_lines.push(visual_line);
-            lines_in_page = lines_in_page.saturating_add(1);
+        if image_embed_line {
+            push_image_embed_visual_lines(&mut wrapped, source_line, &parsed_line.image_embeds);
         }
+
+        push_paged_visual_lines(
+            &mut paged_lines,
+            wrapped,
+            source_line,
+            &mut lines_in_page,
+            lines_per_page,
+            spacer_lines,
+        );
     }
 
     if ends_with_hard_break && lines_in_page > 0 {
@@ -661,6 +720,7 @@ fn push_wrapped_visual_lines(
             raw_start_column: raw_column,
             raw_end_column: raw_column,
             markdown_checklist_checked: None,
+            image_block: None,
             render_override: None,
             is_spacer: false,
         });
@@ -746,6 +806,7 @@ fn push_wrapped_visual_lines(
             raw_start_column,
             raw_end_column,
             markdown_checklist_checked: None,
+            image_block: None,
             render_override: None,
             is_spacer: false,
         });
@@ -772,9 +833,95 @@ fn push_page_spacers(out: &mut Vec<ProcessedVisualLine>, source_line: usize, cou
             raw_start_column: 0,
             raw_end_column: 0,
             markdown_checklist_checked: None,
+            image_block: None,
             render_override: None,
             is_spacer: true,
         });
+    }
+}
+
+fn push_image_embed_visual_lines(
+    out: &mut Vec<ProcessedVisualLine>,
+    source_line: usize,
+    image_embeds: &[ImageEmbed],
+) {
+    for embed in image_embeds {
+        let reserved_lines = PROCESSED_IMAGE_BLOCK_LINES.max(1);
+        out.push(ProcessedVisualLine {
+            source_line,
+            text: " ".to_owned(),
+            fragments: vec![ProcessedVisualFragment {
+                text: " ".to_owned(),
+                is_link: false,
+                link_target: None,
+            }],
+            display_to_raw: vec![embed.raw_start_column, embed.raw_end_column],
+            raw_start_column: embed.raw_start_column,
+            raw_end_column: embed.raw_end_column,
+            markdown_checklist_checked: None,
+            image_block: Some(ProcessedImageBlock {
+                target: embed.target.clone(),
+                reserved_lines,
+            }),
+            render_override: None,
+            is_spacer: false,
+        });
+
+        for _ in 1..reserved_lines {
+            out.push(ProcessedVisualLine {
+                source_line,
+                text: " ".to_owned(),
+                fragments: vec![ProcessedVisualFragment {
+                    text: " ".to_owned(),
+                    is_link: false,
+                    link_target: None,
+                }],
+                display_to_raw: vec![embed.raw_start_column, embed.raw_end_column],
+                raw_start_column: embed.raw_start_column,
+                raw_end_column: embed.raw_end_column,
+                markdown_checklist_checked: None,
+                image_block: None,
+                render_override: None,
+                is_spacer: true,
+            });
+        }
+    }
+}
+
+fn push_paged_visual_lines(
+    paged_lines: &mut Vec<ProcessedVisualLine>,
+    lines: Vec<ProcessedVisualLine>,
+    source_line: usize,
+    lines_in_page: &mut usize,
+    lines_per_page: usize,
+    spacer_lines: usize,
+) {
+    let mut index = 0usize;
+    while index < lines.len() {
+        let visual_line = lines[index].clone();
+        if let Some(image_block) = visual_line.image_block.as_ref() {
+            let block_lines = image_block.reserved_lines.max(1);
+            if *lines_in_page > 0
+                && (*lines_in_page).saturating_add(block_lines) > lines_per_page
+            {
+                let remaining_content = lines_per_page.saturating_sub(*lines_in_page);
+                push_page_spacers(
+                    paged_lines,
+                    source_line,
+                    remaining_content.saturating_add(spacer_lines),
+                );
+                *lines_in_page = 0;
+            }
+        }
+
+        if *lines_in_page >= lines_per_page {
+            push_page_spacers(paged_lines, source_line, spacer_lines);
+            *lines_in_page = 0;
+        }
+
+        paged_lines.push(visual_line);
+        *lines_in_page = lines_in_page.saturating_add(1);
+        index += 1;
     }
 }
 

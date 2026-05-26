@@ -1,7 +1,7 @@
 use crate::buffer::Document;
 use crate::model::LineKind;
 
-use super::shared::parsed_line;
+use super::shared::{line_is_only_image_embed, parsed_line};
 
 pub(super) fn parse(document: &Document) -> Vec<crate::model::ParsedLine> {
     let mut parsed = Vec::with_capacity(document.line_count());
@@ -33,6 +33,10 @@ fn classify_line(raw: &str, previous_kind: &LineKind) -> LineKind {
 
     if is_character(trimmed) {
         return LineKind::Character;
+    }
+
+    if line_is_only_image_embed(trimmed) {
+        return LineKind::Action;
     }
 
     if is_parenthetical(trimmed)
@@ -120,5 +124,16 @@ mod tests {
 
         assert_eq!(parsed[0].kind, LineKind::SceneHeading);
         assert_eq!(parsed[1].kind, LineKind::Action);
+    }
+
+    #[test]
+    fn extracts_image_embeds_and_resets_dialogue_context() {
+        let doc = Document::from_text("SARAH\nHello.\n![door](refs/door.png)\nThe room is quiet.");
+        let parsed = parse(&doc);
+
+        assert_eq!(parsed[2].kind, LineKind::Action);
+        assert_eq!(parsed[2].image_embeds.len(), 1);
+        assert_eq!(parsed[2].image_embeds[0].target, "refs/door.png");
+        assert_eq!(parsed[3].kind, LineKind::Action);
     }
 }

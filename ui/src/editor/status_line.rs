@@ -67,6 +67,28 @@ impl EditorState {
             String::new()
         };
 
+        if self.document_format == DocumentFormat::Canvas {
+            let canvas_label = self.canvas_document.as_ref().map_or_else(
+                || {
+                    self.canvas_parse_error
+                        .as_deref()
+                        .unwrap_or("invalid canvas")
+                        .to_string()
+                },
+                |canvas| format!("{} nodes, {} edges", canvas.nodes.len(), canvas.edges.len()),
+            );
+            return format!(
+                "{}{}{} | format: {} | {} | load: {} | save: {}",
+                self.status_message,
+                vim_label,
+                command_label,
+                document_format_label(self.document_format),
+                canvas_label,
+                status_path_label(&self.paths.load_path),
+                status_path_label(&self.paths.save_path)
+            );
+        }
+
         format!(
             "{}{}{} | format: {} | line {}, col {} | load: {} | save: {}",
             self.status_message,

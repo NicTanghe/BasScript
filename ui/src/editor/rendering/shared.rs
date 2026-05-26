@@ -18,6 +18,7 @@ fn render_editor(
             Without<ProcessedPaperText>,
             Without<ProcessedPaperLineSpan>,
             Without<ProcessedChecklistIcon>,
+            Without<ProcessedImageBlockNode>,
         ),
     >,
     mut processed_paper_text_query: Query<
@@ -28,6 +29,7 @@ fn render_editor(
             Without<PanelCaret>,
             Without<PanelCanvas>,
             Without<ProcessedChecklistIcon>,
+            Without<ProcessedImageBlockNode>,
         ),
     >,
     mut processed_checklist_icon_query: Query<
@@ -44,6 +46,7 @@ fn render_editor(
             Without<PanelCanvas>,
             Without<ProcessedPaperText>,
             Without<ProcessedPaperLineSpan>,
+            Without<ProcessedImageBlockNode>,
         ),
     >,
     mut processed_span_query: Query<
@@ -73,6 +76,7 @@ fn render_editor(
             Without<PanelPaper>,
             Without<PanelCanvas>,
             Without<ProcessedChecklistIcon>,
+            Without<ProcessedImageBlockNode>,
         ),
     >,
     mut selection_rect_query: Query<
@@ -89,6 +93,7 @@ fn render_editor(
             Without<PanelCanvas>,
             Without<ProcessedPaperText>,
             Without<ProcessedChecklistIcon>,
+            Without<ProcessedImageBlockNode>,
         ),
     >,
     mut paper_query: Query<
@@ -104,6 +109,7 @@ fn render_editor(
             Without<PanelCaret>,
             Without<PanelCanvas>,
             Without<ProcessedChecklistIcon>,
+            Without<ProcessedImageBlockNode>,
         ),
     >,
     mut status_query: Query<&mut Text, (With<StatusText>, Without<PanelText>, Without<PanelCaret>)>,
@@ -117,6 +123,59 @@ fn render_editor(
     let plain_origin_y = scaled_text_padding_y(&state);
     let processed_font_size = scaled_font_size(&state);
     let processed_line_height = scaled_line_height(&state).max(1.0);
+
+    if state.document_format == DocumentFormat::Canvas {
+        for (_, mut text, _, _, mut node, mut transform) in text_query.iter_mut() {
+            **text = String::new();
+            node.left = px(0.0);
+            node.top = px(0.0);
+            node.width = px(0.0);
+            node.height = px(0.0);
+            transform.scale = Vec2::ONE;
+            transform.translation = Val2::ZERO;
+        }
+        for (_, mut node, mut transform) in processed_paper_text_query.iter_mut() {
+            node.width = px(0.0);
+            node.height = px(0.0);
+            transform.scale = Vec2::ONE;
+            transform.translation = Val2::ZERO;
+        }
+        for (_, mut image_node, mut node, mut visibility) in
+            processed_checklist_icon_query.iter_mut()
+        {
+            image_node.color = Color::WHITE;
+            node.width = px(0.0);
+            node.height = px(0.0);
+            *visibility = Visibility::Hidden;
+        }
+        for (_, mut text_span, _, _, mut text_color) in processed_span_query.iter_mut() {
+            **text_span = String::new();
+            text_color.0 = Color::NONE;
+        }
+        for (_, mut node, mut visibility, mut transform) in caret_query.iter_mut() {
+            node.width = px(0.0);
+            node.height = px(0.0);
+            transform.scale = Vec2::ONE;
+            transform.translation = Val2::ZERO;
+            *visibility = Visibility::Hidden;
+        }
+        for (_, mut node, _, mut visibility) in selection_rect_query.iter_mut() {
+            node.width = px(0.0);
+            node.height = px(0.0);
+            *visibility = Visibility::Hidden;
+        }
+        for (_, _, mut visibility, _, _) in paper_query.iter_mut() {
+            *visibility = Visibility::Hidden;
+        }
+        for (_, mut transform) in canvas_query.iter_mut() {
+            transform.scale = Vec2::ONE;
+            transform.translation = Val2::ZERO;
+        }
+        if let Ok(mut status) = status_query.single_mut() {
+            **status = state.visible_status();
+        }
+        return;
+    }
 
     let mut plain_inverse_scale = 1.0;
     let mut plain_panel_size = None;
@@ -382,6 +441,560 @@ fn render_editor(
     );
 }
 
+fn render_processed_images(
+    body_query: Query<(&PanelBody, &ComputedNode)>,
+    mut processed_image_query: Query<
+        (
+            &ProcessedImageBlockNode,
+            &mut ImageNode,
+            &mut Node,
+            &mut Visibility,
+        ),
+        (
+            Without<PanelText>,
+            Without<PanelPaper>,
+            Without<PanelCaret>,
+            Without<PanelCanvas>,
+            Without<ProcessedPaperText>,
+            Without<ProcessedPaperLineSpan>,
+            Without<ProcessedChecklistIcon>,
+        ),
+    >,
+    mut images: ResMut<Assets<Image>>,
+    mut image_cache: ResMut<EditorImageCache>,
+    mut state: ResMut<EditorState>,
+) {
+    if state.document_format == DocumentFormat::Canvas {
+        for (_, _, _, mut visibility) in processed_image_query.iter_mut() {
+            *visibility = Visibility::Hidden;
+        }
+        return;
+    }
+
+    let processed_panel_size = body_query
+        .iter()
+        .find(|(panel, _)| panel.kind == PanelKind::Processed)
+        .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
+
+    let Some(processed_panel_size) = processed_panel_size
+        .filter(|_| state.panel_visible(PanelKind::Processed))
+        .filter(|size| size.x > 1.0 && size.y > 1.0)
+    else {
+        for (_, _, _, mut visibility) in processed_image_query.iter_mut() {
+            *visibility = Visibility::Hidden;
+        }
+        return;
+    };
+
+    let processed_layout_info = processed_page_layout(processed_panel_size, &state);
+    let processed_geometry = processed_layout_info.geometry;
+    let processed_wrap_columns = processed_layout_info.wrap_columns;
+    let processed_lines_per_page = processed_layout_info.lines_per_page;
+    let processed_spacer_lines = processed_layout_info.spacer_lines;
+    let processed_page_step_lines = processed_layout_info.page_step_lines.max(1);
+    let processed_line_height = scaled_line_height(&state).max(1.0);
+    let processed_all_lines = processed_display_lines(
+        &mut state,
+        processed_wrap_columns,
+        processed_lines_per_page,
+        processed_spacer_lines,
+    );
+    if processed_all_lines.is_empty() {
+        state.processed_top_visual = 0;
+    } else {
+        state.processed_top_visual = state
+            .processed_top_visual
+            .min(processed_all_lines.len().saturating_sub(1));
+    }
+
+    let processed_view_capacity = processed_page_step_lines
+        .saturating_mul(PROCESSED_PAPER_CAPACITY)
+        .max(1);
+    let processed_view = build_processed_view(
+        &processed_all_lines,
+        state.processed_top_visual,
+        processed_page_step_lines,
+        processed_view_capacity,
+    );
+    let first_visible_page = processed_view.start_index / processed_page_step_lines;
+    let text_left_in_paper = processed_geometry.text_left - processed_geometry.paper_left;
+    let text_top_in_paper = processed_geometry.text_top - processed_geometry.paper_top;
+
+    for (image_block_node, mut image_node, mut node, mut visibility) in
+        processed_image_query.iter_mut()
+    {
+        if image_block_node.slot >= PROCESSED_PAPER_CAPACITY {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+
+        let page_index = first_visible_page.saturating_add(image_block_node.slot);
+        let line_offset = image_block_node
+            .line_offset
+            .min(processed_page_step_lines.saturating_sub(1));
+        if line_offset >= processed_lines_per_page {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+
+        let page_start = page_index.saturating_mul(processed_page_step_lines);
+        let global_index = page_start.saturating_add(line_offset);
+        let Some(visual_line) = processed_all_lines.get(global_index) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        let Some(image_block) = visual_line.image_block.as_ref() else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        let reserved_height =
+            image_block.reserved_lines as f32 * processed_line_height - PROCESSED_IMAGE_BLOCK_GAP;
+        if reserved_height <= 1.0 {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+
+        let lookup = processed_image_lookup(
+            &mut image_cache,
+            &state,
+            &image_block.target,
+            &mut images,
+        );
+        let image_size = match lookup {
+            ProcessedImageLookup::Loaded { handle, size } => {
+                image_node.image = handle;
+                image_node.color = Color::WHITE;
+                size
+            }
+            ProcessedImageLookup::Failed => {
+                *image_node = ImageNode::solid_color(COLOR_IMAGE_PLACEHOLDER);
+                UVec2::new(16, 9)
+            }
+        };
+
+        let image_width = image_size.x.max(1) as f32;
+        let image_height = image_size.y.max(1) as f32;
+        let max_width = processed_geometry.text_width.max(1.0);
+        let natural_height = max_width * image_height / image_width;
+        let display_height = natural_height.min(reserved_height).max(1.0);
+        let display_width = (display_height * image_width / image_height)
+            .min(max_width)
+            .max(1.0);
+        let left = text_left_in_paper + (max_width - display_width) * 0.5;
+        let top = text_top_in_paper
+            + line_offset as f32 * processed_line_height
+            + ((reserved_height - display_height) * 0.5).max(0.0);
+
+        node.left = px(left);
+        node.top = px(top);
+        node.width = px(display_width);
+        node.height = px(display_height);
+        *visibility = Visibility::Visible;
+    }
+}
+
+fn sync_canvas_board(
+    mut commands: Commands,
+    canvas_query: Query<(Entity, &PanelCanvas)>,
+    existing_node_query: Query<Entity, With<CanvasRenderedNode>>,
+    existing_edge_query: Query<Entity, With<CanvasRenderedEdge>>,
+    mut node_query: Query<
+        (&CanvasRenderedNode, &mut Node, &mut Visibility),
+        Without<CanvasRenderedEdge>,
+    >,
+    mut edge_query: Query<
+        (&CanvasRenderedEdge, &mut Node, &mut Visibility),
+        Without<CanvasRenderedNode>,
+    >,
+    mut text_query: Query<(&CanvasRenderedNodeText, &mut TextFont)>,
+    fonts: Res<EditorFonts>,
+    mut images: ResMut<Assets<Image>>,
+    mut image_cache: ResMut<EditorImageCache>,
+    state: Res<EditorState>,
+    mut rendered_version: Local<Option<u64>>,
+) {
+    if state.document_format != DocumentFormat::Canvas {
+        if rendered_version.is_some() {
+            for entity in existing_node_query.iter() {
+                commands.entity(entity).despawn();
+            }
+            for entity in existing_edge_query.iter() {
+                commands.entity(entity).despawn();
+            }
+            *rendered_version = None;
+        }
+        return;
+    }
+
+    if *rendered_version != Some(state.canvas_version) {
+        for entity in existing_node_query.iter() {
+            commands.entity(entity).despawn();
+        }
+        for entity in existing_edge_query.iter() {
+            commands.entity(entity).despawn();
+        }
+
+        if let (Some(canvas), Some((canvas_entity, _))) = (
+            state.canvas_document.as_ref(),
+            canvas_query
+                .iter()
+                .find(|(_, panel_canvas)| panel_canvas.kind == PanelKind::Processed),
+        ) {
+            commands.entity(canvas_entity).with_children(|parent| {
+                for (index, _) in canvas.edges.iter().enumerate() {
+                    spawn_canvas_edge(parent, index);
+                }
+                for (index, node) in canvas.nodes.iter().enumerate() {
+                    spawn_canvas_node(
+                        parent,
+                        index,
+                        node,
+                        &state,
+                        &fonts,
+                        &mut images,
+                        &mut image_cache,
+                    );
+                }
+            });
+        }
+
+        *rendered_version = Some(state.canvas_version);
+    }
+
+    let Some(canvas) = state.canvas_document.as_ref() else {
+        return;
+    };
+    let zoom = state.zoom.max(0.1);
+
+    for (rendered_node, mut node, mut visibility) in node_query.iter_mut() {
+        let Some(canvas_node) = canvas.nodes.get(rendered_node.index) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        let size = canvas_node_size(canvas_node.width, canvas_node.height);
+        node.left = px((canvas_node.x - state.canvas_pan.x) * zoom);
+        node.top = px((canvas_node.y - state.canvas_pan.y) * zoom);
+        node.width = px(size.x * zoom);
+        node.height = px(size.y * zoom);
+        *visibility = Visibility::Visible;
+    }
+
+    for (rendered_edge, mut node, mut visibility) in edge_query.iter_mut() {
+        let Some(edge) = canvas.edges.get(rendered_edge.index) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        let Some((from_center, to_center)) = canvas_edge_centers(canvas, edge) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        let Some((left, top, width, height)) = canvas_edge_segment_rect(
+            from_center,
+            to_center,
+            rendered_edge.segment,
+            state.canvas_pan,
+            zoom,
+        ) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        node.left = px(left);
+        node.top = px(top);
+        node.width = px(width);
+        node.height = px(height);
+        *visibility = Visibility::Visible;
+    }
+
+    for (_, mut text_font) in text_query.iter_mut() {
+        text_font.font_size = (12.0 * zoom).clamp(7.0, 28.0);
+    }
+}
+
+fn spawn_canvas_edge(parent: &mut ChildSpawnerCommands, index: usize) {
+    for segment in [CanvasEdgeSegment::Horizontal, CanvasEdgeSegment::Vertical] {
+        parent.spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(0.0),
+                top: px(0.0),
+                width: px(0.0),
+                height: px(0.0),
+                ..default()
+            },
+            BackgroundColor(COLOR_CANVAS_EDGE),
+            ZIndex(10),
+            CanvasRenderedEdge { index, segment },
+        ));
+    }
+}
+
+fn spawn_canvas_node(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+    node: &basscript_core::CanvasNode,
+    state: &EditorState,
+    fonts: &EditorFonts,
+    images: &mut Assets<Image>,
+    image_cache: &mut EditorImageCache,
+) {
+    let size = canvas_node_size(node.width, node.height);
+    let zoom = state.zoom.max(0.1);
+    let left = (node.x - state.canvas_pan.x) * zoom;
+    let top = (node.y - state.canvas_pan.y) * zoom;
+    let node_color = match node.kind {
+        CanvasNodeKind::Group { .. } => COLOR_CANVAS_GROUP_BG,
+        _ => COLOR_CANVAS_NODE_BG,
+    };
+
+    parent
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(left),
+                top: px(top),
+                width: px(size.x * zoom),
+                height: px(size.y * zoom),
+                overflow: Overflow::clip(),
+                border: UiRect::all(px(1.0)),
+                border_radius: BorderRadius::all(px(5.0)),
+                ..default()
+            },
+            BackgroundColor(node_color),
+            BorderColor::all(COLOR_CANVAS_NODE_BORDER),
+            ZIndex(20 + index as i32),
+            CanvasRenderedNode { index },
+        ))
+        .with_children(|node_parent| match &node.kind {
+            CanvasNodeKind::Text { text } => {
+                if let Some(embed) = canvas_first_image_embed(text) {
+                    spawn_canvas_image_or_placeholder(
+                        node_parent,
+                        index,
+                        &embed.target,
+                        state,
+                        fonts,
+                        images,
+                        image_cache,
+                        zoom,
+                    );
+                } else {
+                    node_parent.spawn((
+                        Text::new(canvas_text_preview(text)),
+                        TextFont {
+                            font: fonts.markdown_regular.clone(),
+                            font_size: (12.0 * zoom).clamp(7.0, 28.0),
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MAIN),
+                        Node {
+                            width: percent(100.0),
+                            height: percent(100.0),
+                            padding: UiRect::all(px(10.0)),
+                            overflow: Overflow::clip(),
+                            ..default()
+                        },
+                        CanvasRenderedNodeText { index },
+                    ));
+                }
+            }
+            CanvasNodeKind::File { file } => {
+                spawn_canvas_image_or_placeholder(
+                    node_parent,
+                    index,
+                    file,
+                    state,
+                    fonts,
+                    images,
+                    image_cache,
+                    zoom,
+                );
+            }
+            CanvasNodeKind::Link { url } => {
+                node_parent.spawn((
+                    Text::new(url.clone()),
+                    TextFont {
+                        font: fonts.markdown_regular.clone(),
+                        font_size: (12.0 * zoom).clamp(7.0, 28.0),
+                        ..default()
+                    },
+                    TextColor(COLOR_TEXT_MUTED),
+                    Node {
+                        width: percent(100.0),
+                        height: percent(100.0),
+                        padding: UiRect::all(px(10.0)),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    CanvasRenderedNodeText { index },
+                ));
+            }
+            CanvasNodeKind::Group { label } => {
+                node_parent.spawn((
+                    Text::new(label.clone().unwrap_or_default()),
+                    TextFont {
+                        font: fonts.markdown_bold.clone(),
+                        font_size: (13.0 * zoom).clamp(8.0, 30.0),
+                        ..default()
+                    },
+                    TextColor(COLOR_TEXT_MUTED),
+                    Node {
+                        width: percent(100.0),
+                        padding: UiRect::all(px(10.0)),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    CanvasRenderedNodeText { index },
+                ));
+            }
+            CanvasNodeKind::Unknown { node_type } => {
+                node_parent.spawn((
+                    Text::new(format!("Unsupported canvas node: {node_type}")),
+                    TextFont {
+                        font: fonts.markdown_regular.clone(),
+                        font_size: (12.0 * zoom).clamp(7.0, 28.0),
+                        ..default()
+                    },
+                    TextColor(COLOR_TEXT_MUTED),
+                    Node {
+                        width: percent(100.0),
+                        padding: UiRect::all(px(10.0)),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    CanvasRenderedNodeText { index },
+                ));
+            }
+        });
+}
+
+fn spawn_canvas_image_or_placeholder(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+    target: &str,
+    state: &EditorState,
+    fonts: &EditorFonts,
+    images: &mut Assets<Image>,
+    image_cache: &mut EditorImageCache,
+    zoom: f32,
+) {
+    let lookup = processed_image_lookup(image_cache, state, target, images);
+    match lookup {
+        ProcessedImageLookup::Loaded { handle, .. } => {
+            parent.spawn((
+                ImageNode::new(handle),
+                Node {
+                    width: percent(100.0),
+                    height: percent(100.0),
+                    ..default()
+                },
+            ));
+        }
+        ProcessedImageLookup::Failed => {
+            parent.spawn((
+                Text::new(canvas_file_placeholder(target)),
+                TextFont {
+                    font: fonts.markdown_regular.clone(),
+                    font_size: (12.0 * zoom).clamp(7.0, 28.0),
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MUTED),
+                Node {
+                    width: percent(100.0),
+                    height: percent(100.0),
+                    padding: UiRect::all(px(10.0)),
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+                CanvasRenderedNodeText { index },
+            ));
+        }
+    }
+}
+
+fn canvas_first_image_embed(text: &str) -> Option<ImageEmbed> {
+    parse_document_with_format(&Document::from_text(text), DocumentFormat::Markdown)
+        .into_iter()
+        .flat_map(|line| line.image_embeds)
+        .next()
+}
+
+fn canvas_node_size(width: f32, height: f32) -> Vec2 {
+    Vec2::new(
+        width.max(CANVAS_NODE_DEFAULT_WIDTH),
+        height.max(CANVAS_NODE_DEFAULT_HEIGHT),
+    )
+}
+
+fn canvas_node_center(node: &basscript_core::CanvasNode) -> Vec2 {
+    let size = canvas_node_size(node.width, node.height);
+    Vec2::new(node.x + size.x * 0.5, node.y + size.y * 0.5)
+}
+
+fn canvas_edge_centers(
+    canvas: &CanvasDocument,
+    edge: &basscript_core::CanvasEdge,
+) -> Option<(Vec2, Vec2)> {
+    let from = canvas.nodes.iter().find(|node| node.id == edge.from_node)?;
+    let to = canvas.nodes.iter().find(|node| node.id == edge.to_node)?;
+    Some((canvas_node_center(from), canvas_node_center(to)))
+}
+
+fn canvas_edge_segment_rect(
+    from_center: Vec2,
+    to_center: Vec2,
+    segment: CanvasEdgeSegment,
+    pan: Vec2,
+    zoom: f32,
+) -> Option<(f32, f32, f32, f32)> {
+    let from = (from_center - pan) * zoom;
+    let to = (to_center - pan) * zoom;
+    let thickness = (2.0 * zoom).clamp(1.0, 4.0);
+
+    match segment {
+        CanvasEdgeSegment::Horizontal => {
+            let width = (to.x - from.x).abs();
+            (width > f32::EPSILON).then(|| {
+                (
+                    from.x.min(to.x),
+                    from.y - thickness * 0.5,
+                    width.max(thickness),
+                    thickness,
+                )
+            })
+        }
+        CanvasEdgeSegment::Vertical => {
+            let height = (to.y - from.y).abs();
+            (height > f32::EPSILON).then(|| {
+                (
+                    to.x - thickness * 0.5,
+                    from.y.min(to.y),
+                    thickness,
+                    height.max(thickness),
+                )
+            })
+        }
+    }
+}
+
+fn canvas_text_preview(text: &str) -> String {
+    text.replace("\r\n", "\n")
+        .lines()
+        .map(|line| line.strip_prefix("# ").unwrap_or(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn canvas_file_placeholder(file: &str) -> String {
+    Path::new(file)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or(file)
+        .to_owned()
+}
+
 fn viewport_lines(
     body_query: &Query<(&PanelBody, &ComputedNode)>,
     display_mode: DisplayMode,
@@ -462,8 +1075,15 @@ struct ProcessedVisualLine {
     raw_start_column: usize,
     raw_end_column: usize,
     markdown_checklist_checked: Option<bool>,
+    image_block: Option<ProcessedImageBlock>,
     render_override: Option<ProcessedLineRenderOverride>,
     is_spacer: bool,
+}
+
+#[derive(Clone, Debug)]
+struct ProcessedImageBlock {
+    target: String,
+    reserved_lines: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -568,7 +1188,7 @@ fn font_for_variant_with_format(
     format: DocumentFormat,
 ) -> Handle<Font> {
     match format {
-        DocumentFormat::Markdown => match variant {
+        DocumentFormat::Markdown | DocumentFormat::Canvas => match variant {
             FontVariant::Regular => fonts.markdown_regular.clone(),
             FontVariant::Bold => fonts.markdown_bold.clone(),
             FontVariant::Italic => fonts.markdown_italic.clone(),
@@ -581,4 +1201,178 @@ fn font_for_variant_with_format(
             FontVariant::BoldItalic => fonts.bold_italic.clone(),
         },
     }
+}
+
+fn processed_image_lookup(
+    cache: &mut EditorImageCache,
+    state: &EditorState,
+    target: &str,
+    images: &mut Assets<Image>,
+) -> ProcessedImageLookup {
+    let resolved = match resolve_processed_image_path(state, target) {
+        Ok(path) => path,
+        Err(_) => return ProcessedImageLookup::Failed,
+    };
+    let modified = fs::metadata(&resolved)
+        .and_then(|metadata| metadata.modified())
+        .ok();
+
+    if let Some(cached) = cache.entries.get(&resolved) {
+        if cached.modified == modified {
+            return match &cached.result {
+                CachedProcessedImageResult::Loaded { handle, size } => {
+                    ProcessedImageLookup::Loaded {
+                        handle: handle.clone(),
+                        size: *size,
+                    }
+                }
+                CachedProcessedImageResult::Failed => ProcessedImageLookup::Failed,
+            };
+        }
+    }
+
+    let result = load_processed_image(&resolved, images);
+    cache.entries.insert(
+        resolved,
+        CachedProcessedImage {
+            modified,
+            result: result.clone(),
+        },
+    );
+
+    match result {
+        CachedProcessedImageResult::Loaded { handle, size } => {
+            ProcessedImageLookup::Loaded { handle, size }
+        }
+        CachedProcessedImageResult::Failed => ProcessedImageLookup::Failed,
+    }
+}
+
+fn resolve_processed_image_path(state: &EditorState, target: &str) -> Result<PathBuf, String> {
+    let trimmed = target.trim();
+    if trimmed.is_empty() {
+        return Err("empty image path".to_owned());
+    }
+    if trimmed.contains("://") || trimmed.starts_with("data:") {
+        return Err(format!("remote image targets are not supported: {trimmed}"));
+    }
+
+    let target_path = Path::new(trimmed);
+    if target_path.is_absolute() {
+        return Ok(canonicalize_if_possible(target_path.to_path_buf()));
+    }
+
+    let document_candidate = state
+        .paths
+        .save_path
+        .parent()
+        .map(|parent| parent.join(target_path));
+    if let Some(candidate) = document_candidate.as_ref().filter(|path| path.exists()) {
+        return Ok(canonicalize_if_possible(candidate.clone()));
+    }
+
+    if let Some(root) = state.workspace_root.as_ref() {
+        let workspace_candidate = root.join(target_path);
+        if workspace_candidate.exists() || document_candidate.is_none() {
+            return Ok(canonicalize_if_possible(workspace_candidate));
+        }
+    }
+
+    for ancestor in state.paths.save_path.ancestors().skip(1) {
+        let ancestor_candidate = ancestor.join(target_path);
+        if ancestor_candidate.exists() {
+            return Ok(canonicalize_if_possible(ancestor_candidate));
+        }
+    }
+
+    for suffix in relative_path_suffixes(target_path) {
+        if let Some(root) = state.workspace_root.as_ref() {
+            let workspace_candidate = root.join(&suffix);
+            if workspace_candidate.exists() {
+                return Ok(canonicalize_if_possible(workspace_candidate));
+            }
+        }
+
+        for ancestor in state.paths.save_path.ancestors().skip(1) {
+            let ancestor_candidate = ancestor.join(&suffix);
+            if ancestor_candidate.exists() {
+                return Ok(canonicalize_if_possible(ancestor_candidate));
+            }
+        }
+    }
+
+    document_candidate
+        .map(canonicalize_if_possible)
+        .ok_or_else(|| format!("could not resolve image path: {trimmed}"))
+}
+
+fn relative_path_suffixes(path: &Path) -> Vec<PathBuf> {
+    let components = path
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(part) => Some(part.to_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    (1..components.len())
+        .map(|start| {
+            components[start..]
+                .iter()
+                .fold(PathBuf::new(), |mut suffix, part| {
+                    suffix.push(part);
+                    suffix
+                })
+        })
+        .collect()
+}
+
+fn canonicalize_if_possible(path: PathBuf) -> PathBuf {
+    fs::canonicalize(&path).unwrap_or(path)
+}
+
+fn load_processed_image(path: &Path, images: &mut Assets<Image>) -> CachedProcessedImageResult {
+    if !path.exists() {
+        return CachedProcessedImageResult::Failed;
+    }
+
+    let Some(extension) = path.extension().and_then(|ext| ext.to_str()) else {
+        return CachedProcessedImageResult::Failed;
+    };
+    if !matches!(
+        extension.to_ascii_lowercase().as_str(),
+        "png" | "jpg" | "jpeg" | "webp" | "bmp"
+    ) {
+        return CachedProcessedImageResult::Failed;
+    }
+
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = error;
+            return CachedProcessedImageResult::Failed;
+        }
+    };
+
+    let image = match Image::from_buffer(
+        &bytes,
+        ImageType::Extension(extension),
+        CompressedImageFormats::NONE,
+        true,
+        ImageSampler::linear(),
+        RenderAssetUsages::default(),
+    ) {
+        Ok(image) => image,
+        Err(error) => {
+            let _ = error;
+            return CachedProcessedImageResult::Failed;
+        }
+    };
+
+    let size = UVec2::new(
+        image.texture_descriptor.size.width,
+        image.texture_descriptor.size.height,
+    );
+    let handle = images.add(image);
+    CachedProcessedImageResult::Loaded { handle, size }
 }

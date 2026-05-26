@@ -46,6 +46,10 @@ fn handle_mouse_selection(
     >,
     mut state: ResMut<EditorState>,
 ) {
+    if state.document_format == DocumentFormat::Canvas {
+        return;
+    }
+
     if state.workspace_prompt.is_some() {
         mouse_selection.active = false;
         return;
@@ -362,6 +366,11 @@ fn sync_hovered_processed_link(
     >,
     mut state: ResMut<EditorState>,
 ) {
+    if state.document_format == DocumentFormat::Canvas {
+        state.hovered_processed_link = None;
+        return;
+    }
+
     state.hovered_processed_link = hovered_processed_link_at_cursor(
         &panel_query,
         &processed_text_layout_query,
@@ -543,6 +552,7 @@ fn render_selection_rects(
             Without<PanelCanvas>,
             Without<ProcessedPaperText>,
             Without<ProcessedChecklistIcon>,
+            Without<ProcessedImageBlockNode>,
         ),
     >,
     state: &EditorState,

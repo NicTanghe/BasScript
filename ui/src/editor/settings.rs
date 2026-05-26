@@ -1004,6 +1004,7 @@ fn default_char_width_for_format(format: DocumentFormat) -> f32 {
     match format {
         DocumentFormat::Markdown => DEFAULT_MARKDOWN_CHAR_WIDTH,
         DocumentFormat::Fountain => DEFAULT_CHAR_WIDTH,
+        DocumentFormat::Canvas => DEFAULT_MARKDOWN_CHAR_WIDTH,
     }
 }
 

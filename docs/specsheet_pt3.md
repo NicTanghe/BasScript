@@ -31,7 +31,7 @@ Epic K - Markdown and Fountain Image Embeds
 
 K1. Shared image embed parser
 
-Status: todo
+Status: implemented
 
 Add a core image-embed representation that can be populated by both Markdown and Fountain parsing without depending on Bevy or UI asset handles.
 
@@ -67,7 +67,7 @@ Acceptance
 
 K2. Image path resolution
 
-Status: todo
+Status: implemented v1
 
 Resolve image targets consistently for Markdown files, Fountain scripts, and future canvas file nodes.
 
@@ -93,7 +93,7 @@ Acceptance
 
 K3. Processed-view image layout
 
-Status: todo
+Status: implemented v1
 
 Render image embeds in processed views while keeping raw text editing unchanged.
 
@@ -121,7 +121,7 @@ Acceptance
 
 K4. Fountain-specific image behavior
 
-Status: todo
+Status: implemented
 
 Make image embeds feel natural inside Fountain scripts without damaging screenplay classification.
 
@@ -142,7 +142,7 @@ Acceptance
 
 K5. Image asset cache and lifecycle
 
-Status: todo
+Status: implemented v1
 
 Add one reusable image asset layer for processed Markdown, processed Fountain, and canvas nodes.
 
@@ -187,7 +187,7 @@ Epic L - Canvas Data Model and File Format
 
 L1. Canvas document format
 
-Status: todo
+Status: implemented v1 shell
 
 Add `.canvas` as a supported document type, using JSON Canvas 1.0 as the storage format.
 
@@ -209,7 +209,7 @@ Acceptance
 
 L2. Canvas node types
 
-Status: todo
+Status: implemented v1 read-only rendering
 
 Support the JSON Canvas node types needed for useful reference boards.
 
@@ -237,7 +237,7 @@ Acceptance
 
 L3. Canvas edge model
 
-Status: todo
+Status: implemented v1 basic rendering
 
 Support basic JSON Canvas edges for connecting nodes.
 
@@ -259,7 +259,7 @@ Epic M - Canvas View Shell and Navigation
 
 M1. Canvas view mode
 
-Status: todo
+Status: implemented v1
 
 Add a dedicated canvas view for `.canvas` files.
 
@@ -279,7 +279,7 @@ Acceptance
 
 M2. Pan, zoom, and fit controls
 
-Status: todo
+Status: partially implemented
 
 Implement reference-board navigation.
 
@@ -355,7 +355,7 @@ Epic N - Canvas Nodes, Images, and Editing
 
 N1. Image and file nodes
 
-Status: todo
+Status: partially implemented
 
 Make file nodes useful for visual reference boards.
 
@@ -377,7 +377,7 @@ Acceptance
 
 N2. Text nodes
 
-Status: todo
+Status: partially implemented
 
 Text nodes provide quick notes on the board.
 
@@ -398,7 +398,7 @@ Acceptance
 
 N3. Groups and arrangement
 
-Status: todo
+Status: partially implemented
 
 Groups provide spatial organization similar to Obsidian Canvas containers.
 
@@ -441,7 +441,7 @@ Epic O - Canvas Persistence, Undo, and Integration
 
 O1. Canvas save and dirty state
 
-Status: todo
+Status: partially implemented
 
 Canvas files need the same predictable save behavior as text documents.
 

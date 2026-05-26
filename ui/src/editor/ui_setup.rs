@@ -882,6 +882,22 @@ fn setup_processed_papers(
 
                         for line_offset in 0..span_capacity {
                             paper.spawn((
+                                ImageNode::solid_color(COLOR_IMAGE_PLACEHOLDER),
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: px(PAGE_TEXT_MARGIN_LEFT),
+                                    top: px(PAGE_TEXT_MARGIN_TOP + line_offset as f32 * LINE_HEIGHT),
+                                    width: px(10.0),
+                                    height: px(10.0),
+                                    ..default()
+                                },
+                                Visibility::Hidden,
+                                ZIndex(0),
+                                GlobalZIndex(1),
+                                ProcessedImageBlockNode { slot, line_offset },
+                            ));
+
+                            paper.spawn((
                                 ImageNode::new(slot_unchecked_icon.clone()),
                                 Node {
                                     position_type: PositionType::Absolute,
@@ -965,6 +981,22 @@ fn setup_processed_papers(
                     });
 
             for line_offset in 0..span_capacity {
+                paper.spawn((
+                    ImageNode::solid_color(COLOR_IMAGE_PLACEHOLDER),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(PAGE_TEXT_MARGIN_LEFT),
+                        top: px(PAGE_TEXT_MARGIN_TOP + line_offset as f32 * LINE_HEIGHT),
+                        width: px(10.0),
+                        height: px(10.0),
+                        ..default()
+                    },
+                    Visibility::Hidden,
+                    ZIndex(0),
+                    GlobalZIndex(1),
+                    ProcessedImageBlockNode { slot, line_offset },
+                ));
+
                 paper.spawn((
                     ImageNode::new(unchecked_icon.clone()),
                     Node {
@@ -2131,6 +2163,7 @@ fn sync_glass_surfaces(
     for (panel_body, mut color) in color_queries.p4().iter_mut() {
         color.0 = match panel_body.kind {
             PanelKind::Plain => COLOR_PANEL_BODY_PLAIN,
+            PanelKind::Processed if state.document_format == DocumentFormat::Canvas => COLOR_CANVAS_BG,
             PanelKind::Processed if processed_glass_active => Color::NONE,
             PanelKind::Processed => state.processed_bg_color,
         };

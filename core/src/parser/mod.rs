@@ -13,5 +13,6 @@ pub fn parse_document_with_format(document: &Document, format: DocumentFormat) -
     match format {
         DocumentFormat::Fountain => fountain::parse(document),
         DocumentFormat::Markdown => markdown::parse(document),
+        DocumentFormat::Canvas => Vec::new(),
     }
 }

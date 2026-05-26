@@ -43,6 +43,7 @@ fn render_panel_carets(
             Without<PanelPaper>,
             Without<PanelCanvas>,
             Without<ProcessedChecklistIcon>,
+            Without<ProcessedImageBlockNode>,
         ),
     >,
     state: &EditorState,

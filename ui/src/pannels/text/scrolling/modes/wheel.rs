@@ -11,6 +11,11 @@ fn handle_mouse_scroll(
         panel_context.processed_panel_size,
     );
 
+    if state.document_format == DocumentFormat::Canvas {
+        handle_canvas_mouse_scroll(&mut mouse_wheels, &keys, &panel_context, &mut state);
+        return;
+    }
+
     if platform_shortcut_modifier_pressed(&keys) {
         let mut zoom_steps = 0.0_f32;
 
@@ -124,4 +129,54 @@ fn handle_mouse_scroll(
     if scrolled {
         state.reset_blink();
     }
+}
+
+fn handle_canvas_mouse_scroll(
+    mouse_wheels: &mut MessageReader<MouseWheel>,
+    keys: &ButtonInput<KeyCode>,
+    panel_context: &ScrollPanelsContext,
+    state: &mut EditorState,
+) {
+    if panel_context.hovered_panel != Some(PanelKind::Processed) {
+        for _ in mouse_wheels.read() {}
+        return;
+    }
+
+    let shift_horizontal = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    let mut dx = 0.0_f32;
+    let mut dy = 0.0_f32;
+
+    for wheel in mouse_wheels.read() {
+        let scale = match wheel.unit {
+            MouseScrollUnit::Line => CANVAS_SCROLL_STEP_PX,
+            MouseScrollUnit::Pixel => 1.0,
+        };
+        let mut wheel_x = wheel.x * scale;
+        let mut wheel_y = wheel.y * scale;
+        if shift_horizontal && wheel_x.abs() <= f32::EPSILON {
+            wheel_x = -wheel_y;
+            wheel_y = 0.0;
+        }
+        dx += wheel_x;
+        dy += wheel_y;
+    }
+
+    if platform_shortcut_modifier_pressed(keys) {
+        if dy.abs() > f32::EPSILON {
+            let old_zoom = state.zoom.max(CANVAS_ZOOM_MIN);
+            let cursor_world = panel_context
+                .processed_cursor_pos
+                .map(|cursor| state.canvas_pan + cursor / old_zoom);
+            state.set_zoom(state.zoom + (dy / CANVAS_SCROLL_STEP_PX) * ZOOM_STEP);
+            if let Some((cursor, world)) = panel_context.processed_cursor_pos.zip(cursor_world) {
+                state.canvas_pan = world - cursor / state.zoom.max(CANVAS_ZOOM_MIN);
+            }
+            state.status_message = format!("Canvas zoom: {}%", state.zoom_percent());
+        }
+        return;
+    }
+
+    let zoom = state.zoom.max(0.1);
+    state.canvas_pan.x += -dx / zoom;
+    state.canvas_pan.y += -dy / zoom;
 }

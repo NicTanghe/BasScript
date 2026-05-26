@@ -10,6 +10,11 @@ fn handle_vim_input(
         return;
     }
 
+    if state.document_format == DocumentFormat::Canvas {
+        reset_vim_repeat(&mut repeat);
+        return;
+    }
+
     if state.workspace_prompt.is_some() || state.command_menu.is_some() || state.workspace_focused {
         reset_vim_repeat(&mut repeat);
         return;

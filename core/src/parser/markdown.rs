@@ -1,7 +1,7 @@
 use crate::buffer::Document;
 use crate::model::LineKind;
 
-use super::shared::parsed_line;
+use super::shared::parsed_line_with_image_embeds;
 
 pub(super) fn parse(document: &Document) -> Vec<crate::model::ParsedLine> {
     let mut parsed = Vec::with_capacity(document.line_count());
@@ -13,7 +13,14 @@ pub(super) fn parse(document: &Document) -> Vec<crate::model::ParsedLine> {
             in_fenced_code_block = !in_fenced_code_block;
         }
 
-        parsed.push(parsed_line(raw, kind, heading_level));
+        let include_image_embeds =
+            !matches!(kind, LineKind::MarkdownCodeFence | LineKind::MarkdownCode);
+        parsed.push(parsed_line_with_image_embeds(
+            raw,
+            kind,
+            heading_level,
+            include_image_embeds,
+        ));
     }
 
     parsed
@@ -149,5 +156,16 @@ mod tests {
 
         assert_eq!(parsed[0].kind, LineKind::MarkdownListItem);
         assert_eq!(parsed[1].kind, LineKind::MarkdownListItem);
+    }
+
+    #[test]
+    fn extracts_markdown_image_embeds_outside_code_fences() {
+        let doc =
+            Document::from_text("![door](refs/door.png)\n```\n![ignored](refs/ignored.png)\n```");
+        let parsed = parse(&doc);
+
+        assert_eq!(parsed[0].image_embeds.len(), 1);
+        assert_eq!(parsed[0].image_embeds[0].target, "refs/door.png");
+        assert!(parsed[2].image_embeds.is_empty());
     }
 }

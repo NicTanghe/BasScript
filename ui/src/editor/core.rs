@@ -2,14 +2,17 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs, io,
     path::{Path, PathBuf},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use basscript_core::{
-    Cursor, Document, DocumentFormat, DocumentPath, LineKind, LinkDisplayText, ParsedLine,
-    Position, ScriptLink, parse_document_with_format,
+    CanvasDocument, CanvasNodeKind, Cursor, Document, DocumentFormat, DocumentPath, ImageEmbed,
+    LineKind, LinkDisplayText, ParsedLine, Position, ScriptLink, parse_canvas_document,
+    parse_document_with_format,
 };
 use bevy::{
+    asset::RenderAssetUsages,
+    image::{CompressedImageFormats, ImageSampler, ImageType},
     input::{
         keyboard::{Key, KeyboardInput},
         mouse::{MouseScrollUnit, MouseWheel},
@@ -52,6 +55,8 @@ const TEXT_PADDING_Y: f32 = 10.0;
 const ZOOM_MIN: f32 = 0.6;
 const ZOOM_MAX: f32 = 1.8;
 const ZOOM_STEP: f32 = 0.1;
+const CANVAS_ZOOM_MIN: f32 = 0.1;
+const CANVAS_ZOOM_MAX: f32 = 4.0;
 const NAVIGATION_REPEAT_INITIAL_DELAY_SECS: f32 = 0.30;
 const NAVIGATION_REPEAT_INTERVAL_SECS: f32 = 0.045;
 const WORKSPACE_SELECTION_REPEAT_INITIAL_DELAY_SECS: f32 = 0.10;
@@ -78,6 +83,8 @@ const THEME_COLOR_SLIDER_KNOB_WIDTH: f32 = 8.0;
 const LINK_HOVER_HSV_VALUE_STEP: f32 = 0.02;
 const LINK_HOVER_HSV_VALUE_MAX: f32 = 0.50;
 const PROCESSED_LINE_SPAN_PARTS: usize = 24;
+const PROCESSED_IMAGE_BLOCK_LINES: usize = 14;
+const PROCESSED_IMAGE_BLOCK_GAP: f32 = 4.0;
 const MIN_TEXT_BOX_WIDTH: f32 = 120.0;
 const MIN_TEXT_BOX_HEIGHT: f32 = 120.0;
 const PANEL_SPLITTER_WIDTH: f32 = 0.0;
@@ -119,6 +126,16 @@ const COLOR_WORKSPACE_PROMPT_INPUT_BG: Color = Color::srgb(0.99, 0.99, 1.0);
 const COLOR_SPLITTER_IDLE: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
 const COLOR_SPLITTER_HOVER: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
 const COLOR_SPLITTER_ACTIVE: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
+const COLOR_IMAGE_PLACEHOLDER: Color = Color::srgb(0.72, 0.74, 0.77);
+const COLOR_CANVAS_BG: Color = Color::srgb(0.38, 0.40, 0.43);
+const COLOR_CANVAS_NODE_BG: Color = Color::srgb(0.96, 0.97, 0.98);
+const COLOR_CANVAS_GROUP_BG: Color = Color::srgba(0.80, 0.84, 0.90, 0.28);
+const COLOR_CANVAS_NODE_BORDER: Color = Color::srgba(0.08, 0.10, 0.12, 0.22);
+const COLOR_CANVAS_EDGE: Color = Color::srgba(0.10, 0.12, 0.15, 0.45);
+const CANVAS_NODE_DEFAULT_WIDTH: f32 = 260.0;
+const CANVAS_NODE_DEFAULT_HEIGHT: f32 = 160.0;
+const CANVAS_VIEW_MARGIN: f32 = 120.0;
+const CANVAS_SCROLL_STEP_PX: f32 = 64.0;
 
 pub struct UiPlugin;
 
@@ -142,6 +159,7 @@ impl Plugin for UiPlugin {
             .init_resource::<MouseSelectionState>()
             .init_resource::<PanelLayoutState>()
             .init_resource::<PanelSplitterDragState>()
+            .init_resource::<EditorImageCache>()
             .init_state::<UiScreenState>()
             .insert_non_send_resource(DialogMainThreadMarker)
             .add_systems(
@@ -231,6 +249,14 @@ impl Plugin for UiPlugin {
                 )
                     .run_if(in_state(UiScreenState::Editor)),
             );
+        app.add_systems(
+            Update,
+            (
+                render_processed_images.after(render_editor),
+                sync_canvas_board.after(render_editor),
+            )
+                .run_if(in_state(UiScreenState::Editor)),
+        );
     }
 }
 
@@ -345,6 +371,34 @@ struct ProcessedPaperLineSpan {
 struct ProcessedChecklistIcon {
     slot: usize,
     line_offset: usize,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct ProcessedImageBlockNode {
+    slot: usize,
+    line_offset: usize,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct CanvasRenderedNode {
+    index: usize,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct CanvasRenderedNodeText {
+    index: usize,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct CanvasRenderedEdge {
+    index: usize,
+    segment: CanvasEdgeSegment,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CanvasEdgeSegment {
+    Horizontal,
+    Vertical,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
@@ -1141,6 +1195,10 @@ struct EditorState {
     measured_line_step: f32,
     processed_cache: Option<ProcessedCache>,
     processed_cache_dirty_from_line: Option<usize>,
+    canvas_document: Option<CanvasDocument>,
+    canvas_parse_error: Option<String>,
+    canvas_version: u64,
+    canvas_pan: Vec2,
     workspace_root: Option<PathBuf>,
     workspace_folders: Vec<WorkspaceFolderEntry>,
     workspace_files: Vec<WorkspaceFileEntry>,
@@ -1155,6 +1213,35 @@ struct EditorState {
     workspace_ui_dirty: bool,
     undo_history: Vec<EditorHistorySnapshot>,
     redo_history: Vec<EditorHistorySnapshot>,
+}
+
+#[derive(Resource, Default)]
+struct EditorImageCache {
+    entries: BTreeMap<PathBuf, CachedProcessedImage>,
+}
+
+#[derive(Clone)]
+struct CachedProcessedImage {
+    modified: Option<SystemTime>,
+    result: CachedProcessedImageResult,
+}
+
+#[derive(Clone)]
+enum CachedProcessedImageResult {
+    Loaded {
+        handle: Handle<Image>,
+        size: UVec2,
+    },
+    Failed,
+}
+
+#[derive(Clone)]
+enum ProcessedImageLookup {
+    Loaded {
+        handle: Handle<Image>,
+        size: UVec2,
+    },
+    Failed,
 }
 
 #[derive(Clone)]
@@ -1667,6 +1754,10 @@ impl FromWorld for EditorState {
             measured_line_step: LINE_HEIGHT,
             processed_cache: None,
             processed_cache_dirty_from_line: Some(0),
+            canvas_document: None,
+            canvas_parse_error: None,
+            canvas_version: 0,
+            canvas_pan: Vec2::ZERO,
             workspace_root: None,
             workspace_folders: Vec::new(),
             workspace_files: Vec::new(),
@@ -1685,6 +1776,12 @@ impl FromWorld for EditorState {
         normalize_page_margins(&mut next);
         let initial_status = next.status_message.clone();
         apply_initial_workspace_root(&mut next, &initial_status, saved_workspace_root.as_deref());
+        if next.document_format == DocumentFormat::Canvas {
+            next.display_mode = DisplayMode::Processed;
+            next.focused_panel = PanelKind::Processed;
+            next.sync_canvas_document();
+            next.reset_canvas_view_to_content();
+        }
         next
     }
 }
@@ -1695,6 +1792,13 @@ impl EditorState {
     }
 
     fn set_display_mode(&mut self, mode: DisplayMode) -> bool {
+        if self.document_format == DocumentFormat::Canvas {
+            let changed = self.display_mode != DisplayMode::Processed;
+            self.display_mode = DisplayMode::Processed;
+            self.focused_panel = PanelKind::Processed;
+            return changed;
+        }
+
         if self.display_mode == mode {
             return false;
         }
@@ -1709,6 +1813,10 @@ impl EditorState {
     }
 
     fn active_panel_for_display_mode(&self) -> PanelKind {
+        if self.document_format == DocumentFormat::Canvas {
+            return PanelKind::Processed;
+        }
+
         match self.display_mode {
             DisplayMode::Split => self.focused_panel,
             DisplayMode::Plain => PanelKind::Plain,
@@ -1717,11 +1825,20 @@ impl EditorState {
     }
 
     fn panel_visible(&self, panel: PanelKind) -> bool {
+        if self.document_format == DocumentFormat::Canvas {
+            return panel == PanelKind::Processed;
+        }
+
         self.display_mode.panel_visible(panel)
     }
 
     fn set_zoom(&mut self, zoom: f32) {
-        self.zoom = zoom.clamp(ZOOM_MIN, ZOOM_MAX);
+        let (min_zoom, max_zoom) = if self.document_format == DocumentFormat::Canvas {
+            (CANVAS_ZOOM_MIN, CANVAS_ZOOM_MAX)
+        } else {
+            (ZOOM_MIN, ZOOM_MAX)
+        };
+        self.zoom = zoom.clamp(min_zoom, max_zoom);
         self.measured_line_step = scaled_line_height(self);
         self.reset_blink();
     }
@@ -1732,14 +1849,64 @@ impl EditorState {
 
     fn reparse(&mut self) {
         self.parsed = parse_document_with_format(&self.document, self.document_format);
+        self.sync_canvas_document();
         self.missing_script_link_targets.clear();
         self.mark_processed_cache_dirty_from(0);
     }
 
     fn reparse_with_dirty_hint(&mut self, dirty_line: usize) {
         self.parsed = parse_document_with_format(&self.document, self.document_format);
+        self.sync_canvas_document();
         self.missing_script_link_targets.clear();
         self.mark_processed_cache_dirty_from(dirty_line);
+    }
+
+    fn sync_canvas_document(&mut self) {
+        if self.document_format != DocumentFormat::Canvas {
+            self.canvas_document = None;
+            self.canvas_parse_error = None;
+            return;
+        }
+
+        match parse_canvas_document(&self.document.to_text()) {
+            Ok(canvas) => {
+                self.canvas_document = Some(canvas);
+                self.canvas_parse_error = None;
+            }
+            Err(error) => {
+                self.canvas_document = None;
+                self.canvas_parse_error = Some(error.to_string());
+            }
+        }
+        self.canvas_version = self.canvas_version.saturating_add(1);
+    }
+
+    fn reset_canvas_view_to_content(&mut self) {
+        let Some(bounds) = self.canvas_bounds() else {
+            self.canvas_pan = Vec2::ZERO;
+            return;
+        };
+
+        self.canvas_pan = Vec2::new(
+            bounds.min.x - CANVAS_VIEW_MARGIN,
+            bounds.min.y - CANVAS_VIEW_MARGIN,
+        );
+    }
+
+    fn canvas_bounds(&self) -> Option<Rect> {
+        let canvas = self.canvas_document.as_ref()?;
+        let mut min = Vec2::new(f32::INFINITY, f32::INFINITY);
+        let mut max = Vec2::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
+
+        for node in &canvas.nodes {
+            let size = canvas_node_size(node.width, node.height);
+            min.x = min.x.min(node.x);
+            min.y = min.y.min(node.y);
+            max.x = max.x.max(node.x + size.x);
+            max.y = max.y.max(node.y + size.y);
+        }
+
+        min.x.is_finite().then_some(Rect { min, max })
     }
 
     fn mark_processed_cache_dirty_from(&mut self, source_line: usize) {
@@ -1896,6 +2063,7 @@ impl EditorState {
                 self.paths.load_path = path.clone();
                 self.paths.save_path = path.clone();
                 self.document_format = detect_document_format(&path, &self.document);
+                self.set_zoom(self.zoom);
                 self.reparse();
                 self.refresh_workspace_after_path_change();
                 self.status_message = format!("Saved {}", status_path_label(&path));
@@ -1917,6 +2085,7 @@ impl EditorState {
                 let document_format = detect_document_format(&path, &document);
                 self.document = document;
                 self.document_format = document_format;
+                self.set_zoom(self.zoom);
                 self.clear_script_link_target_cache();
                 self.reparse();
                 self.cursor = Cursor::default();
@@ -1932,6 +2101,12 @@ impl EditorState {
                 self.plain_horizontal_scroll = 0.0;
                 self.processed_horizontal_scroll = 0.0;
                 self.processed_zoom_anchor_bias_px = 0.0;
+                self.canvas_pan = Vec2::ZERO;
+                if document_format == DocumentFormat::Canvas {
+                    self.display_mode = DisplayMode::Processed;
+                    self.focused_panel = PanelKind::Processed;
+                    self.reset_canvas_view_to_content();
+                }
                 self.clear_history();
                 self.paths.load_path = path.clone();
                 self.paths.save_path = path.clone();
@@ -1986,6 +2161,7 @@ impl EditorState {
     ) {
         self.document = snapshot.document;
         self.parsed = parse_document_with_format(&self.document, self.document_format);
+        self.sync_canvas_document();
         self.processed_cache = None;
         self.processed_cache_dirty_from_line = Some(0);
 
@@ -2004,6 +2180,11 @@ impl EditorState {
         self.plain_horizontal_scroll = snapshot.plain_horizontal_scroll;
         self.processed_horizontal_scroll = snapshot.processed_horizontal_scroll;
         self.processed_zoom_anchor_bias_px = snapshot.processed_zoom_anchor_bias_px;
+        if self.document_format == DocumentFormat::Canvas {
+            self.display_mode = DisplayMode::Processed;
+            self.focused_panel = PanelKind::Processed;
+            self.reset_canvas_view_to_content();
+        }
         self.clamp_scroll(visible_lines);
         self.clamp_processed_top_line();
         self.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
@@ -2083,6 +2264,7 @@ fn document_format_label(format: DocumentFormat) -> &'static str {
     match format {
         DocumentFormat::Fountain => "Fountain",
         DocumentFormat::Markdown => "Markdown",
+        DocumentFormat::Canvas => "Canvas",
     }
 }
 
@@ -2092,6 +2274,9 @@ fn position_is_before_or_equal(left: Position, right: Position) -> bool {
 
 fn detect_document_format(path: &Path, document: &Document) -> DocumentFormat {
     let path_format = DocumentFormat::from_path(path);
+    if path_format == DocumentFormat::Canvas {
+        return DocumentFormat::Canvas;
+    }
     if path_format == DocumentFormat::Markdown {
         return DocumentFormat::Markdown;
     }

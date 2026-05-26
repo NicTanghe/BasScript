@@ -121,6 +121,13 @@ fn handle_middle_mouse_autoscroll(
         return;
     }
 
+    if state.document_format == DocumentFormat::Canvas {
+        let zoom = state.zoom.max(0.1);
+        state.canvas_pan.x += horizontal_delta_px / zoom;
+        state.canvas_pan.y += (vertical_delta_lines * line_height) / zoom;
+        return;
+    }
+
     let visible_lines = viewport_lines_from_panels(
         &panel_query,
         state.display_mode,

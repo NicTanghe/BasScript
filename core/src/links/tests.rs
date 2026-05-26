@@ -66,6 +66,12 @@ fn ignores_non_slug_targets() {
 }
 
 #[test]
+fn ignores_markdown_image_syntax_as_script_links() {
+    let links = extract_script_links("Use ![door](door-kitchen-main), not a script link.");
+    assert!(links.is_empty());
+}
+
+#[test]
 fn renders_labelled_links_as_visible_text() {
     let rendered = render_script_link_text("Open [that door](door-kitchen-main) now.");
 

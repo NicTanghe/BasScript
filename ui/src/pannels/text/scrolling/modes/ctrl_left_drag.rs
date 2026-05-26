@@ -61,6 +61,13 @@ fn handle_ctrl_left_drag_scroll(
         return;
     }
 
+    if state.document_format == DocumentFormat::Canvas {
+        let zoom = state.zoom.max(0.1);
+        state.canvas_pan.x -= delta.x / zoom;
+        state.canvas_pan.y -= delta.y / zoom;
+        return;
+    }
+
     let visible_lines = viewport_lines_from_panels(
         &panel_query,
         state.display_mode,

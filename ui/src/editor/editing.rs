@@ -7,6 +7,7 @@ fn handle_text_input(
     if state.workspace_focused
         || state.workspace_prompt.is_some()
         || state.command_menu.is_some()
+        || state.document_format == DocumentFormat::Canvas
         || (state.vim_enabled && state.vim_mode != VimMode::Insert)
     {
         state.pending_space_insert = false;
@@ -294,6 +295,12 @@ fn handle_navigation_input(
     }
 
     if state.workspace_focused {
+        return;
+    }
+
+    if state.document_format == DocumentFormat::Canvas {
+        navigation_repeat.active_arrow = None;
+        navigation_repeat.repeat_cooldown_secs = 0.0;
         return;
     }
 

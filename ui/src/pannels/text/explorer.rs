@@ -1,6 +1,6 @@
 const WORKSPACE_ROOT_LABEL_EMPTY: &str = "No workspace opened.";
 const WORKSPACE_ROOT_LABEL_PREFIX: &str = "";
-const WORKSPACE_EMPTY_RESULTS_LABEL: &str = "No .fountain/.md/.txt files found.";
+const WORKSPACE_EMPTY_RESULTS_LABEL: &str = "No .fountain/.md/.txt/.canvas files found.";
 
 // pretty sure these arent really working
 
@@ -432,7 +432,7 @@ fn is_workspace_file_candidate(path: &Path) -> bool {
         .map(|ext| ext.to_ascii_lowercase());
     matches!(
         extension.as_deref(),
-        Some("fountain") | Some("txt") | Some("md") | Some("markdown")
+        Some("fountain") | Some("txt") | Some("md") | Some("markdown") | Some("canvas")
     )
 }
 

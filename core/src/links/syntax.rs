@@ -12,6 +12,10 @@ pub fn extract_script_links(input: &str) -> Vec<ScriptLink> {
             index += 1;
             continue;
         }
+        if index > 0 && chars[index - 1] == '!' {
+            index += 1;
+            continue;
+        }
 
         let Some(label_end) = chars[index + 1..]
             .iter()
