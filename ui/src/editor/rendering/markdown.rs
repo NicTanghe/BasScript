@@ -123,7 +123,7 @@ fn markdown_heading_style(level: u8) -> LineRenderStyle {
         FontVariant::Bold,
         COLOR_MARKDOWN_HEADING,
         font_scale,
-        font_scale.max(1.0),
+        1.0,
     )
 }
 

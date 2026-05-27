@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs, io,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex, mpsc},
     time::{Duration, Instant, SystemTime},
 };
 
@@ -19,12 +20,11 @@ use bevy::{
     },
     log::{info, warn},
     prelude::*,
-    tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
     text::{LineHeight, TextLayoutInfo},
     ui::{RelativeCursorPosition, UiTransform, Val2},
     window::{PrimaryWindow, RawHandleWrapper},
 };
-use rfd::AsyncFileDialog;
+use rfd::FileDialog;
 
 const FONT_PATH: &str = "fonts/Courier Prime/Courier Prime.ttf";
 const FONT_BOLD_PATH: &str = "fonts/Courier Prime/Courier Prime Bold.ttf";
@@ -1286,8 +1286,8 @@ struct PanelSplitterDragState {
 }
 
 enum PendingDialog {
-    Workspace(Task<Option<PathBuf>>),
-    Save(Task<Option<PathBuf>>),
+    Workspace(Arc<Mutex<mpsc::Receiver<Option<PathBuf>>>>),
+    Save(Arc<Mutex<mpsc::Receiver<Option<PathBuf>>>>),
 }
 
 struct DialogMainThreadMarker;
@@ -2333,4 +2333,3 @@ fn is_fountain_hint(trimmed: &str) -> bool {
         .chars()
         .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || " .()'-".contains(ch))
 }
-

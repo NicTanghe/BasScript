@@ -346,7 +346,7 @@ fn handle_file_shortcuts(
 fn open_workspace_dialog(
     state: &mut EditorState,
     dialogs: &mut DialogState,
-    parent_handle: Option<&RawHandleWrapper>,
+    _parent_handle: Option<&RawHandleWrapper>,
 ) {
     if dialogs.pending.is_some() {
         let pending_kind = dialogs
@@ -366,45 +366,43 @@ fn open_workspace_dialog(
         std::thread::current().id()
     );
 
-    let mut dialog = AsyncFileDialog::new().set_title("Open Workspace Folder");
-
-    if let Some(directory) = preferred_dialog_directory(state) {
+    let directory = preferred_dialog_directory(state);
+    if let Some(directory) = &directory {
         info!(
             "[dialog] Workspace dialog preferred directory: {}",
             directory.display()
         );
-        dialog = dialog.set_directory(directory);
     } else {
         warn!("[dialog] No preferred directory found for workspace dialog");
     }
 
-    dialog = attach_dialog_parent(dialog, parent_handle);
-
-    info!("[dialog] Creating native workspace dialog future");
-    let request = dialog.pick_folder();
-    info!("[dialog] Native workspace future created; spawning task");
-
-    let task = AsyncComputeTaskPool::get().spawn(async move {
-        info!("[dialog] Workspace task awaiting picker result...");
-        let result = request
-            .await
-            .map(|file_handle| file_handle.path().to_path_buf());
-        match &result {
-            Some(path) => info!("[dialog] Workspace task received path: {}", path.display()),
-            None => info!("[dialog] Workspace task returned: canceled"),
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        info!(
+            "[dialog] Workspace dialog thread started: {:?}",
+            std::thread::current().id()
+        );
+        let mut dialog = FileDialog::new().set_title("Open Workspace Folder");
+        if let Some(directory) = directory {
+            dialog = dialog.set_directory(directory);
         }
-        result
+        let result = dialog.pick_folder();
+        match &result {
+            Some(path) => info!("[dialog] Workspace thread received path: {}", path.display()),
+            None => info!("[dialog] Workspace thread returned: canceled"),
+        }
+        let _ = sender.send(result);
     });
 
-    dialogs.begin_pending(PendingDialog::Workspace(task));
-    info!("[dialog] Workspace dialog task spawned");
+    dialogs.begin_pending(PendingDialog::Workspace(Arc::new(Mutex::new(receiver))));
+    info!("[dialog] Native workspace dialog thread spawned");
     state.status_message = "Opening workspace picker...".to_string();
 }
 
 fn open_save_dialog(
     state: &mut EditorState,
     dialogs: &mut DialogState,
-    parent_handle: Option<&RawHandleWrapper>,
+    _parent_handle: Option<&RawHandleWrapper>,
 ) {
     if dialogs.pending.is_some() {
         let pending_kind = dialogs
@@ -424,16 +422,12 @@ fn open_save_dialog(
         std::thread::current().id()
     );
 
-    let mut dialog = AsyncFileDialog::new()
-        .set_title("Save Script File")
-        .add_filter("Script files", &["fountain", "txt", "md"]);
-
-    if let Some(directory) = preferred_dialog_directory(state) {
+    let directory = preferred_dialog_directory(state);
+    if let Some(directory) = &directory {
         info!(
             "[dialog] Save dialog preferred directory: {}",
             directory.display()
         );
-        dialog = dialog.set_directory(directory);
     } else {
         warn!("[dialog] No preferred directory found for save dialog");
     }
@@ -447,47 +441,35 @@ fn open_save_dialog(
         .to_string();
 
     info!("[dialog] Save dialog default filename: {}", default_name);
-    dialog = dialog.set_file_name(default_name.as_str());
-    dialog = attach_dialog_parent(dialog, parent_handle);
 
-    info!("[dialog] Creating native save dialog future");
-    let request = dialog.save_file();
-    info!("[dialog] Native save future created; spawning task");
-
-    let task = AsyncComputeTaskPool::get().spawn(async move {
-        info!("[dialog] Save task awaiting picker result...");
-        let result = request
-            .await
-            .map(|file_handle| file_handle.path().to_path_buf());
-        match &result {
-            Some(path) => info!("[dialog] Save task received path: {}", path.display()),
-            None => info!("[dialog] Save task returned: canceled"),
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        info!(
+            "[dialog] Save dialog thread started: {:?}",
+            std::thread::current().id()
+        );
+        let mut dialog = FileDialog::new()
+            .set_title("Save Script File")
+            .add_filter("Script files", &["fountain", "txt", "md"])
+            .set_file_name(default_name.as_str());
+        if let Some(directory) = directory {
+            dialog = dialog.set_directory(directory);
         }
-        result
+        let result = dialog.save_file();
+        match &result {
+            Some(path) => info!("[dialog] Save thread received path: {}", path.display()),
+            None => info!("[dialog] Save thread returned: canceled"),
+        }
+        let _ = sender.send(result);
     });
 
-    dialogs.begin_pending(PendingDialog::Save(task));
-    info!("[dialog] Save dialog task spawned");
+    dialogs.begin_pending(PendingDialog::Save(Arc::new(Mutex::new(receiver))));
+    info!("[dialog] Native save dialog thread spawned");
     state.status_message = "Opening save dialog...".to_string();
 }
 
-fn attach_dialog_parent(
-    dialog: AsyncFileDialog,
-    parent_handle: Option<&RawHandleWrapper>,
-) -> AsyncFileDialog {
-    let Some(parent_handle) = parent_handle else {
-        warn!("[dialog] No primary window handle found; opening unparented dialog");
-        return dialog;
-    };
-
-    // SAFETY: This is called from Bevy update systems on the main app thread.
-    let handle = unsafe { parent_handle.get_handle() };
-    info!("[dialog] Attached dialog parent to primary window handle");
-    dialog.set_parent(&handle)
-}
-
 fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<DialogState>) {
-    let Some(pending) = dialogs.pending.as_mut() else {
+    let Some(pending) = dialogs.pending.as_ref() else {
         return;
     };
     let pending_kind = pending.kind_name();
@@ -498,20 +480,36 @@ fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<Di
     }
 
     let finished = match pending {
-        PendingDialog::Workspace(task) => {
-            future::block_on(future::poll_once(task)).map(DialogResult::Workspace)
-        }
-        PendingDialog::Save(task) => {
-            future::block_on(future::poll_once(task)).map(DialogResult::Save)
-        }
+        PendingDialog::Workspace(receiver) => match receiver.lock() {
+            Ok(receiver) => match receiver.try_recv() {
+                Ok(path) => Some(DialogResult::Workspace(path)),
+                Err(mpsc::TryRecvError::Empty) => None,
+                Err(mpsc::TryRecvError::Disconnected) => Some(DialogResult::Workspace(None)),
+            },
+            Err(error) => {
+                warn!("[dialog] Workspace dialog receiver poisoned: {error}");
+                Some(DialogResult::Workspace(None))
+            }
+        },
+        PendingDialog::Save(receiver) => match receiver.lock() {
+            Ok(receiver) => match receiver.try_recv() {
+                Ok(path) => Some(DialogResult::Save(path)),
+                Err(mpsc::TryRecvError::Empty) => None,
+                Err(mpsc::TryRecvError::Disconnected) => Some(DialogResult::Save(None)),
+            },
+            Err(error) => {
+                warn!("[dialog] Save dialog receiver poisoned: {error}");
+                Some(DialogResult::Save(None))
+            }
+        },
     };
 
     dialogs.poll_count = dialogs.poll_count.saturating_add(1);
 
     let now = Instant::now();
-    let should_log_watchdog = dialogs.last_watchdog_log_at.map_or(true, |last| {
-        now.duration_since(last) >= Duration::from_secs(2)
-    });
+    let should_log_watchdog = dialogs
+        .last_watchdog_log_at
+        .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(2));
     if should_log_watchdog {
         if let Some(opened_at) = dialogs.opened_at {
             let elapsed_ms = opened_at.elapsed().as_millis();
@@ -531,7 +529,7 @@ fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<Di
         .opened_at
         .map_or(0_u128, |opened_at| opened_at.elapsed().as_millis());
     info!(
-        "[dialog] {} dialog future resolved after {}ms (poll_count={})",
+        "[dialog] {} dialog resolved after {}ms (poll_count={})",
         pending_kind, elapsed_ms, dialogs.poll_count
     );
 
@@ -576,6 +574,3 @@ fn preferred_dialog_directory(state: &EditorState) -> Option<PathBuf> {
                 .map(|path| path.to_path_buf())
         })
 }
-
-
-
