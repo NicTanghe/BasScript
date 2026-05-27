@@ -125,6 +125,17 @@ fn render_editor(
     let processed_line_height = scaled_line_height(&state).max(1.0);
 
     if state.document_format == DocumentFormat::Canvas {
+        if state.canvas_view_needs_centering {
+            if let Some(processed_panel_size) = body_query
+                .iter()
+                .find(|(panel, _)| panel.kind == PanelKind::Processed)
+                .map(|(_, computed)| computed.size() * computed.inverse_scale_factor())
+                .filter(|size| size.x > 1.0 && size.y > 1.0)
+            {
+                state.center_canvas_view_in_panel(processed_panel_size);
+            }
+        }
+
         for (_, mut text, _, _, mut node, mut transform) in text_query.iter_mut() {
             **text = String::new();
             node.left = px(0.0);

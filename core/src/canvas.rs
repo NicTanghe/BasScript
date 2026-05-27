@@ -55,6 +55,12 @@ impl fmt::Display for CanvasParseError {
 impl Error for CanvasParseError {}
 
 pub fn parse_canvas_document(input: &str) -> Result<CanvasDocument, CanvasParseError> {
+    let input = input.trim_start_matches('\u{feff}');
+
+    if input.trim().is_empty() {
+        return Ok(CanvasDocument::default());
+    }
+
     let root = serde_json::from_str::<Value>(input)
         .map_err(|error| CanvasParseError::new(format!("invalid canvas JSON: {error}")))?;
     let object = root
@@ -168,5 +174,24 @@ mod tests {
         assert_eq!(canvas.edges.len(), 1);
         assert!(matches!(canvas.nodes[0].kind, CanvasNodeKind::Text { .. }));
         assert!(matches!(canvas.nodes[1].kind, CanvasNodeKind::File { .. }));
+    }
+
+    #[test]
+    fn parses_blank_canvas_as_empty_document() {
+        let canvas = parse_canvas_document(" \n\t ").expect("blank canvas");
+
+        assert!(canvas.nodes.is_empty());
+        assert!(canvas.edges.is_empty());
+    }
+
+    #[test]
+    fn parses_utf8_bom_canvas() {
+        let canvas = parse_canvas_document(
+            "\u{feff}{\"nodes\":[{\"id\":\"a\",\"type\":\"text\",\"x\":0,\"y\":0}],\"edges\":[]}",
+        )
+        .expect("canvas with bom");
+
+        assert_eq!(canvas.nodes.len(), 1);
+        assert!(canvas.edges.is_empty());
     }
 }

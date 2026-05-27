@@ -1199,6 +1199,7 @@ struct EditorState {
     canvas_parse_error: Option<String>,
     canvas_version: u64,
     canvas_pan: Vec2,
+    canvas_view_needs_centering: bool,
     workspace_root: Option<PathBuf>,
     workspace_folders: Vec<WorkspaceFolderEntry>,
     workspace_files: Vec<WorkspaceFileEntry>,
@@ -1758,6 +1759,7 @@ impl FromWorld for EditorState {
             canvas_parse_error: None,
             canvas_version: 0,
             canvas_pan: Vec2::ZERO,
+            canvas_view_needs_centering: false,
             workspace_root: None,
             workspace_folders: Vec::new(),
             workspace_files: Vec::new(),
@@ -1865,6 +1867,7 @@ impl EditorState {
         if self.document_format != DocumentFormat::Canvas {
             self.canvas_document = None;
             self.canvas_parse_error = None;
+            self.canvas_view_needs_centering = false;
             return;
         }
 
@@ -1882,6 +1885,7 @@ impl EditorState {
     }
 
     fn reset_canvas_view_to_content(&mut self) {
+        self.canvas_view_needs_centering = true;
         let Some(bounds) = self.canvas_bounds() else {
             self.canvas_pan = Vec2::ZERO;
             return;
@@ -1891,6 +1895,20 @@ impl EditorState {
             bounds.min.x - CANVAS_VIEW_MARGIN,
             bounds.min.y - CANVAS_VIEW_MARGIN,
         );
+    }
+
+    fn center_canvas_view_in_panel(&mut self, panel_size: Vec2) {
+        let Some(bounds) = self.canvas_bounds() else {
+            self.canvas_pan = Vec2::ZERO;
+            self.canvas_view_needs_centering = false;
+            return;
+        };
+
+        let zoom = self.zoom.max(CANVAS_ZOOM_MIN);
+        let content_center = (bounds.min + bounds.max) * 0.5;
+        let viewport_half_size = panel_size / (zoom * 2.0);
+        self.canvas_pan = content_center - viewport_half_size;
+        self.canvas_view_needs_centering = false;
     }
 
     fn canvas_bounds(&self) -> Option<Rect> {
