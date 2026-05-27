@@ -22,6 +22,10 @@ fn handle_ctrl_left_drag_scroll(
         panel_context.plain_panel_size,
         panel_context.processed_panel_size,
     );
+    if state.document_format == DocumentFormat::Canvas {
+        *drag_state = None;
+        return;
+    }
     if middle_autoscroll.is_active() {
         *drag_state = None;
         return;
@@ -58,13 +62,6 @@ fn handle_ctrl_left_drag_scroll(
     drag_state.last_cursor_position = cursor_position;
 
     if delta.length_squared() <= f32::EPSILON {
-        return;
-    }
-
-    if state.document_format == DocumentFormat::Canvas {
-        let zoom = state.zoom.max(0.1);
-        state.canvas_pan.x -= delta.x / zoom;
-        state.canvas_pan.y -= delta.y / zoom;
         return;
     }
 

@@ -43,6 +43,10 @@ fn handle_middle_mouse_autoscroll(
         panel_context.plain_panel_size,
         panel_context.processed_panel_size,
     );
+    if state.document_format == DocumentFormat::Canvas {
+        middle_autoscroll.stop();
+        return;
+    }
 
     if mouse_buttons.just_pressed(MouseButton::Middle) {
         if middle_autoscroll.is_active() {
@@ -118,13 +122,6 @@ fn handle_middle_mouse_autoscroll(
     let horizontal_delta_px = horizontal_px_per_sec * dt;
     let vertical_delta_lines = vertical_lines_per_sec * dt;
     if horizontal_delta_px.abs() <= f32::EPSILON && vertical_delta_lines.abs() <= f32::EPSILON {
-        return;
-    }
-
-    if state.document_format == DocumentFormat::Canvas {
-        let zoom = state.zoom.max(0.1);
-        state.canvas_pan.x += horizontal_delta_px / zoom;
-        state.canvas_pan.y += (vertical_delta_lines * line_height) / zoom;
         return;
     }
 

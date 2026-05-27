@@ -6,7 +6,8 @@ pub mod parser;
 
 pub use buffer::Document;
 pub use canvas::{
-    CanvasDocument, CanvasEdge, CanvasNode, CanvasNodeKind, CanvasParseError, parse_canvas_document,
+    CanvasDocument, CanvasEdge, CanvasNode, CanvasNodeKind, CanvasParseError,
+    parse_canvas_document, update_canvas_node_position,
 };
 pub use links::{
     EntityCatalog, EntityDocument, EntityFrontMatter, EntityScaffold, EntitySuggestion,

@@ -8,7 +8,7 @@ use std::{
 use basscript_core::{
     CanvasDocument, CanvasNodeKind, Cursor, Document, DocumentFormat, DocumentPath, ImageEmbed,
     LineKind, LinkDisplayText, ParsedLine, Position, ScriptLink, parse_canvas_document,
-    parse_document_with_format,
+    parse_document_with_format, update_canvas_node_position,
 };
 use bevy::{
     asset::RenderAssetUsages,
@@ -146,6 +146,7 @@ impl Plugin for UiPlugin {
             .init_resource::<NavigationRepeatState>()
             .init_resource::<WorkspaceSelectionRepeatState>()
             .init_resource::<MouseSelectionState>()
+            .init_resource::<CanvasDragState>()
             .init_resource::<PanelLayoutState>()
             .init_resource::<PanelSplitterDragState>()
             .init_resource::<EditorImageCache>()
@@ -222,6 +223,7 @@ impl Plugin for UiPlugin {
                     handle_text_input,
                     handle_navigation_input,
                     handle_mouse_scroll,
+                    handle_canvas_drag_input,
                     handle_ctrl_left_drag_scroll,
                     handle_middle_mouse_autoscroll,
                     handle_panel_splitter_drag.after(handle_middle_mouse_autoscroll),
