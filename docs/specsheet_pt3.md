@@ -17,7 +17,7 @@ Obsidian Canvas stores `.canvas` files using the open JSON Canvas format. JSON C
 
 PureRef is the reference-board inspiration for fast pan/zoom navigation, image-first spatial layout, dragging, scaling, arranging, and using the board as a visual reference surface.
 
-Basscript should borrow the local-file, infinite-canvas, image-board workflow. Full Obsidian feature parity, PureRef file compatibility, web thumbnails, video playback, and plugin systems are out of scope for v1.
+Basscript should borrow the local-file, infinite-canvas, image-board workflow. Remote image URLs are supported when they are direct image targets. Full Obsidian feature parity, PureRef file compatibility, web page thumbnails, video playback, and plugin systems are out of scope for v1.
 
 References
 
@@ -187,7 +187,7 @@ Epic L - Canvas Data Model and File Format
 
 L1. Canvas document format
 
-Status: implemented v1 shell
+Status: implemented v1
 
 Add `.canvas` as a supported document type, using JSON Canvas 1.0 as the storage format.
 
@@ -198,25 +198,31 @@ Rules
 - A canvas document contains nodes, edges, selection state, dirty state, and a viewport transform.
 - Viewport transform should be stored in app state/settings in v1 unless a compatible extension strategy is chosen.
 - Unknown JSON fields should be preserved on load/save where practical to avoid destroying data created by other tools.
+- Canvas edits that update known fields must preserve unrelated node, edge, and top-level fields by editing the parsed JSON object instead of rebuilding the document from the reduced runtime model.
+- A UTF-8 BOM at the start of a `.canvas` file is ignored before parsing.
+- Blank or whitespace-only `.canvas` files open as an empty board.
 - Invalid JSON or invalid canvas shape opens a readable error state and does not overwrite the file.
 
 Acceptance
 
 - Opening `board.canvas` from the explorer enters canvas view.
 - Saving `board.canvas` writes valid JSON Canvas.
+- A non-empty `.canvas` file with a UTF-8 BOM opens correctly.
+- A blank `.canvas` file opens as an empty board instead of showing an invalid JSON error.
+- Moving or editing a node preserves unrelated JSON Canvas fields.
 - Invalid `.canvas` files show a recoverable error instead of crashing.
 - Opening a `.fountain` or `.md` file still uses the existing editor views.
 
 L2. Canvas node types
 
-Status: implemented v1 read-only rendering
+Status: implemented v1 rendering; text nodes and node positions are editable
 
 Support the JSON Canvas node types needed for useful reference boards.
 
 Node types
 
 - `text`: editable plain text with Markdown preview styling where possible.
-- `file`: local file reference. Images render as image previews; Markdown and Fountain files render as note/script preview cards; unknown files render as file placeholders.
+- `file`: local or direct remote file reference. Images render as image previews; Markdown and Fountain files render as note/script preview cards; unknown files render as file placeholders.
 - `link`: URL reference with a title/URL placeholder in v1.
 - `group`: visual container with optional label and optional background image.
 
@@ -227,11 +233,17 @@ Rules
 - Node order in the `nodes` array is the z-index order.
 - Coordinates and dimensions are stored as integer pixels for JSON Canvas compatibility.
 - File node paths use the same resolver and image cache as Markdown/Fountain embeds.
+- Image targets may be local paths or direct `http://` / `https://` image URLs.
+- A text node containing a Markdown image embed or an HTML `<img src=...>` tag may render the first image target as an image card preview when the node is not being actively edited.
+- HTML image tags may span lines and may use quoted or unquoted `src` attributes.
 
 Acceptance
 
 - Text, image file, non-image file, link, and group nodes load from a valid `.canvas`.
 - A canvas containing an image file node displays the image.
+- A text node containing `![alt](image.jpg)` displays the image preview when not being edited.
+- A text node containing `<img src=https://example/image.jpg>` displays the image preview when not being edited.
+- A direct remote image URL renders when the Bevy asset loader can fetch it, otherwise a placeholder remains visible.
 - Z-order is stable after load/save.
 - Missing file nodes show a clear placeholder without deleting the node.
 
@@ -268,6 +280,7 @@ Rules
 - Explorer opening rules route `.canvas` files into canvas view.
 - Canvas view has its own focus mode separate from text editing and explorer focus.
 - Text editor shortcuts do not type into canvas unless a text node editor is active.
+- Normal document text input is disabled while a canvas is active unless the active input target is a canvas text node.
 - Existing global save/open/settings shortcuts keep working.
 - Switching from a canvas file to a text file restores the normal editor layout.
 
@@ -276,10 +289,11 @@ Acceptance
 - Clicking a `.canvas` file opens a spatial board instead of raw JSON text.
 - `Esc` exits active node editing or selection mode in a predictable order.
 - The status line shows enough context to distinguish canvas view from Fountain/Markdown view.
+- Clicking a text node can enter canvas text editing without mutating the raw JSON buffer through the normal text editor path.
 
 M2. Pan, zoom, and fit controls
 
-Status: partially implemented
+Status: implemented v1 navigation; explicit fit/reset controls still pending
 
 Implement reference-board navigation.
 
@@ -288,7 +302,8 @@ Rules
 - Mouse wheel scrolls vertically or pans according to existing app conventions.
 - Ctrl/Cmd plus wheel zooms around the cursor.
 - Middle-mouse drag pans the canvas.
-- Space plus drag may pan when it does not conflict with configured leader shortcuts.
+- Space plus left drag pans the canvas.
+- Opening or reloading a canvas centers the viewport on the content bounds when panel layout information is available.
 - `0` or a toolbar command resets zoom to 100 percent.
 - Fit-to-content zooms and pans to show all visible nodes.
 - Zooming and panning must not move node coordinates.
@@ -297,12 +312,15 @@ Acceptance
 
 - The user can comfortably navigate a canvas larger than the window.
 - Zoom is centered around the cursor.
+- Middle-mouse drag pans without triggering text-pane autoscroll.
+- Space plus left drag pans the canvas.
+- Opening a canvas starts centered on its content instead of at an arbitrary corner.
 - Fit-to-content works for one node, many nodes, and an empty canvas.
 - Node positions remain stable across pan/zoom changes.
 
 M3. Selection and interaction modes
 
-Status: todo
+Status: partially implemented v1 node hit-testing and movement
 
 Add normal canvas selection behavior before adding advanced tools.
 
@@ -312,15 +330,22 @@ Rules
 - Shift-click toggles node selection.
 - Dragging empty canvas creates a marquee selection.
 - Dragging selected nodes moves them together.
+- Ctrl plus left drag on a canvas node moves the clicked node immediately.
+- Ctrl plus left drag keeps its existing text-pane scroll behavior outside canvas view.
+- Plain left click on a text node enters text editing in v1.
+- Plain left click on empty canvas or a non-text node exits active text-node editing.
+- Node hit-testing uses reverse node order so the topmost card receives the click.
 - Resize handles appear for selected nodes.
 - Delete removes selected nodes and selected edges after normal undo/dirty handling is in place.
 - Clicking an edge selects the edge.
-- Double-clicking a text node enters text editing.
+- Double-clicking a text node may also enter text editing, but v1 supports single-click entry.
 - Double-clicking a file node opens the referenced file in the appropriate Basscript view.
 
 Acceptance
 
 - Single selection, multi-selection, marquee selection, drag move, and resize work.
+- Ctrl plus left drag moves the clicked card and updates the saved node coordinates.
+- Plain click on a text card enters editing instead of panning or moving the card.
 - Selection outlines scale correctly with zoom.
 - Double-clicking a Markdown or Fountain file node opens the file.
 - Double-clicking an image node can either fit the image node or open the image preview, but it must not edit JSON text.
@@ -362,6 +387,9 @@ Make file nodes useful for visual reference boards.
 Rules
 
 - Image file nodes render the actual image with object-fit behavior.
+- Canvas image rendering supports `png`, `jpg`, `jpeg`, `webp`, and `bmp` through the Bevy image pipeline.
+- The Bevy `jpeg` feature must be enabled so `.jpg` / `.jpeg` canvas images do not log runtime unsupported-format warnings.
+- Direct `http://` and `https://` image targets are loaded through the Bevy asset server.
 - File node aspect ratio is preserved by default when resizing from corners.
 - Holding Shift or using a toolbar toggle can allow free resize.
 - File path display is optional and should not cover the image unless selected or hovered.
@@ -371,29 +399,39 @@ Rules
 Acceptance
 
 - Creating a file node for `refs/door.png` displays the image.
+- A `.jpg` or `.jpeg` image node renders without `feature "jpeg" is not enabled` warnings.
+- A direct remote image URL renders or falls back to a stable placeholder.
 - Resizing preserves the image ratio by default.
 - Missing image files remain visible as placeholders.
 - Repeated image file nodes reuse the same loaded asset.
 
 N2. Text nodes
 
-Status: partially implemented
+Status: partially implemented; v1 click-to-edit is implemented
 
 Text nodes provide quick notes on the board.
 
 Rules
 
 - Text node content is stored in the JSON Canvas `text` field.
-- Double-click enters editing.
+- Plain left click enters editing in v1.
 - `Esc` exits editing.
 - Plain typing changes only the active text node.
+- `Enter` inserts a newline in the active text node.
+- `Backspace` deletes from the end of the active text node in v1.
+- Modifier key combinations are ignored by text-node input so global/editor shortcuts do not become literal node text.
+- Editing a text node preserves unrelated JSON Canvas fields on the node and document.
+- When a text node is in edit mode, image preview rendering is suppressed and the raw node text is shown.
+- v1 editing appends at the end of the node text; full caret placement and selection inside a node are pending.
 - Basic Markdown styling may reuse existing Markdown processed rendering where practical.
 - v1 does not need full rich text or nested editor panels inside nodes.
 
 Acceptance
 
-- Text nodes can be created, edited, moved, resized, saved, and reopened.
+- Existing text nodes can be edited, moved, saved, and reopened.
 - Editing a text node does not affect the main document buffer.
+- Editing a text node updates the JSON Canvas `text` field and keeps unknown fields intact.
+- `Esc` exits editing and returns the node to normal preview rendering.
 - Markdown headings/lists in text nodes render acceptably or fall back cleanly to plain text.
 
 N3. Groups and arrangement
@@ -448,6 +486,9 @@ Canvas files need the same predictable save behavior as text documents.
 Rules
 
 - Moving, resizing, creating, deleting, or editing nodes marks the canvas dirty.
+- Ctrl plus left drag updates the clicked node's `x` and `y` in the JSON document.
+- Canvas text editing updates the active text node's `text` field in the JSON document.
+- Canvas coordinate and text updates preserve unknown JSON fields.
 - `Ctrl+S`, direct Save, and command-menu `w` save the current canvas path.
 - Save As writes a new `.canvas` file.
 - Saving rounds coordinates and dimensions to JSON Canvas integer values.
@@ -457,26 +498,29 @@ Acceptance
 
 - Editing a canvas marks it dirty.
 - `Ctrl+S` writes a valid `.canvas` without opening Save As when a save path exists.
-- Reopening the saved canvas preserves node positions and sizes.
+- Reopening the saved canvas preserves moved node positions.
+- Reopening the saved canvas preserves edited text-node content.
 - Save failures do not clear dirty state.
 
 O2. Canvas undo/redo
 
-Status: todo
+Status: partially implemented v1
 
 Add canvas-specific undo steps after core editing is usable.
 
 Rules
 
-- Node move/resize operations coalesce into one undo step per drag.
-- Text node edits participate in undo.
+- Node move operations coalesce into one undo step per Ctrl plus left drag.
+- Text node edits participate in undo by taking a snapshot on the first text change of an edit session.
+- Resize operations participate in undo once resizing is implemented.
 - Create/delete node and create/delete edge operations participate in undo.
 - Undo/redo does not apply text-buffer edits to canvas files or canvas edits to text documents.
 
 Acceptance
 
 - Dragging a node then undoing returns it to the previous position.
-- Resizing then undoing restores the previous size.
+- Editing a text node then undoing restores the previous node text.
+- Resizing then undoing restores the previous size once resizing is implemented.
 - Creating and deleting nodes can be undone.
 
 O3. Script and Markdown integration
@@ -504,13 +548,14 @@ Epic P - Verification and Test Coverage
 
 P1. Parser and resolver tests
 
-Status: todo
+Status: partially implemented
 
 Acceptance
 
 - Core parser tests cover valid image syntax, invalid image syntax, Markdown code fences, Fountain image-only lines, and script-link coexistence.
 - Path resolver tests cover relative document paths, workspace-relative fallback, absolute paths, missing files, and unsupported extensions.
 - Canvas model tests cover valid JSON Canvas load/save, unknown field preservation where implemented, duplicate IDs, dangling edges, and invalid JSON.
+- Canvas model tests cover blank canvas files, UTF-8 BOM stripping, node-position updates that preserve fields, and text-node updates that preserve fields.
 
 P2. Rendering smoke tests
 
@@ -534,6 +579,14 @@ Checklist
 - Switch Raw, Processed, Split, and Focus modes.
 - Edit image path and verify placeholder/image updates.
 - Open `.canvas` file with image, text, link, group, and edge nodes.
+- Open a `.canvas` file that starts with a UTF-8 BOM and verify it parses.
+- Open a blank `.canvas` file and verify it shows an empty board.
+- Pan with Space plus left drag and middle-mouse drag.
+- Move a canvas card with Ctrl plus left drag, save, close, and reopen.
+- Click a text card, edit it, press `Esc`, save, close, and reopen.
+- Put a Markdown image embed in a canvas text card and verify it renders as an image preview outside edit mode.
+- Put an HTML `<img src=...>` tag in a canvas text card and verify it renders as an image preview outside edit mode.
+- Open a canvas with a `.jpg` or `.jpeg` image node and verify no JPEG feature warning is logged.
 - Pan, zoom, fit content, select, move, resize, save, close, reopen.
 - Delete or rename a referenced image and verify placeholders.
 
@@ -551,8 +604,10 @@ Likely implementation areas:
 - `ui/src/editor/ui_setup.rs` for reusing or extending existing image/SVG asset loading helpers.
 - `ui/src/editor/core.rs` for document-format routing, image cache resources, canvas view state, dirty state, commands, and status messages.
 - `ui/src/pannels/text/explorer.rs` and `ui/src/pannels/text/explorer_actions.rs` for opening `.canvas` files and drag/drop into documents or canvases.
-- New `core/src/canvas.rs` or equivalent for JSON Canvas model parsing/serialization.
-- New `ui/src/editor/canvas.rs` or equivalent for canvas view systems, node interaction, pan/zoom, and rendering.
+- `core/src/canvas.rs` for JSON Canvas model parsing, BOM/blank handling, and JSON-preserving field updates.
+- `ui/src/editor/canvas.rs` for canvas document state, viewport helpers, node movement, panning, and text-node editing input.
+- `ui/src/editor/rendering/canvas.rs` for canvas board rendering, node/edge drawing, card image previews, and canvas-specific image target extraction.
+- `ui/src/editor/rendering/shared.rs` for the shared processed/canvas image lookup, local image cache, and remote image asset loading.
 - `settings/state.ron` for persisted canvas viewport preferences if needed.
 
 Suggested implementation order
