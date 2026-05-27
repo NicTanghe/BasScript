@@ -16,11 +16,12 @@ fn sync_panel_split_layout(
     if total_width <= 0.0 {
         return;
     }
+    let layout_display_mode = state.panel_layout_display_mode();
 
     let workspace_width = effective_workspace_width(
         &mut layout,
         total_width,
-        state.display_mode,
+        layout_display_mode,
         state.workspace_sidebar_visible,
     );
     let workspace_splitter_width = if state.workspace_sidebar_visible {
@@ -31,7 +32,7 @@ fn sync_panel_split_layout(
     let editor_width = (total_width - workspace_splitter_width - workspace_width).max(0.0);
 
     let split_available = (editor_width - PANEL_SPLITTER_WIDTH).max(0.0);
-    let split_is_visible = state.display_mode == DisplayMode::Split;
+    let split_is_visible = layout_display_mode == DisplayMode::Split;
     let plain_width = if split_is_visible {
         clamp_plain_width_from_ratio(&mut layout, split_available)
     } else {
@@ -57,7 +58,13 @@ fn sync_panel_split_layout(
     }
 
     for (pane_slot, mut node) in node_queries.p2().iter_mut() {
-        match (state.display_mode, pane_slot.kind) {
+        match (layout_display_mode, pane_slot.kind) {
+            _ if state.document_format == DocumentFormat::Canvas
+                && pane_slot.kind == PanelKind::Processed =>
+            {
+                node.display = Display::Flex;
+                node.width = px(editor_width);
+            }
             (DisplayMode::Split, PanelKind::Plain) => {
                 node.display = Display::Flex;
                 node.width = px(plain_width);
@@ -86,7 +93,7 @@ fn sync_panel_split_layout(
         node.width = px(PANEL_SPLITTER_WIDTH);
         node.display = if splitter_visible_for_mode(
             *splitter,
-            state.display_mode,
+            layout_display_mode,
             state.workspace_sidebar_visible,
         ) {
             Display::Flex
@@ -130,7 +137,7 @@ fn handle_panel_splitter_drag(
                     splitter_from_cursor_x(
                         local_x,
                         total_width,
-                        state.display_mode,
+                        state.panel_layout_display_mode(),
                         workspace_sidebar_visible,
                         &mut layout,
                     )
@@ -180,22 +187,22 @@ fn handle_panel_splitter_drag(
                 effective_workspace_width(
                     &mut layout,
                     total_width,
-                    state.display_mode,
+                    state.panel_layout_display_mode(),
                     state.workspace_sidebar_visible,
                 ) + delta_x;
-            let min_editor_width = min_editor_content_width(state.display_mode);
+            let min_editor_width = min_editor_content_width(state.panel_layout_display_mode());
             let max_workspace_width = (total_width - PANEL_SPLITTER_WIDTH - min_editor_width).max(0.0);
             let min_workspace_width = WORKSPACE_WIDTH_MIN.min(max_workspace_width);
             layout.workspace_width_px = workspace_width.clamp(min_workspace_width, max_workspace_width);
         }
         PanelSplitter::Panels => {
-            if state.display_mode != DisplayMode::Split {
+            if state.panel_layout_display_mode() != DisplayMode::Split {
                 return;
             }
             let workspace_width = effective_workspace_width(
                 &mut layout,
                 total_width,
-                state.display_mode,
+                state.panel_layout_display_mode(),
                 state.workspace_sidebar_visible,
             );
             let workspace_splitter_width = if state.workspace_sidebar_visible {
@@ -230,7 +237,7 @@ fn style_panel_splitters(
     for (splitter, relative_cursor, mut color) in splitter_query.iter_mut() {
         color.0 = if !splitter_visible_for_mode(
             *splitter,
-            state.display_mode,
+            state.panel_layout_display_mode(),
             state.workspace_sidebar_visible,
         ) {
             Color::srgba(0.0, 0.0, 0.0, 0.0)

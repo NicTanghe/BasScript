@@ -39,7 +39,10 @@ impl EditorState {
             self.canvas_parse_error = None;
             self.canvas_view_needs_centering = false;
             self.canvas_editing_node_id = None;
+            self.canvas_text_cursor = Cursor::default();
+            self.canvas_text_selection_anchor = None;
             self.canvas_text_edit_undo_snapshot = None;
+            self.canvas_text_suppress_next_insert_input = false;
             return;
         }
 
@@ -147,21 +150,41 @@ impl EditorState {
         }
     }
 
-    fn begin_canvas_text_edit(&mut self, node_id: String) {
+    fn begin_canvas_text_edit(&mut self, node_id: String, cursor_position: Option<Position>) {
         let changed_node = self.canvas_editing_node_id.as_deref() != Some(node_id.as_str());
+        if changed_node {
+            if let Some(text) = self.canvas_text_node_content(&node_id) {
+                self.canvas_text_cursor.set_position(canvas_text_end_position(&text));
+                self.canvas_text_selection_anchor = None;
+            }
+        }
         self.canvas_editing_node_id = Some(node_id);
+        if let Some(cursor_position) = cursor_position {
+            if let Some(document) = self.active_canvas_text_document() {
+                self.canvas_text_cursor
+                    .set_position(document.clamp_position(cursor_position));
+                self.canvas_text_selection_anchor = None;
+            }
+        }
         if changed_node {
             self.canvas_text_edit_undo_snapshot = Some(self.history_snapshot());
             self.canvas_version = self.canvas_version.saturating_add(1);
         }
-        self.status_message = "Editing canvas text card. Esc exits.".to_string();
+        self.status_message = if self.vim_enabled && self.vim_mode != VimMode::Insert {
+            "Canvas text card selected. Vim normal mode: press i to edit.".to_string()
+        } else {
+            "Editing canvas text card. Esc exits.".to_string()
+        };
         self.reset_blink();
     }
 
     fn clear_canvas_text_edit(&mut self) {
         let was_editing = self.canvas_editing_node_id.is_some();
         self.canvas_editing_node_id = None;
+        self.canvas_text_cursor = Cursor::default();
+        self.canvas_text_selection_anchor = None;
         self.canvas_text_edit_undo_snapshot = None;
+        self.canvas_text_suppress_next_insert_input = false;
         if was_editing {
             self.canvas_version = self.canvas_version.saturating_add(1);
         }
@@ -202,6 +225,130 @@ impl EditorState {
             }
         }
     }
+
+    fn active_canvas_text_document(&self) -> Option<Document> {
+        let node_id = self.canvas_editing_node_id.as_deref()?;
+        self.canvas_text_node_content(node_id)
+            .map(|text| Document::from_text(&text))
+    }
+
+    fn canvas_text_selection_bounds(&self, document: &Document) -> Option<(Position, Position)> {
+        let anchor = self.canvas_text_selection_anchor?;
+        let anchor = document.clamp_position(anchor);
+        let head = document.clamp_position(self.canvas_text_cursor.position);
+        if anchor == head {
+            return None;
+        }
+
+        if position_is_before_or_equal(anchor, head) {
+            Some((anchor, head))
+        } else {
+            Some((head, anchor))
+        }
+    }
+
+    fn set_canvas_text_cursor_with_selection(
+        &mut self,
+        document: &Document,
+        position: Position,
+        update_preferred: bool,
+        extend_selection: bool,
+    ) {
+        self.canvas_text_selection_anchor = if extend_selection {
+            Some(
+                self.canvas_text_selection_anchor
+                    .unwrap_or(self.canvas_text_cursor.position),
+            )
+        } else {
+            None
+        };
+
+        let clamped = document.clamp_position(position);
+        if update_preferred {
+            self.canvas_text_cursor.set_position(clamped);
+        } else {
+            self.canvas_text_cursor.position = clamped;
+        }
+        self.reset_blink();
+        self.canvas_version = self.canvas_version.saturating_add(1);
+    }
+
+    fn delete_canvas_text_selection(&mut self, document: &mut Document) -> bool {
+        let Some((start, end)) = self.canvas_text_selection_bounds(document) else {
+            return false;
+        };
+        let next = document.delete_range(start, end);
+        self.canvas_text_cursor.set_position(next);
+        self.canvas_text_selection_anchor = None;
+        true
+    }
+}
+
+fn canvas_text_end_position(text: &str) -> Position {
+    let document = Document::from_text(text);
+    let line = document.line_count().saturating_sub(1);
+    Position {
+        line,
+        column: document.line_len_chars(line),
+    }
+}
+
+fn canvas_text_position_from_world(
+    node: &basscript_core::CanvasNode,
+    text: &str,
+    world_pos: Vec2,
+    zoom: f32,
+) -> Position {
+    let zoom = zoom.max(CANVAS_ZOOM_MIN);
+    let local_screen = (world_pos - Vec2::new(node.x, node.y)) * zoom;
+    let font_size = (12.0 * zoom).clamp(7.0, 28.0);
+    let char_width = (font_size * 0.55).max(1.0);
+    let line_height = (font_size * 1.25).max(1.0);
+    let text_x = (local_screen.x - 10.0).max(0.0);
+    let text_y = (local_screen.y - 10.0).max(0.0);
+    let document = Document::from_text(text);
+    let line = ((text_y / line_height).floor() as usize).min(document.line_count().saturating_sub(1));
+    let column = ((text_x / char_width).round() as usize).min(document.line_len_chars(line));
+    Position { line, column }
+}
+
+fn move_canvas_text_cursor_by_key(
+    state: &mut EditorState,
+    document: &Document,
+    key: KeyCode,
+    extend_selection: bool,
+) -> bool {
+    let current = document.clamp_position(state.canvas_text_cursor.position);
+    let next = match key {
+        KeyCode::ArrowLeft => document.move_left(current),
+        KeyCode::ArrowRight => document.move_right(current),
+        KeyCode::ArrowUp => document.move_up(current, state.canvas_text_cursor.preferred_column),
+        KeyCode::ArrowDown => document.move_down(current, state.canvas_text_cursor.preferred_column),
+        KeyCode::Home => Position {
+            line: current.line,
+            column: 0,
+        },
+        KeyCode::End => Position {
+            line: current.line,
+            column: document.line_len_chars(current.line),
+        },
+        _ => return false,
+    };
+    let update_preferred = !matches!(key, KeyCode::ArrowUp | KeyCode::ArrowDown);
+    state.set_canvas_text_cursor_with_selection(document, next, update_preferred, extend_selection);
+    next != current || extend_selection
+}
+
+fn canvas_text_editable_key(key: KeyCode) -> bool {
+    matches!(
+        key,
+        KeyCode::ArrowLeft
+            | KeyCode::ArrowRight
+            | KeyCode::ArrowUp
+            | KeyCode::ArrowDown
+            | KeyCode::Home
+            | KeyCode::End
+    )
 }
 
 fn canvas_node_size(width: f32, height: f32) -> Vec2 {
@@ -340,21 +487,22 @@ fn start_canvas_drag_if_requested(
             state.clear_canvas_text_edit();
             return;
         };
-        let Some((node_id, editable)) = state
+        let Some((node_id, click_position)) = state
             .canvas_document
             .as_ref()
             .and_then(|canvas| canvas.nodes.get(node_index))
-            .map(|node| {
-                (
+            .map(|node| match &node.kind {
+                CanvasNodeKind::Text { text } => (
                     node.id.clone(),
-                    matches!(node.kind, CanvasNodeKind::Text { .. }),
-                )
+                    Some(canvas_text_position_from_world(node, text, world_pos, state.zoom)),
+                ),
+                _ => (node.id.clone(), None),
             })
         else {
             return;
         };
-        if editable {
-            state.begin_canvas_text_edit(node_id);
+        if let Some(click_position) = click_position {
+            state.begin_canvas_text_edit(node_id, Some(click_position));
         } else {
             state.clear_canvas_text_edit();
         }
@@ -408,13 +556,41 @@ fn handle_canvas_text_edit_input(
         return;
     }
 
+    if state.workspace_prompt.is_some() || state.command_menu.is_some() {
+        return;
+    }
+
     let Some(node_id) = state.canvas_editing_node_id.clone() else {
         return;
     };
 
-    if keys.just_pressed(KeyCode::Escape) {
+    if state.vim_enabled {
+        if state.canvas_text_suppress_next_insert_input {
+            for _ in keyboard_inputs.read() {}
+            state.canvas_text_suppress_next_insert_input = false;
+            return;
+        }
+
+        if keys.just_pressed(KeyCode::Escape) || state.vim_mode != VimMode::Insert {
+            return;
+        }
+    } else if keys.just_pressed(KeyCode::Escape) {
         state.clear_canvas_text_edit();
         state.status_message = "Canvas text edit exited.".to_string();
+        return;
+    }
+
+    let Some(mut document) = state.active_canvas_text_document() else {
+        state.clear_canvas_text_edit();
+        return;
+    };
+
+    if platform_shortcut_modifier_pressed(&keys) && keys.just_pressed(KeyCode::KeyA) {
+        let end = canvas_text_end_position(&document.to_text());
+        state.canvas_text_cursor.set_position(end);
+        state.canvas_text_selection_anchor = Some(Position::default());
+        state.canvas_version = state.canvas_version.saturating_add(1);
+        state.status_message = "Canvas text selected.".to_string();
         return;
     }
 
@@ -422,43 +598,77 @@ fn handle_canvas_text_edit_input(
         return;
     }
 
-    let Some(mut text) = state.canvas_text_node_content(&node_id) else {
-        state.clear_canvas_text_edit();
-        return;
-    };
-    let mut changed = false;
+    let mut text_changed = false;
+    let mut view_changed = false;
 
     for key_input in keyboard_inputs.read() {
         if !key_input.state.is_pressed() {
             continue;
         }
 
+        if canvas_text_editable_key(key_input.key_code) {
+            view_changed |= move_canvas_text_cursor_by_key(
+                &mut state,
+                &document,
+                key_input.key_code,
+                shift_modifier_pressed(&keys),
+            );
+            continue;
+        }
+
         match &key_input.logical_key {
             Key::Enter => {
-                text.push('\n');
-                changed = true;
+                state.delete_canvas_text_selection(&mut document);
+                let next = document.insert_newline(state.canvas_text_cursor.position);
+                state.canvas_text_cursor.set_position(next);
+                state.canvas_text_selection_anchor = None;
+                text_changed = true;
             }
             Key::Backspace => {
-                changed |= text.pop().is_some();
+                if !state.delete_canvas_text_selection(&mut document) {
+                    let previous = state.canvas_text_cursor.position;
+                    let next = document.backspace(previous);
+                    text_changed |= next != previous;
+                    state.canvas_text_cursor.set_position(next);
+                } else {
+                    text_changed = true;
+                }
             }
-            Key::Delete => {}
+            Key::Delete => {
+                if !state.delete_canvas_text_selection(&mut document) {
+                    let previous = state.canvas_text_cursor.position;
+                    let next = document.delete(previous);
+                    text_changed |= next != previous;
+                    state.canvas_text_cursor.set_position(next);
+                } else {
+                    text_changed = true;
+                }
+            }
             _ => {
                 if let Some(inserted_text) = &key_input.text {
                     if !inserted_text.is_empty() && inserted_text.chars().all(is_printable_char) {
-                        text.push_str(inserted_text);
-                        changed = true;
+                        state.delete_canvas_text_selection(&mut document);
+                        let next =
+                            document.insert_text(state.canvas_text_cursor.position, inserted_text);
+                        state.canvas_text_cursor.set_position(next);
+                        state.canvas_text_selection_anchor = None;
+                        text_changed = true;
                     }
                 }
             }
         }
     }
 
-    if !changed {
+    if !text_changed {
+        if view_changed {
+            state.reset_blink();
+        }
         return;
     }
 
     if let Some(snapshot) = state.canvas_text_edit_undo_snapshot.take() {
         state.push_undo_snapshot(snapshot);
     }
-    state.set_canvas_text_node_content(&node_id, text);
+    state.set_canvas_text_node_content(&node_id, document.to_text());
+    state.reset_blink();
 }

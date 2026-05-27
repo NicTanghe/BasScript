@@ -12,7 +12,7 @@ use basscript_core::{
     parse_document_with_format, update_canvas_node_position, update_canvas_text_node_content,
 };
 use bevy::{
-    asset::RenderAssetUsages,
+    asset::{LoadState, RenderAssetUsages},
     image::{CompressedImageFormats, ImageSampler, ImageType},
     input::{
         keyboard::{Key, KeyboardInput},
@@ -244,6 +244,7 @@ impl Plugin for UiPlugin {
             Update,
             handle_canvas_text_edit_input
                 .after(handle_canvas_drag_input)
+                .after(handle_vim_input)
                 .run_if(in_state(UiScreenState::Editor)),
         );
         app.add_systems(
@@ -480,8 +481,8 @@ impl Default for KeybindSettings {
             redo: ShortcutBinding::platform(KeyCode::KeyZ, true),
             zoom_in: ShortcutBinding::platform(KeyCode::Equal, false),
             zoom_out: ShortcutBinding::platform(KeyCode::Minus, false),
-            plain_view: ShortcutBinding::platform(KeyCode::KeyT, false),
-            processed_view: ShortcutBinding::platform(KeyCode::KeyR, false),
+            plain_view: ShortcutBinding::platform(KeyCode::Digit3, false),
+            processed_view: ShortcutBinding::platform(KeyCode::Digit2, false),
             processed_raw_current_line_view: ShortcutBinding::platform(KeyCode::Digit1, false),
             toggle_explorer: ShortcutBinding::platform(KeyCode::KeyE, false),
             toggle_top_menu: ShortcutBinding::platform(KeyCode::KeyB, false),
@@ -1171,7 +1172,10 @@ struct EditorState {
     canvas_pan: Vec2,
     canvas_view_needs_centering: bool,
     canvas_editing_node_id: Option<String>,
+    canvas_text_cursor: Cursor,
+    canvas_text_selection_anchor: Option<Position>,
     canvas_text_edit_undo_snapshot: Option<EditorHistorySnapshot>,
+    canvas_text_suppress_next_insert_input: bool,
     workspace_root: Option<PathBuf>,
     workspace_folders: Vec<WorkspaceFolderEntry>,
     workspace_files: Vec<WorkspaceFileEntry>,
@@ -1733,7 +1737,10 @@ impl FromWorld for EditorState {
             canvas_pan: Vec2::ZERO,
             canvas_view_needs_centering: false,
             canvas_editing_node_id: None,
+            canvas_text_cursor: Cursor::default(),
+            canvas_text_selection_anchor: None,
             canvas_text_edit_undo_snapshot: None,
+            canvas_text_suppress_next_insert_input: false,
             workspace_root: None,
             workspace_folders: Vec::new(),
             workspace_files: Vec::new(),
@@ -1768,24 +1775,32 @@ impl EditorState {
     }
 
     fn set_display_mode(&mut self, mode: DisplayMode) -> bool {
-        if self.document_format == DocumentFormat::Canvas {
-            let changed = self.display_mode != DisplayMode::Processed;
-            self.display_mode = DisplayMode::Processed;
-            self.focused_panel = PanelKind::Processed;
-            return changed;
-        }
-
         if self.display_mode == mode {
             return false;
         }
 
         self.display_mode = mode;
+        if self.document_format == DocumentFormat::Canvas {
+            self.focused_panel = PanelKind::Processed;
+            self.canvas_version = self.canvas_version.saturating_add(1);
+            self.reset_blink();
+            return true;
+        }
+
         if !self.panel_visible(self.focused_panel) {
             self.focused_panel = self.active_panel_for_display_mode();
         }
         self.processed_preferred_column = None;
         self.reset_blink();
         true
+    }
+
+    fn panel_layout_display_mode(&self) -> DisplayMode {
+        if self.document_format == DocumentFormat::Canvas {
+            DisplayMode::Processed
+        } else {
+            self.display_mode
+        }
     }
 
     fn active_panel_for_display_mode(&self) -> PanelKind {
@@ -2023,7 +2038,10 @@ impl EditorState {
                 self.vim_visual_head = None;
                 self.command_menu = None;
                 self.canvas_editing_node_id = None;
+                self.canvas_text_cursor = Cursor::default();
+                self.canvas_text_selection_anchor = None;
                 self.canvas_text_edit_undo_snapshot = None;
+                self.canvas_text_suppress_next_insert_input = false;
                 self.top_line = 0;
                 self.processed_top_line = 0;
                 self.processed_top_visual = 0;

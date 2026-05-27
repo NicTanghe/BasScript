@@ -11,6 +11,7 @@ fn handle_vim_input(
     }
 
     if state.document_format == DocumentFormat::Canvas {
+        handle_canvas_vim_input(&mut keyboard_inputs, &keys, &mut repeat, &mut state);
         reset_vim_repeat(&mut repeat);
         return;
     }
@@ -101,6 +102,337 @@ fn handle_vim_input(
     if moved {
         state.vim_pending_operator = None;
         apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
+    }
+}
+
+fn handle_canvas_vim_input(
+    keyboard_inputs: &mut MessageReader<KeyboardInput>,
+    keys: &ButtonInput<KeyCode>,
+    repeat: &mut NavigationRepeatState,
+    state: &mut EditorState,
+) {
+    reset_vim_repeat(repeat);
+
+    if state.workspace_prompt.is_some() || state.command_menu.is_some() || state.workspace_focused {
+        return;
+    }
+
+    let has_active_text_node = state.canvas_editing_node_id.is_some();
+
+    if keys.just_pressed(KeyCode::Escape) {
+        if state.vim_mode == VimMode::Insert {
+            canvas_vim_enter_normal_mode(state, true);
+            state.canvas_version = state.canvas_version.saturating_add(1);
+        } else if has_active_text_node {
+            state.clear_canvas_text_edit();
+            state.status_message = "Canvas text card deselected.".to_string();
+        }
+        return;
+    }
+
+    if text_input_modifier_pressed(keys) {
+        return;
+    }
+
+    for input in keyboard_inputs.read() {
+        if input.state.is_pressed()
+            && state.vim_mode == VimMode::Normal
+            && !keys.pressed(KeyCode::Space)
+            && keyboard_input_text_is(input, ":")
+        {
+            state.open_command_menu();
+            return;
+        }
+    }
+
+    if state.vim_mode == VimMode::Insert {
+        return;
+    }
+
+    if !has_active_text_node {
+        return;
+    }
+
+    let Some(mut document) = state.active_canvas_text_document() else {
+        state.clear_canvas_text_edit();
+        return;
+    };
+    let Some(node_id) = state.canvas_editing_node_id.clone() else {
+        return;
+    };
+
+    if state.vim_mode == VimMode::Normal && keys.just_pressed(KeyCode::KeyI) {
+        canvas_vim_enter_insert_mode(state);
+        state.canvas_text_suppress_next_insert_input = true;
+        state.canvas_version = state.canvas_version.saturating_add(1);
+        return;
+    }
+
+    if state.vim_mode == VimMode::Normal && keys.just_pressed(KeyCode::KeyV) {
+        if shift_modifier_pressed(keys) {
+            canvas_vim_enter_visual_line_mode(state, &document);
+        } else {
+            canvas_vim_enter_visual_char_mode(state);
+        }
+        return;
+    }
+
+    if canvas_vim_handle_edit_command(keys, state, &node_id, &mut document) {
+        return;
+    }
+
+    let extend_selection = matches!(state.vim_mode, VimMode::VisualChar | VimMode::VisualLine);
+    if let Some(key) = just_pressed_vim_movement_key(keys) {
+        if matches!(state.vim_mode, VimMode::VisualLine) {
+            canvas_vim_move_visual_line(state, &document, key);
+        } else {
+            move_canvas_text_cursor_by_key(state, &document, key, extend_selection);
+        }
+    }
+}
+
+fn canvas_vim_enter_normal_mode(state: &mut EditorState, clear_selection: bool) {
+    state.vim_mode = VimMode::Normal;
+    state.vim_pending_operator = None;
+    state.vim_visual_anchor = None;
+    state.vim_visual_head = None;
+    if clear_selection {
+        state.canvas_text_selection_anchor = None;
+    }
+    state.pending_space_insert = false;
+    state.pending_space_combo_canceled = false;
+    state.status_message = "Vim normal mode.".to_string();
+}
+
+fn canvas_vim_enter_insert_mode(state: &mut EditorState) {
+    state.vim_mode = VimMode::Insert;
+    state.vim_pending_operator = None;
+    state.vim_visual_anchor = None;
+    state.vim_visual_head = None;
+    state.canvas_text_selection_anchor = None;
+    state.status_message = "Vim insert mode.".to_string();
+}
+
+fn canvas_vim_enter_visual_char_mode(state: &mut EditorState) {
+    let cursor = state.canvas_text_cursor.position;
+    state.vim_mode = VimMode::VisualChar;
+    state.vim_pending_operator = None;
+    state.vim_visual_anchor = None;
+    state.vim_visual_head = None;
+    state.canvas_text_selection_anchor = Some(cursor);
+    state.canvas_version = state.canvas_version.saturating_add(1);
+    state.status_message = "Vim visual mode.".to_string();
+}
+
+fn canvas_vim_enter_visual_line_mode(state: &mut EditorState, document: &Document) {
+    let line = state
+        .canvas_text_cursor
+        .position
+        .line
+        .min(document.line_count().saturating_sub(1));
+    let start = Position { line, column: 0 };
+    let end = Position {
+        line,
+        column: document.line_len_chars(line),
+    };
+    state.vim_mode = VimMode::VisualLine;
+    state.vim_pending_operator = None;
+    state.vim_visual_anchor = Some(start);
+    state.vim_visual_head = Some(end);
+    state.canvas_text_selection_anchor = Some(start);
+    state.canvas_text_cursor.set_position(end);
+    state.canvas_version = state.canvas_version.saturating_add(1);
+    state.status_message = "Vim visual line mode.".to_string();
+}
+
+fn canvas_vim_move_visual_line(state: &mut EditorState, document: &Document, key: KeyCode) {
+    let Some(arrow) = vim_movement_key_to_arrow(key) else {
+        return;
+    };
+    let current = state
+        .vim_visual_head
+        .unwrap_or(state.canvas_text_cursor.position);
+    let current_line = current.line.min(document.line_count().saturating_sub(1));
+    let next_line = match arrow {
+        KeyCode::ArrowUp => current_line.saturating_sub(1),
+        KeyCode::ArrowDown => (current_line + 1).min(document.line_count().saturating_sub(1)),
+        _ => current_line,
+    };
+    let anchor = state.vim_visual_anchor.unwrap_or(Position {
+        line: current_line,
+        column: 0,
+    });
+    let start_line = anchor.line.min(next_line);
+    let end_line = anchor.line.max(next_line);
+    let start = Position {
+        line: start_line,
+        column: 0,
+    };
+    let end = Position {
+        line: end_line,
+        column: document.line_len_chars(end_line),
+    };
+    state.vim_visual_head = Some(Position {
+        line: next_line,
+        column: document.line_len_chars(next_line),
+    });
+    state.canvas_text_selection_anchor = Some(start);
+    state.canvas_text_cursor.set_position(end);
+    state.canvas_version = state.canvas_version.saturating_add(1);
+}
+
+fn canvas_vim_handle_edit_command(
+    keys: &ButtonInput<KeyCode>,
+    state: &mut EditorState,
+    node_id: &str,
+    document: &mut Document,
+) -> bool {
+    match state.vim_mode {
+        VimMode::Normal => canvas_vim_handle_normal_command(keys, state, node_id, document),
+        VimMode::VisualChar | VimMode::VisualLine => {
+            canvas_vim_handle_visual_command(keys, state, node_id, document)
+        }
+        VimMode::Insert => false,
+    }
+}
+
+fn canvas_vim_handle_normal_command(
+    keys: &ButtonInput<KeyCode>,
+    state: &mut EditorState,
+    node_id: &str,
+    document: &mut Document,
+) -> bool {
+    if keys.just_pressed(KeyCode::KeyY) {
+        if state.vim_pending_operator == Some(VimPendingOperator::Yank) {
+            state.vim_pending_operator = None;
+            let line = state
+                .canvas_text_cursor
+                .position
+                .line
+                .min(document.line_count().saturating_sub(1));
+            state.vim_register = Some(VimRegister::Linewise(
+                document.line(line).unwrap_or("").to_string(),
+            ));
+            state.status_message = "Yanked canvas line.".to_string();
+        } else {
+            state.vim_pending_operator = Some(VimPendingOperator::Yank);
+            state.status_message = "Vim: y".to_string();
+        }
+        return true;
+    }
+
+    if keys.just_pressed(KeyCode::KeyD) {
+        if state.vim_pending_operator == Some(VimPendingOperator::Delete) {
+            state.vim_pending_operator = None;
+            canvas_delete_current_text_line(state, document);
+            canvas_commit_text_change(state, node_id, document, "Deleted canvas line.");
+        } else {
+            state.vim_pending_operator = Some(VimPendingOperator::Delete);
+            state.status_message = "Vim: d".to_string();
+        }
+        return true;
+    }
+
+    if keys.just_pressed(KeyCode::KeyP) {
+        if canvas_paste_vim_register(state, document) {
+            canvas_commit_text_change(state, node_id, document, "Pasted in canvas text.");
+        }
+        return true;
+    }
+
+    false
+}
+
+fn canvas_vim_handle_visual_command(
+    keys: &ButtonInput<KeyCode>,
+    state: &mut EditorState,
+    node_id: &str,
+    document: &mut Document,
+) -> bool {
+    if keys.just_pressed(KeyCode::KeyY) {
+        let Some((start, end)) = state.canvas_text_selection_bounds(document) else {
+            state.status_message = "Nothing selected.".to_string();
+            return true;
+        };
+        let text = document_text_range(document, start, end);
+        state.vim_register = Some(if state.vim_mode == VimMode::VisualLine {
+            VimRegister::Linewise(text)
+        } else {
+            VimRegister::Characterwise(text)
+        });
+        canvas_vim_enter_normal_mode(state, true);
+        state.status_message = "Yanked canvas selection.".to_string();
+        return true;
+    }
+
+    if keys.just_pressed(KeyCode::KeyD) {
+        if state.delete_canvas_text_selection(document) {
+            canvas_commit_text_change(state, node_id, document, "Deleted canvas selection.");
+        } else {
+            state.status_message = "Nothing selected.".to_string();
+        }
+        canvas_vim_enter_normal_mode(state, true);
+        return true;
+    }
+
+    false
+}
+
+fn canvas_delete_current_text_line(state: &mut EditorState, document: &mut Document) {
+    let line = state
+        .canvas_text_cursor
+        .position
+        .line
+        .min(document.line_count().saturating_sub(1));
+    let line_count = document.line_count();
+    let start = Position { line, column: 0 };
+    let end = if line + 1 < line_count {
+        Position {
+            line: line + 1,
+            column: 0,
+        }
+    } else {
+        Position {
+            line,
+            column: document.line_len_chars(line),
+        }
+    };
+    let deleted = document_text_range(document, start, end);
+    state.vim_register = Some(VimRegister::Linewise(deleted));
+    let next = document.delete_range(start, end);
+    state.canvas_text_cursor.set_position(next);
+    state.canvas_text_selection_anchor = None;
+}
+
+fn canvas_paste_vim_register(state: &mut EditorState, document: &mut Document) -> bool {
+    let Some(register) = state.vim_register.clone() else {
+        state.status_message = "Vim register is empty.".to_string();
+        return false;
+    };
+
+    state.delete_canvas_text_selection(document);
+    let insert_position = state.canvas_text_cursor.position;
+    let inserted = match register {
+        VimRegister::Characterwise(text) => text,
+        VimRegister::Linewise(text) => format!("\n{text}"),
+    };
+    let next = document.insert_text(insert_position, &inserted);
+    state.canvas_text_cursor.set_position(next);
+    state.canvas_text_selection_anchor = None;
+    true
+}
+
+fn canvas_commit_text_change(
+    state: &mut EditorState,
+    node_id: &str,
+    document: &Document,
+    status_message: &str,
+) {
+    if let Some(snapshot) = state.canvas_text_edit_undo_snapshot.take() {
+        state.push_undo_snapshot(snapshot);
+    }
+    if state.set_canvas_text_node_content(node_id, document.to_text()) {
+        state.status_message = status_message.to_string();
     }
 }
 

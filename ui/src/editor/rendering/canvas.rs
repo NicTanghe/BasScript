@@ -1,6 +1,7 @@
 const COLOR_CANVAS_NODE_BG: Color = Color::srgb(0.96, 0.97, 0.98);
 const COLOR_CANVAS_GROUP_BG: Color = Color::srgba(0.80, 0.84, 0.90, 0.28);
 const COLOR_CANVAS_NODE_BORDER: Color = Color::srgba(0.08, 0.10, 0.12, 0.22);
+const COLOR_CANVAS_NODE_ACTIVE_BORDER: Color = Color::srgb(0.69, 0.28, 0.22);
 const COLOR_CANVAS_EDGE: Color = Color::srgba(0.10, 0.12, 0.15, 0.45);
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
@@ -11,6 +12,16 @@ struct CanvasRenderedNode {
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 struct CanvasRenderedNodeText {
     index: usize,
+}
+
+#[derive(Component, Clone, Debug)]
+struct CanvasRenderedImage {
+    handle: Handle<Image>,
+}
+
+#[derive(Component, Clone, Debug)]
+struct CanvasRenderedImageError {
+    handle: Handle<Image>,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,13 +61,37 @@ fn sync_canvas_board(
     existing_edge_query: Query<Entity, With<CanvasRenderedEdge>>,
     mut node_query: Query<
         (&CanvasRenderedNode, &mut Node, &mut Visibility),
-        Without<CanvasRenderedEdge>,
+        (
+            Without<CanvasRenderedEdge>,
+            Without<CanvasRenderedImage>,
+            Without<CanvasRenderedImageError>,
+        ),
     >,
     mut edge_query: Query<
         (&CanvasRenderedEdge, &mut Node, &mut Visibility),
-        Without<CanvasRenderedNode>,
+        (
+            Without<CanvasRenderedNode>,
+            Without<CanvasRenderedImage>,
+            Without<CanvasRenderedImageError>,
+        ),
     >,
     mut text_query: Query<(&CanvasRenderedNodeText, &mut TextFont)>,
+    mut image_query: Query<
+        (&CanvasRenderedImage, &mut Visibility),
+        (
+            Without<CanvasRenderedImageError>,
+            Without<CanvasRenderedNode>,
+            Without<CanvasRenderedEdge>,
+        ),
+    >,
+    mut image_error_query: Query<
+        (&CanvasRenderedImageError, &mut Visibility),
+        (
+            Without<CanvasRenderedImage>,
+            Without<CanvasRenderedNode>,
+            Without<CanvasRenderedEdge>,
+        ),
+    >,
     fonts: Res<EditorFonts>,
     asset_server: Res<AssetServer>,
     mut images: ResMut<Assets<Image>>,
@@ -161,6 +196,22 @@ fn sync_canvas_board(
     for (_, mut text_font) in text_query.iter_mut() {
         text_font.font_size = (12.0 * zoom).clamp(7.0, 28.0);
     }
+
+    for (canvas_image, mut visibility) in image_query.iter_mut() {
+        *visibility = if canvas_image_load_failed(&asset_server, &canvas_image.handle) {
+            Visibility::Hidden
+        } else {
+            Visibility::Visible
+        };
+    }
+
+    for (canvas_image_error, mut visibility) in image_error_query.iter_mut() {
+        *visibility = if canvas_image_load_failed(&asset_server, &canvas_image_error.handle) {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
 }
 
 fn spawn_canvas_edge(parent: &mut ChildSpawnerCommands, index: usize) {
@@ -199,6 +250,12 @@ fn spawn_canvas_node(
         CanvasNodeKind::Group { .. } => COLOR_CANVAS_GROUP_BG,
         _ => COLOR_CANVAS_NODE_BG,
     };
+    let active_text_node = state.canvas_editing_node_id.as_deref() == Some(node.id.as_str());
+    let border_color = if active_text_node {
+        COLOR_CANVAS_NODE_ACTIVE_BORDER
+    } else {
+        COLOR_CANVAS_NODE_BORDER
+    };
 
     parent
         .spawn((
@@ -214,14 +271,14 @@ fn spawn_canvas_node(
                 ..default()
             },
             BackgroundColor(node_color),
-            BorderColor::all(COLOR_CANVAS_NODE_BORDER),
+            BorderColor::all(border_color),
             ZIndex(20 + index as i32),
             CanvasRenderedNode { index },
         ))
         .with_children(|node_parent| match &node.kind {
             CanvasNodeKind::Text { text } => {
-                let editing = state.canvas_editing_node_id.as_deref() == Some(node.id.as_str());
-                if !editing {
+                let text_mode = canvas_text_render_mode(state, active_text_node);
+                if text_mode == CanvasTextRenderMode::Rendered {
                     if let Some(target) = canvas_first_image_target(text) {
                         spawn_canvas_image_or_placeholder(
                             node_parent,
@@ -238,23 +295,7 @@ fn spawn_canvas_node(
                     }
                 }
 
-                node_parent.spawn((
-                    Text::new(canvas_text_preview(text, editing)),
-                    TextFont {
-                        font: fonts.markdown_regular.clone(),
-                        font_size: (12.0 * zoom).clamp(7.0, 28.0),
-                        ..default()
-                    },
-                    TextColor(COLOR_TEXT_MAIN),
-                    Node {
-                        width: percent(100.0),
-                        height: percent(100.0),
-                        padding: UiRect::all(px(10.0)),
-                        overflow: Overflow::clip(),
-                        ..default()
-                    },
-                    CanvasRenderedNodeText { index },
-                ));
+                spawn_canvas_text_preview(node_parent, index, text, text_mode, state, fonts, zoom);
             }
             CanvasNodeKind::File { file } => {
                 spawn_canvas_image_or_placeholder(
@@ -324,7 +365,75 @@ fn spawn_canvas_node(
                     CanvasRenderedNodeText { index },
                 ));
             }
+    });
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CanvasTextRenderMode {
+    Rendered,
+    Plain,
+    PlainInteractive,
+}
+
+fn spawn_canvas_text_preview(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+    text: &str,
+    mode: CanvasTextRenderMode,
+    state: &EditorState,
+    fonts: &EditorFonts,
+    zoom: f32,
+) {
+    let preview = canvas_text_preview(text, mode, state);
+    parent
+        .spawn((
+            Text::new(preview.before),
+            TextFont {
+                font: fonts.markdown_regular.clone(),
+                font_size: (12.0 * zoom).clamp(7.0, 28.0),
+                ..default()
+            },
+            TextColor(COLOR_TEXT_MAIN),
+            Node {
+                width: percent(100.0),
+                height: percent(100.0),
+                padding: UiRect::all(px(10.0)),
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            CanvasRenderedNodeText { index },
+        ))
+        .with_children(|text_parent| {
+            if let Some(selected) = preview.selected {
+                text_parent.spawn((
+                    TextSpan::new(selected),
+                    TextFont {
+                        font: fonts.markdown_regular.clone(),
+                        font_size: (12.0 * zoom).clamp(7.0, 28.0),
+                        ..default()
+                    },
+                    TextColor(COLOR_CANVAS_NODE_ACTIVE_BORDER),
+                ));
+            }
+            if !preview.after.is_empty() {
+                text_parent.spawn((
+                    TextSpan::new(preview.after),
+                    TextFont {
+                        font: fonts.markdown_regular.clone(),
+                        font_size: (12.0 * zoom).clamp(7.0, 28.0),
+                        ..default()
+                    },
+                    TextColor(COLOR_TEXT_MAIN),
+                ));
+            }
         });
+}
+
+#[derive(Default)]
+struct CanvasTextPreview {
+    before: String,
+    selected: Option<String>,
+    after: String,
 }
 
 fn spawn_canvas_image_or_placeholder(
@@ -338,44 +447,120 @@ fn spawn_canvas_image_or_placeholder(
     image_cache: &mut EditorImageCache,
     zoom: f32,
 ) {
+    if is_remote_image_target(target) && !remote_image_target_seems_loadable(target) {
+        spawn_canvas_image_error(
+            parent,
+            index,
+            "Image not loaded: expected a direct image URL",
+            target,
+            fonts,
+            zoom,
+        );
+        return;
+    }
+
     let lookup = processed_image_lookup(image_cache, state, target, asset_server, images);
     match lookup {
         ProcessedImageLookup::Loaded { handle, .. } => {
+            let image_handle = handle.clone();
             parent.spawn((
-                ImageNode::new(handle),
+                ImageNode::new(image_handle.clone()),
                 Node {
                     width: percent(100.0),
                     height: percent(100.0),
                     ..default()
                 },
+                CanvasRenderedImage {
+                    handle: image_handle.clone(),
+                },
             ));
+
+            if is_remote_image_target(target) {
+                parent.spawn((
+                    Text::new(canvas_image_error_text("Image failed to load", target)),
+                    TextFont {
+                        font: fonts.markdown_regular.clone(),
+                        font_size: (12.0 * zoom).clamp(7.0, 28.0),
+                        ..default()
+                    },
+                    TextColor(COLOR_TEXT_MUTED),
+                    Node {
+                        width: percent(100.0),
+                        height: percent(100.0),
+                        padding: UiRect::all(px(10.0)),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    Visibility::Hidden,
+                    CanvasRenderedNodeText { index },
+                    CanvasRenderedImageError {
+                        handle: image_handle,
+                    },
+                ));
+            }
         }
         ProcessedImageLookup::Failed => {
-            parent.spawn((
-                Text::new(canvas_file_placeholder(target)),
-                TextFont {
-                    font: fonts.markdown_regular.clone(),
-                    font_size: (12.0 * zoom).clamp(7.0, 28.0),
-                    ..default()
-                },
-                TextColor(COLOR_TEXT_MUTED),
-                Node {
-                    width: percent(100.0),
-                    height: percent(100.0),
-                    padding: UiRect::all(px(10.0)),
-                    overflow: Overflow::clip(),
-                    ..default()
-                },
-                CanvasRenderedNodeText { index },
-            ));
+            spawn_canvas_image_error(parent, index, "Image failed to load", target, fonts, zoom);
         }
     }
+}
+
+fn spawn_canvas_image_error(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+    message: &str,
+    target: &str,
+    fonts: &EditorFonts,
+    zoom: f32,
+) {
+    parent.spawn((
+        Text::new(canvas_image_error_text(message, target)),
+        TextFont {
+            font: fonts.markdown_regular.clone(),
+            font_size: (12.0 * zoom).clamp(7.0, 28.0),
+            ..default()
+        },
+        TextColor(COLOR_TEXT_MUTED),
+        Node {
+            width: percent(100.0),
+            height: percent(100.0),
+            padding: UiRect::all(px(10.0)),
+            overflow: Overflow::clip(),
+            ..default()
+        },
+        CanvasRenderedNodeText { index },
+    ));
+}
+
+fn canvas_image_load_failed(asset_server: &AssetServer, handle: &Handle<Image>) -> bool {
+    matches!(asset_server.get_load_state(handle), Some(LoadState::Failed(_)))
+}
+
+fn canvas_image_error_text(message: &str, target: &str) -> String {
+    format!("{message}\n{}", canvas_file_placeholder(target))
 }
 
 fn canvas_first_image_target(text: &str) -> Option<String> {
     canvas_first_markdown_image_embed(text)
         .map(|embed| embed.target)
         .or_else(|| canvas_first_html_image_src(text))
+        .or_else(|| canvas_first_obsidian_image_target(text))
+        .or_else(|| canvas_first_remote_image_url(text))
+        .and_then(|target| canvas_clean_image_target(&target))
+}
+
+fn remote_image_target_seems_loadable(target: &str) -> bool {
+    let trimmed = target.trim();
+    if !is_remote_image_target(trimmed) {
+        return true;
+    }
+    let without_fragment = trimmed.split('#').next().unwrap_or(trimmed);
+    let without_query = without_fragment.split('?').next().unwrap_or(without_fragment);
+    let lower = without_query.to_ascii_lowercase();
+    matches!(
+        Path::new(&lower).extension().and_then(|ext| ext.to_str()),
+        Some("png" | "jpg" | "jpeg" | "webp" | "bmp")
+    )
 }
 
 fn canvas_first_markdown_image_embed(text: &str) -> Option<ImageEmbed> {
@@ -403,6 +588,51 @@ fn canvas_first_html_image_src(text: &str) -> Option<String> {
     }
 
     None
+}
+
+fn canvas_first_obsidian_image_target(text: &str) -> Option<String> {
+    let start = text.find("![[")? + 3;
+    let rest = text.get(start..)?;
+    let end = rest.find("]]").or_else(|| rest.find(']')).unwrap_or(rest.len());
+    let target = rest.get(..end)?;
+    Some(target.split('|').next().unwrap_or(target).trim().to_owned())
+}
+
+fn canvas_first_remote_image_url(text: &str) -> Option<String> {
+    let start = text.find("https://").or_else(|| text.find("http://"))?;
+    let rest = text.get(start..)?;
+    let end = rest
+        .char_indices()
+        .find_map(|(index, ch)| {
+            (ch.is_whitespace() || matches!(ch, '"' | '\'' | '<' | '>' | ')' | ']' | '|'))
+                .then_some(index)
+        })
+        .unwrap_or(rest.len());
+    Some(rest.get(..end)?.to_owned())
+}
+
+fn canvas_clean_image_target(target: &str) -> Option<String> {
+    let mut trimmed = target.trim();
+    if let Some(markdown_target_start) = trimmed.find("](") {
+        let target_start = markdown_target_start + 2;
+        let target_end = trimmed
+            .get(target_start..)
+            .and_then(|rest| rest.find(')').map(|offset| target_start + offset))
+            .unwrap_or(trimmed.len());
+        trimmed = trimmed.get(target_start..target_end)?.trim();
+    }
+    if trimmed.starts_with('<') && trimmed.ends_with('>') && trimmed.len() > 2 {
+        trimmed = &trimmed[1..trimmed.len() - 1];
+    }
+    if let Some((left, _)) = trimmed.split_once('|') {
+        if !left.trim().is_empty() {
+            trimmed = left.trim();
+        }
+    }
+    let cleaned = trimmed
+        .trim_matches(|ch: char| matches!(ch, '"' | '\'' | '<' | '>' | ')' | ']' | '['))
+        .trim();
+    (!cleaned.is_empty()).then(|| cleaned.to_owned())
 }
 
 fn html_attr_value(tag: &str, attr: &str) -> Option<String> {
@@ -477,19 +707,111 @@ fn skip_ascii_whitespace(input: &str, mut index: usize) -> usize {
     index
 }
 
-fn canvas_text_preview(text: &str, editing: bool) -> String {
-    let mut preview = text
-        .replace("\r\n", "\n")
-        .lines()
-        .map(|line| line.strip_prefix("# ").unwrap_or(line))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    if editing {
-        preview.push('_');
+fn canvas_text_render_mode(state: &EditorState, active_text_node: bool) -> CanvasTextRenderMode {
+    if state.display_mode == DisplayMode::Plain {
+        return if active_text_node {
+            CanvasTextRenderMode::PlainInteractive
+        } else {
+            CanvasTextRenderMode::Plain
+        };
     }
 
-    preview
+    if state.display_mode == DisplayMode::ProcessedRawCurrentLine && active_text_node {
+        return CanvasTextRenderMode::PlainInteractive;
+    }
+
+    if active_text_node && canvas_text_interaction_active(state) {
+        CanvasTextRenderMode::PlainInteractive
+    } else {
+        CanvasTextRenderMode::Rendered
+    }
+}
+
+fn canvas_text_interaction_active(state: &EditorState) -> bool {
+    state.canvas_editing_node_id.is_some()
+        && (!state.vim_enabled
+            || matches!(
+                state.vim_mode,
+                VimMode::Insert | VimMode::VisualChar | VimMode::VisualLine
+            ))
+}
+
+fn canvas_text_preview(
+    text: &str,
+    mode: CanvasTextRenderMode,
+    state: &EditorState,
+) -> CanvasTextPreview {
+    let normalized = text.replace("\r\n", "\n");
+    match mode {
+        CanvasTextRenderMode::Rendered => CanvasTextPreview {
+            before: normalized
+            .lines()
+            .map(|line| line.strip_prefix("# ").unwrap_or(line))
+            .collect::<Vec<_>>()
+                .join("\n"),
+            selected: None,
+            after: String::new(),
+        },
+        CanvasTextRenderMode::Plain => CanvasTextPreview {
+            before: normalized,
+            selected: None,
+            after: String::new(),
+        },
+        CanvasTextRenderMode::PlainInteractive => {
+            let document = Document::from_text(&normalized);
+            if let Some((start, end)) = state.canvas_text_selection_bounds(&document) {
+                return canvas_text_preview_with_selection(&normalized, start, end);
+            }
+            canvas_text_preview_with_cursor(&normalized, state.canvas_text_cursor.position)
+        }
+    }
+}
+
+fn canvas_text_preview_with_selection(
+    text: &str,
+    start: Position,
+    end: Position,
+) -> CanvasTextPreview {
+    let start_offset = canvas_text_char_offset(text, start);
+    let end_offset = canvas_text_char_offset(text, end);
+    let before = canvas_text_slice_chars(text, 0, start_offset);
+    let selected = canvas_text_slice_chars(text, start_offset, end_offset);
+    let after = canvas_text_slice_chars(text, end_offset, text.chars().count());
+    CanvasTextPreview {
+        before,
+        selected: Some(selected),
+        after,
+    }
+}
+
+fn canvas_text_preview_with_cursor(text: &str, cursor: Position) -> CanvasTextPreview {
+    let cursor_offset = canvas_text_char_offset(text, cursor);
+    let mut before = canvas_text_slice_chars(text, 0, cursor_offset);
+    before.push('_');
+    let after = canvas_text_slice_chars(text, cursor_offset, text.chars().count());
+    CanvasTextPreview {
+        before,
+        selected: None,
+        after,
+    }
+}
+
+fn canvas_text_char_offset(text: &str, position: Position) -> usize {
+    let mut offset = 0usize;
+    for (line_index, line) in text.split('\n').enumerate() {
+        if line_index == position.line {
+            return offset + position.column.min(line.chars().count());
+        }
+        offset += line.chars().count() + 1;
+    }
+    text.chars().count()
+}
+
+fn canvas_text_slice_chars(text: &str, start: usize, end: usize) -> String {
+    text.chars()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .collect()
 }
 
 fn canvas_file_placeholder(file: &str) -> String {
