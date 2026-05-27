@@ -462,6 +462,7 @@ fn render_processed_images(
         ),
     >,
     mut images: ResMut<Assets<Image>>,
+    asset_server: Res<AssetServer>,
     mut image_cache: ResMut<EditorImageCache>,
     mut state: ResMut<EditorState>,
 ) {
@@ -560,6 +561,7 @@ fn render_processed_images(
             &mut image_cache,
             &state,
             &image_block.target,
+            &asset_server,
             &mut images,
         );
         let image_size = match lookup {
@@ -807,8 +809,17 @@ fn processed_image_lookup(
     cache: &mut EditorImageCache,
     state: &EditorState,
     target: &str,
+    asset_server: &AssetServer,
     images: &mut Assets<Image>,
 ) -> ProcessedImageLookup {
+    let trimmed = target.trim();
+    if is_remote_image_target(trimmed) {
+        return ProcessedImageLookup::Loaded {
+            handle: asset_server.load(trimmed.to_owned()),
+            size: UVec2::new(640, 360),
+        };
+    }
+
     let resolved = match resolve_processed_image_path(state, target) {
         Ok(path) => path,
         Err(_) => return ProcessedImageLookup::Failed,
@@ -853,7 +864,7 @@ fn resolve_processed_image_path(state: &EditorState, target: &str) -> Result<Pat
     if trimmed.is_empty() {
         return Err("empty image path".to_owned());
     }
-    if trimmed.contains("://") || trimmed.starts_with("data:") {
+    if is_remote_image_target(trimmed) || trimmed.starts_with("data:") {
         return Err(format!("remote image targets are not supported: {trimmed}"));
     }
 
@@ -929,6 +940,10 @@ fn relative_path_suffixes(path: &Path) -> Vec<PathBuf> {
 
 fn canonicalize_if_possible(path: PathBuf) -> PathBuf {
     fs::canonicalize(&path).unwrap_or(path)
+}
+
+fn is_remote_image_target(target: &str) -> bool {
+    target.starts_with("http://") || target.starts_with("https://")
 }
 
 fn load_processed_image(path: &Path, images: &mut Assets<Image>) -> CachedProcessedImageResult {

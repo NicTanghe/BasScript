@@ -8,7 +8,7 @@ use std::{
 use basscript_core::{
     CanvasDocument, CanvasNodeKind, Cursor, Document, DocumentFormat, DocumentPath, ImageEmbed,
     LineKind, LinkDisplayText, ParsedLine, Position, ScriptLink, parse_canvas_document,
-    parse_document_with_format, update_canvas_node_position,
+    parse_document_with_format, update_canvas_node_position, update_canvas_text_node_content,
 };
 use bevy::{
     asset::RenderAssetUsages,
@@ -240,6 +240,12 @@ impl Plugin for UiPlugin {
                 )
                     .run_if(in_state(UiScreenState::Editor)),
             );
+        app.add_systems(
+            Update,
+            handle_canvas_text_edit_input
+                .after(handle_canvas_drag_input)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
         app.add_systems(
             Update,
             (
@@ -1164,6 +1170,8 @@ struct EditorState {
     canvas_version: u64,
     canvas_pan: Vec2,
     canvas_view_needs_centering: bool,
+    canvas_editing_node_id: Option<String>,
+    canvas_text_edit_undo_snapshot: Option<EditorHistorySnapshot>,
     workspace_root: Option<PathBuf>,
     workspace_folders: Vec<WorkspaceFolderEntry>,
     workspace_files: Vec<WorkspaceFileEntry>,
@@ -1724,6 +1732,8 @@ impl FromWorld for EditorState {
             canvas_version: 0,
             canvas_pan: Vec2::ZERO,
             canvas_view_needs_centering: false,
+            canvas_editing_node_id: None,
+            canvas_text_edit_undo_snapshot: None,
             workspace_root: None,
             workspace_folders: Vec::new(),
             workspace_files: Vec::new(),
@@ -2012,6 +2022,8 @@ impl EditorState {
                 self.vim_visual_anchor = None;
                 self.vim_visual_head = None;
                 self.command_menu = None;
+                self.canvas_editing_node_id = None;
+                self.canvas_text_edit_undo_snapshot = None;
                 self.top_line = 0;
                 self.processed_top_line = 0;
                 self.processed_top_visual = 0;

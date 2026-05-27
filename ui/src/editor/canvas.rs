@@ -38,6 +38,8 @@ impl EditorState {
             self.canvas_document = None;
             self.canvas_parse_error = None;
             self.canvas_view_needs_centering = false;
+            self.canvas_editing_node_id = None;
+            self.canvas_text_edit_undo_snapshot = None;
             return;
         }
 
@@ -140,6 +142,62 @@ impl EditorState {
             Err(error) => {
                 self.canvas_parse_error = Some(error.to_string());
                 self.status_message = format!("Canvas move failed: {error}");
+                false
+            }
+        }
+    }
+
+    fn begin_canvas_text_edit(&mut self, node_id: String) {
+        let changed_node = self.canvas_editing_node_id.as_deref() != Some(node_id.as_str());
+        self.canvas_editing_node_id = Some(node_id);
+        if changed_node {
+            self.canvas_text_edit_undo_snapshot = Some(self.history_snapshot());
+            self.canvas_version = self.canvas_version.saturating_add(1);
+        }
+        self.status_message = "Editing canvas text card. Esc exits.".to_string();
+        self.reset_blink();
+    }
+
+    fn clear_canvas_text_edit(&mut self) {
+        let was_editing = self.canvas_editing_node_id.is_some();
+        self.canvas_editing_node_id = None;
+        self.canvas_text_edit_undo_snapshot = None;
+        if was_editing {
+            self.canvas_version = self.canvas_version.saturating_add(1);
+        }
+        self.reset_blink();
+    }
+
+    fn canvas_text_node_content(&self, node_id: &str) -> Option<String> {
+        self.canvas_document
+            .as_ref()?
+            .nodes
+            .iter()
+            .find(|node| node.id == node_id)
+            .and_then(|node| match &node.kind {
+                CanvasNodeKind::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+    }
+
+    fn set_canvas_text_node_content(&mut self, node_id: &str, text: String) -> bool {
+        match update_canvas_text_node_content(&self.document.to_text(), node_id, &text) {
+            Ok(updated_document) => {
+                self.document = Document::from_text(&updated_document);
+                if let Some(node) = self
+                    .canvas_document
+                    .as_mut()
+                    .and_then(|canvas| canvas.nodes.iter_mut().find(|node| node.id == node_id))
+                {
+                    node.kind = CanvasNodeKind::Text { text };
+                }
+                self.canvas_parse_error = None;
+                self.canvas_version = self.canvas_version.saturating_add(1);
+                true
+            }
+            Err(error) => {
+                self.canvas_parse_error = Some(error.to_string());
+                self.status_message = format!("Canvas text edit failed: {error}");
                 false
             }
         }
@@ -271,6 +329,38 @@ fn start_canvas_drag_if_requested(
         return;
     }
 
+    if !ctrl_pressed && !keys.pressed(KeyCode::Space) && mouse_buttons.just_pressed(MouseButton::Left)
+    {
+        let Some(panel_pos) = panel_context.processed_cursor_pos else {
+            state.clear_canvas_text_edit();
+            return;
+        };
+        let world_pos = state.canvas_world_from_panel_pos(panel_pos);
+        let Some(node_index) = state.canvas_node_index_at_world(world_pos) else {
+            state.clear_canvas_text_edit();
+            return;
+        };
+        let Some((node_id, editable)) = state
+            .canvas_document
+            .as_ref()
+            .and_then(|canvas| canvas.nodes.get(node_index))
+            .map(|node| {
+                (
+                    node.id.clone(),
+                    matches!(node.kind, CanvasNodeKind::Text { .. }),
+                )
+            })
+        else {
+            return;
+        };
+        if editable {
+            state.begin_canvas_text_edit(node_id);
+        } else {
+            state.clear_canvas_text_edit();
+        }
+        return;
+    }
+
     if keys.pressed(KeyCode::Space) && mouse_buttons.just_pressed(MouseButton::Left) {
         start_canvas_pan_drag(drag_state, state, cursor_position, CanvasPanButton::SpaceLeft);
         return;
@@ -307,4 +397,68 @@ fn canvas_drag_mode_still_active(
         } => mouse_buttons.pressed(MouseButton::Middle),
         CanvasDragMode::MoveNode { .. } => mouse_buttons.pressed(MouseButton::Left),
     }
+}
+
+fn handle_canvas_text_edit_input(
+    mut keyboard_inputs: MessageReader<KeyboardInput>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<EditorState>,
+) {
+    if state.document_format != DocumentFormat::Canvas {
+        return;
+    }
+
+    let Some(node_id) = state.canvas_editing_node_id.clone() else {
+        return;
+    };
+
+    if keys.just_pressed(KeyCode::Escape) {
+        state.clear_canvas_text_edit();
+        state.status_message = "Canvas text edit exited.".to_string();
+        return;
+    }
+
+    if text_input_modifier_pressed(&keys) {
+        return;
+    }
+
+    let Some(mut text) = state.canvas_text_node_content(&node_id) else {
+        state.clear_canvas_text_edit();
+        return;
+    };
+    let mut changed = false;
+
+    for key_input in keyboard_inputs.read() {
+        if !key_input.state.is_pressed() {
+            continue;
+        }
+
+        match &key_input.logical_key {
+            Key::Enter => {
+                text.push('\n');
+                changed = true;
+            }
+            Key::Backspace => {
+                changed |= text.pop().is_some();
+            }
+            Key::Delete => {}
+            _ => {
+                if let Some(inserted_text) = &key_input.text {
+                    if !inserted_text.is_empty() && inserted_text.chars().all(is_printable_char) {
+                        text.push_str(inserted_text);
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if !changed {
+        return;
+    }
+
+    if let Some(snapshot) = state.canvas_text_edit_undo_snapshot.take() {
+        state.push_undo_snapshot(snapshot);
+    }
+    state.set_canvas_text_node_content(&node_id, text);
 }

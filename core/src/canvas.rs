@@ -131,6 +131,53 @@ pub fn update_canvas_node_position(
         .map_err(|error| CanvasParseError::new(format!("could not write canvas JSON: {error}")))
 }
 
+pub fn update_canvas_text_node_content(
+    input: &str,
+    node_id: &str,
+    text: &str,
+) -> Result<String, CanvasParseError> {
+    update_canvas_node_field(input, node_id, "text", Value::String(text.to_owned()))
+}
+
+fn update_canvas_node_field(
+    input: &str,
+    node_id: &str,
+    field: &str,
+    value: Value,
+) -> Result<String, CanvasParseError> {
+    let input = input.trim_start_matches('\u{feff}');
+
+    if input.trim().is_empty() {
+        return Ok(input.to_owned());
+    }
+
+    let mut root = serde_json::from_str::<Value>(input)
+        .map_err(|error| CanvasParseError::new(format!("invalid canvas JSON: {error}")))?;
+    let object = root
+        .as_object_mut()
+        .ok_or_else(|| CanvasParseError::new("canvas root must be a JSON object"))?;
+    let Some(nodes) = object.get_mut("nodes").and_then(Value::as_array_mut) else {
+        return serde_json::to_string_pretty(&root).map_err(|error| {
+            CanvasParseError::new(format!("could not write canvas JSON: {error}"))
+        });
+    };
+
+    for node in nodes {
+        let Some(node_object) = node.as_object_mut() else {
+            continue;
+        };
+        if node_object.get("id").and_then(Value::as_str) != Some(node_id) {
+            continue;
+        }
+
+        node_object.insert(field.to_owned(), value);
+        break;
+    }
+
+    serde_json::to_string_pretty(&root)
+        .map_err(|error| CanvasParseError::new(format!("could not write canvas JSON: {error}")))
+}
+
 fn parse_canvas_node(value: &Value) -> Option<CanvasNode> {
     let object = value.as_object()?;
     let id = object.get("id")?.as_str()?.to_owned();
@@ -257,5 +304,21 @@ mod tests {
         assert_eq!(node["y"], -7.0);
         assert_eq!(node["color"], "1");
         assert_eq!(node["text"], "Note");
+    }
+
+    #[test]
+    fn updates_canvas_text_node_content_without_dropping_fields() {
+        let updated = update_canvas_text_node_content(
+            r#"{"nodes":[{"id":"a","type":"text","text":"Old","x":0,"y":0}],"edges":[]}"#,
+            "a",
+            "New\nText",
+        )
+        .expect("updated canvas");
+        let value = serde_json::from_str::<Value>(&updated).expect("json");
+        let node = &value["nodes"][0];
+
+        assert_eq!(node["text"], "New\nText");
+        assert_eq!(node["type"], "text");
+        assert_eq!(node["x"], 0);
     }
 }

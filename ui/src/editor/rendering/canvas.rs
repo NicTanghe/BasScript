@@ -58,6 +58,7 @@ fn sync_canvas_board(
     >,
     mut text_query: Query<(&CanvasRenderedNodeText, &mut TextFont)>,
     fonts: Res<EditorFonts>,
+    asset_server: Res<AssetServer>,
     mut images: ResMut<Assets<Image>>,
     mut image_cache: ResMut<EditorImageCache>,
     state: Res<EditorState>,
@@ -101,6 +102,7 @@ fn sync_canvas_board(
                         node,
                         &state,
                         &fonts,
+                        &asset_server,
                         &mut images,
                         &mut image_cache,
                     );
@@ -185,6 +187,7 @@ fn spawn_canvas_node(
     node: &basscript_core::CanvasNode,
     state: &EditorState,
     fonts: &EditorFonts,
+    asset_server: &AssetServer,
     images: &mut Assets<Image>,
     image_cache: &mut EditorImageCache,
 ) {
@@ -217,36 +220,41 @@ fn spawn_canvas_node(
         ))
         .with_children(|node_parent| match &node.kind {
             CanvasNodeKind::Text { text } => {
-                if let Some(embed) = canvas_first_image_embed(text) {
-                    spawn_canvas_image_or_placeholder(
-                        node_parent,
-                        index,
-                        &embed.target,
-                        state,
-                        fonts,
-                        images,
-                        image_cache,
-                        zoom,
-                    );
-                } else {
-                    node_parent.spawn((
-                        Text::new(canvas_text_preview(text)),
-                        TextFont {
-                            font: fonts.markdown_regular.clone(),
-                            font_size: (12.0 * zoom).clamp(7.0, 28.0),
-                            ..default()
-                        },
-                        TextColor(COLOR_TEXT_MAIN),
-                        Node {
-                            width: percent(100.0),
-                            height: percent(100.0),
-                            padding: UiRect::all(px(10.0)),
-                            overflow: Overflow::clip(),
-                            ..default()
-                        },
-                        CanvasRenderedNodeText { index },
-                    ));
+                let editing = state.canvas_editing_node_id.as_deref() == Some(node.id.as_str());
+                if !editing {
+                    if let Some(target) = canvas_first_image_target(text) {
+                        spawn_canvas_image_or_placeholder(
+                            node_parent,
+                            index,
+                            &target,
+                            state,
+                            fonts,
+                            asset_server,
+                            images,
+                            image_cache,
+                            zoom,
+                        );
+                        return;
+                    }
                 }
+
+                node_parent.spawn((
+                    Text::new(canvas_text_preview(text, editing)),
+                    TextFont {
+                        font: fonts.markdown_regular.clone(),
+                        font_size: (12.0 * zoom).clamp(7.0, 28.0),
+                        ..default()
+                    },
+                    TextColor(COLOR_TEXT_MAIN),
+                    Node {
+                        width: percent(100.0),
+                        height: percent(100.0),
+                        padding: UiRect::all(px(10.0)),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    CanvasRenderedNodeText { index },
+                ));
             }
             CanvasNodeKind::File { file } => {
                 spawn_canvas_image_or_placeholder(
@@ -255,6 +263,7 @@ fn spawn_canvas_node(
                     file,
                     state,
                     fonts,
+                    asset_server,
                     images,
                     image_cache,
                     zoom,
@@ -324,11 +333,12 @@ fn spawn_canvas_image_or_placeholder(
     target: &str,
     state: &EditorState,
     fonts: &EditorFonts,
+    asset_server: &AssetServer,
     images: &mut Assets<Image>,
     image_cache: &mut EditorImageCache,
     zoom: f32,
 ) {
-    let lookup = processed_image_lookup(image_cache, state, target, images);
+    let lookup = processed_image_lookup(image_cache, state, target, asset_server, images);
     match lookup {
         ProcessedImageLookup::Loaded { handle, .. } => {
             parent.spawn((
@@ -362,11 +372,137 @@ fn spawn_canvas_image_or_placeholder(
     }
 }
 
-fn canvas_first_image_embed(text: &str) -> Option<ImageEmbed> {
+fn canvas_first_image_target(text: &str) -> Option<String> {
+    canvas_first_markdown_image_embed(text)
+        .map(|embed| embed.target)
+        .or_else(|| canvas_first_html_image_src(text))
+}
+
+fn canvas_first_markdown_image_embed(text: &str) -> Option<ImageEmbed> {
     parse_document_with_format(&Document::from_text(text), DocumentFormat::Markdown)
         .into_iter()
         .flat_map(|line| line.image_embeds)
         .next()
+}
+
+fn canvas_first_html_image_src(text: &str) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    let mut search_start = 0usize;
+
+    while let Some(relative_start) = lower.get(search_start..)?.find("<img") {
+        let tag_start = search_start + relative_start;
+        let tag_end = lower
+            .get(tag_start..)?
+            .find('>')
+            .map_or(text.len(), |offset| tag_start + offset);
+        let tag = text.get(tag_start..tag_end)?;
+        if let Some(src) = html_attr_value(tag, "src") {
+            return Some(src);
+        }
+        search_start = tag_end.saturating_add(1);
+    }
+
+    None
+}
+
+fn html_attr_value(tag: &str, attr: &str) -> Option<String> {
+    let lower = tag.to_ascii_lowercase();
+    let mut search_start = 0usize;
+
+    while let Some(relative_start) = lower.get(search_start..)?.find(attr) {
+        let attr_start = search_start + relative_start;
+        let after_attr = attr_start + attr.len();
+        let bytes = lower.as_bytes();
+        let before_ok = attr_start == 0
+            || !bytes
+                .get(attr_start.saturating_sub(1))
+                .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'-');
+        let after_ok = bytes
+            .get(after_attr)
+            .is_some_and(|byte| byte.is_ascii_whitespace() || *byte == b'=');
+        if !before_ok || !after_ok {
+            search_start = after_attr;
+            continue;
+        }
+
+        let mut cursor = after_attr;
+        cursor = skip_ascii_whitespace(tag, cursor);
+        if tag.as_bytes().get(cursor) != Some(&b'=') {
+            search_start = after_attr;
+            continue;
+        }
+        cursor = skip_ascii_whitespace(tag, cursor + 1);
+
+        let bytes = tag.as_bytes();
+        let value = match bytes.get(cursor) {
+            Some(b'"') | Some(b'\'') => {
+                let quote = bytes[cursor];
+                let start = cursor + 1;
+                let end = bytes[start..]
+                    .iter()
+                    .position(|byte| *byte == quote)
+                    .map(|offset| start + offset)?;
+                tag.get(start..end)?.to_owned()
+            }
+            Some(_) => {
+                let start = cursor;
+                let end = bytes[start..]
+                    .iter()
+                    .position(|byte| byte.is_ascii_whitespace() || *byte == b'>')
+                    .map_or(tag.len(), |offset| start + offset);
+                tag.get(start..end)?.to_owned()
+            }
+            None => return None,
+        };
+
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_owned());
+        }
+
+        search_start = after_attr;
+    }
+
+    None
+}
+
+fn skip_ascii_whitespace(input: &str, mut index: usize) -> usize {
+    while input
+        .as_bytes()
+        .get(index)
+        .is_some_and(u8::is_ascii_whitespace)
+    {
+        index += 1;
+    }
+    index
+}
+
+fn canvas_text_preview(text: &str, editing: bool) -> String {
+    let mut preview = text
+        .replace("\r\n", "\n")
+        .lines()
+        .map(|line| line.strip_prefix("# ").unwrap_or(line))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if editing {
+        preview.push('_');
+    }
+
+    preview
+}
+
+fn canvas_file_placeholder(file: &str) -> String {
+    if is_remote_image_target(file) {
+        return file.to_owned();
+    }
+
+    Path::new(file)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or(file)
+        .to_owned()
 }
 
 fn canvas_node_center(node: &basscript_core::CanvasNode) -> Vec2 {
@@ -418,21 +554,4 @@ fn canvas_edge_segment_rect(
             })
         }
     }
-}
-
-fn canvas_text_preview(text: &str) -> String {
-    text.replace("\r\n", "\n")
-        .lines()
-        .map(|line| line.strip_prefix("# ").unwrap_or(line))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn canvas_file_placeholder(file: &str) -> String {
-    Path::new(file)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
-        .unwrap_or(file)
-        .to_owned()
 }
