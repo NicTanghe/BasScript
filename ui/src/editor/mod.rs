@@ -1,5 +1,7 @@
 // Core types, state, constants, plugin wiring.
 include!("core.rs");
+// Canvas document state, viewport helpers, and canvas panel components.
+include!("canvas.rs");
 // Status bar formatting and layout.
 include!("status_line.rs");
 // In-app command menu prompt and command dispatch.
