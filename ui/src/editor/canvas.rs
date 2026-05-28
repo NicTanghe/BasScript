@@ -24,6 +24,7 @@ enum CanvasDragMode {
         node_id: String,
         undo_snapshot: Option<EditorHistorySnapshot>,
     },
+    SelectText { node_id: String, anchor: Position },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -151,7 +152,12 @@ impl EditorState {
     }
 
     fn begin_canvas_text_edit(&mut self, node_id: String, cursor_position: Option<Position>) {
+        self.workspace_focused = false;
+        self.focused_panel = PanelKind::Processed;
+
         let changed_node = self.canvas_editing_node_id.as_deref() != Some(node_id.as_str());
+        let previous_cursor = self.canvas_text_cursor.position;
+        let previous_anchor = self.canvas_text_selection_anchor;
         if changed_node {
             if let Some(text) = self.canvas_text_node_content(&node_id) {
                 self.canvas_text_cursor.set_position(canvas_text_end_position(&text));
@@ -168,6 +174,11 @@ impl EditorState {
         }
         if changed_node {
             self.canvas_text_edit_undo_snapshot = Some(self.history_snapshot());
+        }
+        if changed_node
+            || previous_cursor != self.canvas_text_cursor.position
+            || previous_anchor != self.canvas_text_selection_anchor
+        {
             self.canvas_version = self.canvas_version.saturating_add(1);
         }
         self.status_message = if self.vim_enabled && self.vim_mode != VimMode::Insert {
@@ -339,6 +350,55 @@ fn move_canvas_text_cursor_by_key(
     next != current || extend_selection
 }
 
+fn update_canvas_text_drag_selection(
+    state: &mut EditorState,
+    node_id: &str,
+    anchor: Position,
+    world_pos: Vec2,
+) -> bool {
+    let Some((current, document)) = state.canvas_document.as_ref().and_then(|canvas| {
+        canvas
+            .nodes
+            .iter()
+            .find(|node| node.id == node_id)
+            .and_then(|node| match &node.kind {
+                CanvasNodeKind::Text { text } => Some((
+                    canvas_text_position_from_world(node, text, world_pos, state.zoom),
+                    Document::from_text(text),
+                )),
+                _ => None,
+            })
+    }) else {
+        return false;
+    };
+
+    let anchor = document.clamp_position(anchor);
+    let current = document.clamp_position(current);
+    let previous_cursor = state.canvas_text_cursor.position;
+    let previous_anchor = state.canvas_text_selection_anchor;
+
+    state.canvas_text_cursor.set_position(current);
+    state.canvas_text_selection_anchor = (anchor != current).then_some(anchor);
+
+    if state.vim_enabled && state.vim_mode != VimMode::Insert && anchor != current {
+        state.vim_mode = VimMode::VisualChar;
+        state.vim_pending_operator = None;
+        state.vim_visual_anchor = Some(anchor);
+        state.vim_visual_head = Some(current);
+        state.status_message = "Vim visual mode.".to_string();
+    }
+
+    if previous_cursor != state.canvas_text_cursor.position
+        || previous_anchor != state.canvas_text_selection_anchor
+    {
+        state.canvas_version = state.canvas_version.saturating_add(1);
+        state.reset_blink();
+        return true;
+    }
+
+    false
+}
+
 fn canvas_text_editable_key(key: KeyCode) -> bool {
     matches!(
         key,
@@ -432,6 +492,14 @@ fn handle_canvas_drag_input(
             }
             state.move_canvas_node_by_delta(node_id, delta / zoom);
         }
+        CanvasDragMode::SelectText { node_id, anchor } => {
+            let panel_context = gather_scroll_panels_context(&panel_query, &state);
+            let Some(panel_pos) = panel_context.processed_cursor_pos else {
+                return;
+            };
+            let world_pos = state.canvas_world_from_panel_pos(panel_pos);
+            update_canvas_text_drag_selection(&mut state, node_id, *anchor, world_pos);
+        }
     }
 }
 
@@ -502,7 +570,12 @@ fn start_canvas_drag_if_requested(
             return;
         };
         if let Some(click_position) = click_position {
-            state.begin_canvas_text_edit(node_id, Some(click_position));
+            state.begin_canvas_text_edit(node_id.clone(), Some(click_position));
+            drag_state.active = Some(CanvasDragMode::SelectText {
+                node_id,
+                anchor: click_position,
+            });
+            drag_state.last_cursor_position = Some(cursor_position);
         } else {
             state.clear_canvas_text_edit();
         }
@@ -544,6 +617,7 @@ fn canvas_drag_mode_still_active(
             button: CanvasPanButton::Middle,
         } => mouse_buttons.pressed(MouseButton::Middle),
         CanvasDragMode::MoveNode { .. } => mouse_buttons.pressed(MouseButton::Left),
+        CanvasDragMode::SelectText { .. } => mouse_buttons.pressed(MouseButton::Left),
     }
 }
 
