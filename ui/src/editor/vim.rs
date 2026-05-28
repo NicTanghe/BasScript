@@ -11,8 +11,7 @@ fn handle_vim_input(
     }
 
     if state.document_format == DocumentFormat::Canvas {
-        handle_canvas_vim_input(&mut keyboard_inputs, &keys, &mut repeat, &mut state);
-        reset_vim_repeat(&mut repeat);
+        handle_canvas_vim_input(&mut keyboard_inputs, &keys, &time, &mut repeat, &mut state);
         return;
     }
 
@@ -108,12 +107,12 @@ fn handle_vim_input(
 fn handle_canvas_vim_input(
     keyboard_inputs: &mut MessageReader<KeyboardInput>,
     keys: &ButtonInput<KeyCode>,
+    time: &Time,
     repeat: &mut NavigationRepeatState,
     state: &mut EditorState,
 ) {
-    reset_vim_repeat(repeat);
-
     if state.workspace_prompt.is_some() || state.command_menu.is_some() || state.workspace_focused {
+        reset_vim_repeat(repeat);
         return;
     }
 
@@ -127,10 +126,12 @@ fn handle_canvas_vim_input(
             state.clear_canvas_text_edit();
             state.status_message = "Canvas text card deselected.".to_string();
         }
+        reset_vim_repeat(repeat);
         return;
     }
 
     if text_input_modifier_pressed(keys) {
+        reset_vim_repeat(repeat);
         return;
     }
 
@@ -141,23 +142,28 @@ fn handle_canvas_vim_input(
             && keyboard_input_text_is(input, ":")
         {
             state.open_command_menu();
+            reset_vim_repeat(repeat);
             return;
         }
     }
 
     if state.vim_mode == VimMode::Insert {
+        reset_vim_repeat(repeat);
         return;
     }
 
     if !has_active_text_node {
+        reset_vim_repeat(repeat);
         return;
     }
 
     let Some(mut document) = state.active_canvas_text_document() else {
         state.clear_canvas_text_edit();
+        reset_vim_repeat(repeat);
         return;
     };
     let Some(node_id) = state.canvas_editing_node_id.clone() else {
+        reset_vim_repeat(repeat);
         return;
     };
 
@@ -165,6 +171,7 @@ fn handle_canvas_vim_input(
         canvas_vim_enter_insert_mode(state);
         state.canvas_text_suppress_next_insert_input = true;
         state.canvas_version = state.canvas_version.saturating_add(1);
+        reset_vim_repeat(repeat);
         return;
     }
 
@@ -174,20 +181,47 @@ fn handle_canvas_vim_input(
         } else {
             canvas_vim_enter_visual_char_mode(state);
         }
+        reset_vim_repeat(repeat);
         return;
     }
 
     if canvas_vim_handle_edit_command(keys, state, &node_id, &mut document) {
+        reset_vim_repeat(repeat);
         return;
     }
 
     let extend_selection = matches!(state.vim_mode, VimMode::VisualChar | VimMode::VisualLine);
+    let previous_active_key = repeat.active_arrow;
+    let mut moved = false;
     if let Some(key) = just_pressed_vim_movement_key(keys) {
-        if matches!(state.vim_mode, VimMode::VisualLine) {
-            canvas_vim_move_visual_line(state, &document, key);
-        } else {
-            move_canvas_text_cursor_by_key(state, &document, key, extend_selection);
+        moved |= canvas_vim_move_text_cursor(state, &document, key, extend_selection);
+        repeat.active_arrow = Some(key);
+        repeat.repeat_cooldown_secs = NAVIGATION_REPEAT_INITIAL_DELAY_SECS;
+    } else {
+        let active_key = repeat
+            .active_arrow
+            .filter(|key| keys.pressed(*key) && vim_movement_key_to_arrow(*key).is_some())
+            .or_else(|| held_vim_movement_key(keys));
+
+        if active_key != previous_active_key {
+            repeat.repeat_cooldown_secs = NAVIGATION_REPEAT_INITIAL_DELAY_SECS;
         }
+
+        repeat.active_arrow = active_key;
+
+        if let Some(key) = active_key {
+            repeat.repeat_cooldown_secs -= time.delta_secs().max(0.0);
+            while repeat.repeat_cooldown_secs <= 0.0 {
+                moved |= canvas_vim_move_text_cursor(state, &document, key, extend_selection);
+                repeat.repeat_cooldown_secs += NAVIGATION_REPEAT_INTERVAL_SECS;
+            }
+        } else {
+            repeat.repeat_cooldown_secs = 0.0;
+        }
+    }
+
+    if moved {
+        state.vim_pending_operator = None;
     }
 }
 
@@ -245,10 +279,28 @@ fn canvas_vim_enter_visual_line_mode(state: &mut EditorState, document: &Documen
     state.status_message = "Vim visual line mode.".to_string();
 }
 
-fn canvas_vim_move_visual_line(state: &mut EditorState, document: &Document, key: KeyCode) {
+fn canvas_vim_move_text_cursor(
+    state: &mut EditorState,
+    document: &Document,
+    key: KeyCode,
+    extend_selection: bool,
+) -> bool {
     let Some(arrow) = vim_movement_key_to_arrow(key) else {
-        return;
+        return false;
     };
+
+    if matches!(state.vim_mode, VimMode::VisualLine) {
+        return canvas_vim_move_visual_line(state, document, arrow);
+    }
+
+    move_canvas_text_cursor_by_key(state, document, arrow, extend_selection)
+}
+
+fn canvas_vim_move_visual_line(
+    state: &mut EditorState,
+    document: &Document,
+    arrow: KeyCode,
+) -> bool {
     let current = state
         .vim_visual_head
         .unwrap_or(state.canvas_text_cursor.position);
@@ -258,6 +310,9 @@ fn canvas_vim_move_visual_line(state: &mut EditorState, document: &Document, key
         KeyCode::ArrowDown => (current_line + 1).min(document.line_count().saturating_sub(1)),
         _ => current_line,
     };
+    if next_line == current_line {
+        return false;
+    }
     let anchor = state.vim_visual_anchor.unwrap_or(Position {
         line: current_line,
         column: 0,
@@ -279,6 +334,7 @@ fn canvas_vim_move_visual_line(state: &mut EditorState, document: &Document, key
     state.canvas_text_selection_anchor = Some(start);
     state.canvas_text_cursor.set_position(end);
     state.canvas_version = state.canvas_version.saturating_add(1);
+    true
 }
 
 fn canvas_vim_handle_edit_command(

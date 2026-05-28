@@ -11,6 +11,9 @@ const WORKSPACE_TREE_LIST_LEFT_MARGIN: f32 = 0.0;
 const WORKSPACE_TREE_DEPTH_INDENT: f32 = 14.0;
 const WORKSPACE_FILE_ROW_EXTRA_LEFT: f32 = 2.0;
 const WORKSPACE_TREE_VERTICAL_PADDING: f32 = 10.0;
+const WORKSPACE_TREE_ROW_HEIGHT: f32 = 24.0;
+const WORKSPACE_TREE_ROW_GAP: f32 = 4.0;
+const WORKSPACE_TREE_WHEEL_LINE_PX: f32 = 36.0;
 
 // Set this to Some("C:/path/to/folder") to force the initial opened workspace root.
 // Keep as None to use the parent directory of the currently loaded document.
@@ -339,6 +342,23 @@ fn workspace_base_name(relative_display: &str) -> String {
         .map_or_else(String::new, str::to_owned)
 }
 
+fn workspace_sidebar_content_height(row_count: usize) -> f32 {
+    if row_count == 0 {
+        0.0
+    } else {
+        row_count as f32 * WORKSPACE_TREE_ROW_HEIGHT
+            + row_count.saturating_sub(1) as f32 * WORKSPACE_TREE_ROW_GAP
+    }
+}
+
+fn workspace_sidebar_row_top(index: usize) -> f32 {
+    index as f32 * (WORKSPACE_TREE_ROW_HEIGHT + WORKSPACE_TREE_ROW_GAP)
+}
+
+fn workspace_sidebar_max_scroll(row_count: usize, viewport_height: f32) -> f32 {
+    (workspace_sidebar_content_height(row_count) - viewport_height).max(0.0)
+}
+
 fn default_expanded_workspace_folders(
     folders: &[WorkspaceFolderEntry],
     files: &[WorkspaceFileEntry],
@@ -473,10 +493,12 @@ fn workspace_sidebar_bundle(font: Handle<Font>, background: Color) -> impl Bundl
                         px(0.0),
                         px(0.0),
                     ),
-                    row_gap: px(4.0),
-                    overflow: Overflow::clip(),
+                    row_gap: px(WORKSPACE_TREE_ROW_GAP),
+                    overflow: Overflow::scroll_y(),
                     ..default()
                 },
+                ScrollPosition::default(),
+                RelativeCursorPosition::default(),
                 WorkspaceFileList,
             ),
         ],
@@ -609,10 +631,11 @@ fn sync_workspace_sidebar(
                         },
                         Node {
                             width: percent(100.0),
+                            height: px(WORKSPACE_TREE_ROW_HEIGHT),
                             flex_direction: FlexDirection::Row,
                             align_items: AlignItems::Center,
                             column_gap: px(6.0),
-                            padding: UiRect::axes(px(left_indent), px(4.0)),
+                            padding: UiRect::new(px(left_indent), px(0.0), px(0.0), px(0.0)),
                             ..default()
                         },
                         BackgroundColor(row_bg),
@@ -691,7 +714,9 @@ fn sync_workspace_sidebar(
                         WorkspaceFileButton { index: file_index },
                         Node {
                             width: percent(100.0),
-                            padding: UiRect::new(px(left_indent), px(8.0), px(4.0), px(4.0)),
+                            height: px(WORKSPACE_TREE_ROW_HEIGHT),
+                            align_items: AlignItems::Center,
+                            padding: UiRect::new(px(left_indent), px(8.0), px(0.0), px(0.0)),
                             ..default()
                         },
                         BackgroundColor(row_bg),
@@ -711,6 +736,98 @@ fn sync_workspace_sidebar(
     });
 
     state.workspace_ui_dirty = false;
+}
+
+fn workspace_file_list_hovered(
+    list_query: &Query<&RelativeCursorPosition, With<WorkspaceFileList>>,
+) -> bool {
+    list_query.iter().any(RelativeCursorPosition::cursor_over)
+}
+
+fn handle_workspace_mouse_scroll(
+    mut mouse_wheels: MessageReader<MouseWheel>,
+    state: Res<EditorState>,
+    mut list_query: Query<
+        (&RelativeCursorPosition, &ComputedNode, &mut ScrollPosition),
+        With<WorkspaceFileList>,
+    >,
+) {
+    if !state.workspace_sidebar_visible {
+        return;
+    }
+
+    let Ok((relative_cursor, computed, mut scroll_position)) = list_query.single_mut() else {
+        return;
+    };
+    if !relative_cursor.cursor_over() {
+        return;
+    }
+
+    let mut delta_y = 0.0_f32;
+    for wheel in mouse_wheels.read() {
+        delta_y += match wheel.unit {
+            MouseScrollUnit::Line => -wheel.y * WORKSPACE_TREE_WHEEL_LINE_PX,
+            MouseScrollUnit::Pixel => -wheel.y,
+        };
+    }
+
+    if delta_y.abs() <= f32::EPSILON {
+        return;
+    }
+
+    let viewport_height = (computed.size().y * computed.inverse_scale_factor()).max(0.0);
+    let max_scroll = workspace_sidebar_max_scroll(workspace_sidebar_rows(&state).len(), viewport_height);
+    scroll_position.y = (scroll_position.y + delta_y).clamp(0.0, max_scroll);
+    scroll_position.x = 0.0;
+}
+
+fn sync_workspace_selected_row_scroll(
+    state: Res<EditorState>,
+    mut last_selection: Local<Option<WorkspaceSelectedRow>>,
+    mut list_query: Query<(&ComputedNode, &mut ScrollPosition), With<WorkspaceFileList>>,
+) {
+    if !state.workspace_sidebar_visible {
+        *last_selection = state.workspace_selected_row.clone();
+        return;
+    }
+
+    if *last_selection == state.workspace_selected_row {
+        return;
+    }
+    *last_selection = state.workspace_selected_row.clone();
+
+    let Some(_) = state.workspace_selected_row.as_ref() else {
+        return;
+    };
+    let rows = workspace_sidebar_rows(&state);
+    let Some(index) = selected_workspace_row_index(&state, &rows) else {
+        return;
+    };
+    let Ok((computed, mut scroll_position)) = list_query.single_mut() else {
+        return;
+    };
+
+    let viewport_height = (computed.size().y * computed.inverse_scale_factor()).max(0.0);
+    if viewport_height <= f32::EPSILON {
+        return;
+    }
+
+    let max_scroll = workspace_sidebar_max_scroll(rows.len(), viewport_height);
+    let current_top = scroll_position.y.clamp(0.0, max_scroll);
+    let current_bottom = current_top + viewport_height;
+    let row_top = workspace_sidebar_row_top(index);
+    let row_bottom = row_top + WORKSPACE_TREE_ROW_HEIGHT;
+
+    let next_scroll = if row_top < current_top {
+        row_top
+    } else if row_bottom > current_bottom {
+        row_bottom - viewport_height
+    } else {
+        current_top
+    };
+
+    scroll_position.y = next_scroll.clamp(0.0, max_scroll);
+    scroll_position.x = 0.0;
 }
 
 fn folder_contains_active_file(

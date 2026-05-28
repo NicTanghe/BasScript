@@ -177,6 +177,7 @@ impl Plugin for UiPlugin {
                     sync_settings_ui,
                     sync_theme_picker_ui,
                     sync_workspace_sidebar,
+                    sync_workspace_selected_row_scroll.after(sync_workspace_sidebar),
                 ),
             )
             .add_systems(
@@ -242,6 +243,12 @@ impl Plugin for UiPlugin {
             );
         app.add_systems(
             Update,
+            handle_workspace_mouse_scroll
+                .before(handle_mouse_scroll)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
             handle_canvas_text_edit_input
                 .after(handle_canvas_drag_input)
                 .after(handle_vim_input)
@@ -252,6 +259,7 @@ impl Plugin for UiPlugin {
             (
                 render_processed_images.after(render_editor),
                 sync_canvas_board.after(render_editor),
+                sync_canvas_text_overlays.after(sync_canvas_board),
             )
                 .run_if(in_state(UiScreenState::Editor)),
         );

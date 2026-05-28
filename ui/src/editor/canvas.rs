@@ -4,6 +4,8 @@ const CANVAS_SCROLL_STEP_PX: f32 = 64.0;
 const CANVAS_VIEW_MARGIN: f32 = 120.0;
 const CANVAS_NODE_DEFAULT_WIDTH: f32 = 260.0;
 const CANVAS_NODE_DEFAULT_HEIGHT: f32 = 160.0;
+const CANVAS_TEXT_PADDING_X: f32 = 10.0;
+const CANVAS_TEXT_PADDING_Y: f32 = 10.0;
 
 const COLOR_CANVAS_BG: Color = Color::srgb(0.38, 0.40, 0.43);
 
@@ -309,17 +311,50 @@ fn canvas_text_position_from_world(
     text: &str,
     world_pos: Vec2,
     zoom: f32,
+    layout: Option<(&TextLayoutInfo, f32)>,
 ) -> Position {
     let zoom = zoom.max(CANVAS_ZOOM_MIN);
     let local_screen = (world_pos - Vec2::new(node.x, node.y)) * zoom;
-    let font_size = (12.0 * zoom).clamp(7.0, 28.0);
-    let char_width = (font_size * 0.55).max(1.0);
-    let line_height = (font_size * 1.25).max(1.0);
-    let text_x = (local_screen.x - 10.0).max(0.0);
-    let text_y = (local_screen.y - 10.0).max(0.0);
+    let text_x = (local_screen.x - CANVAS_TEXT_PADDING_X).max(0.0);
+    let text_y = (local_screen.y - CANVAS_TEXT_PADDING_Y).max(0.0);
     let document = Document::from_text(text);
-    let line = ((text_y / line_height).floor() as usize).min(document.line_count().saturating_sub(1));
-    let column = ((text_x / char_width).round() as usize).min(document.line_len_chars(line));
+    let line_height = canvas_text_line_height(zoom).max(1.0);
+    let char_width = canvas_text_char_width(zoom).max(1.0);
+    let fallback_line =
+        ((text_y / line_height).floor() as usize).min(document.line_count().saturating_sub(1));
+    let fallback_column = ((text_x / char_width).round() as usize)
+        .min(document.line_len_chars(fallback_line));
+
+    let Some((layout, inverse_scale)) = layout else {
+        return Position {
+            line: fallback_line,
+            column: fallback_column,
+        };
+    };
+
+    let visual_line = line_index_from_layout_y(
+        layout,
+        text_y,
+        canvas_text_layout_visual_line_count(layout),
+        inverse_scale,
+    )
+    .unwrap_or(fallback_line);
+    if let Some(position) = canvas_text_position_from_layout(
+        &document,
+        layout,
+        visual_line,
+        text_x,
+        inverse_scale,
+        char_width,
+    ) {
+        return position;
+    }
+
+    let line = fallback_line;
+    let line_text = document.line(line).unwrap_or_default();
+    let column = column_from_layout_x(layout, line, text_x, line_text, inverse_scale, char_width)
+        .unwrap_or_else(|| (text_x / char_width).round() as usize)
+        .min(document.line_len_chars(line));
     Position { line, column }
 }
 
@@ -355,6 +390,7 @@ fn update_canvas_text_drag_selection(
     node_id: &str,
     anchor: Position,
     world_pos: Vec2,
+    layout: Option<(&TextLayoutInfo, f32)>,
 ) -> bool {
     let Some((current, document)) = state.canvas_document.as_ref().and_then(|canvas| {
         canvas
@@ -363,7 +399,7 @@ fn update_canvas_text_drag_selection(
             .find(|node| node.id == node_id)
             .and_then(|node| match &node.kind {
                 CanvasNodeKind::Text { text } => Some((
-                    canvas_text_position_from_world(node, text, world_pos, state.zoom),
+                    canvas_text_position_from_world(node, text, world_pos, state.zoom, layout),
                     Document::from_text(text),
                 )),
                 _ => None,
@@ -411,6 +447,28 @@ fn canvas_text_editable_key(key: KeyCode) -> bool {
     )
 }
 
+fn canvas_text_font_size(zoom: f32) -> f32 {
+    (FONT_SIZE * zoom.max(CANVAS_ZOOM_MIN)).clamp(7.0, 28.0)
+}
+
+fn canvas_text_line_height(zoom: f32) -> f32 {
+    (canvas_text_font_size(zoom) * 1.25).max(1.0)
+}
+
+fn canvas_text_char_width(zoom: f32) -> f32 {
+    (canvas_text_font_size(zoom) * 0.55).max(1.0)
+}
+
+fn canvas_text_layout_for_node<'a>(
+    text_layout_query: &'a Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+    node_index: usize,
+) -> Option<(&'a TextLayoutInfo, f32)> {
+    text_layout_query
+        .iter()
+        .find(|(node_text, _, _)| node_text.index == node_index)
+        .map(|(_, layout, computed)| (layout, computed.inverse_scale_factor()))
+}
+
 fn canvas_node_size(width: f32, height: f32) -> Vec2 {
     Vec2::new(
         width.max(CANVAS_NODE_DEFAULT_WIDTH),
@@ -422,6 +480,7 @@ fn handle_canvas_drag_input(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
+    text_layout_query: Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut drag_state: ResMut<CanvasDragState>,
     mut state: ResMut<EditorState>,
@@ -451,6 +510,7 @@ fn handle_canvas_drag_input(
             &mouse_buttons,
             &keys,
             &panel_query,
+            &text_layout_query,
             &mut drag_state,
             &mut state,
             cursor_position,
@@ -498,7 +558,17 @@ fn handle_canvas_drag_input(
                 return;
             };
             let world_pos = state.canvas_world_from_panel_pos(panel_pos);
-            update_canvas_text_drag_selection(&mut state, node_id, *anchor, world_pos);
+            let layout = state
+                .canvas_document
+                .as_ref()
+                .and_then(|canvas| {
+                    canvas
+                        .nodes
+                        .iter()
+                        .position(|node| node.id.as_str() == node_id.as_str())
+                })
+                .and_then(|node_index| canvas_text_layout_for_node(&text_layout_query, node_index));
+            update_canvas_text_drag_selection(&mut state, node_id, *anchor, world_pos, layout);
         }
     }
 }
@@ -507,6 +577,7 @@ fn start_canvas_drag_if_requested(
     mouse_buttons: &ButtonInput<MouseButton>,
     keys: &ButtonInput<KeyCode>,
     panel_query: &Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
+    text_layout_query: &Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
     drag_state: &mut CanvasDragState,
     state: &mut EditorState,
     cursor_position: Vec2,
@@ -562,7 +633,15 @@ fn start_canvas_drag_if_requested(
             .map(|node| match &node.kind {
                 CanvasNodeKind::Text { text } => (
                     node.id.clone(),
-                    Some(canvas_text_position_from_world(node, text, world_pos, state.zoom)),
+                    Some(canvas_text_position_from_world(
+                        node,
+                        text,
+                        world_pos,
+                        state.zoom,
+                        (state.canvas_editing_node_id.as_deref() == Some(node.id.as_str()))
+                            .then(|| canvas_text_layout_for_node(text_layout_query, node_index))
+                            .flatten(),
+                    )),
                 ),
                 _ => (node.id.clone(), None),
             })

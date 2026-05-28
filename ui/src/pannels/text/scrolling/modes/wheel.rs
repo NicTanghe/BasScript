@@ -2,8 +2,14 @@ fn handle_mouse_scroll(
     mut mouse_wheels: MessageReader<MouseWheel>,
     keys: Res<ButtonInput<KeyCode>>,
     panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
+    workspace_list_query: Query<&RelativeCursorPosition, With<WorkspaceFileList>>,
     mut state: ResMut<EditorState>,
 ) {
+    if workspace_file_list_hovered(&workspace_list_query) {
+        for _ in mouse_wheels.read() {}
+        return;
+    }
+
     let shift_horizontal = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let panel_context = gather_scroll_panels_context(&panel_query, &state);
     state.clamp_horizontal_scrolls(

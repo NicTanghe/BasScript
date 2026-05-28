@@ -138,6 +138,19 @@ Acceptance
 - Newly created files become the current save path immediately.
 - Status messages distinguish `Saved`, `Save As canceled`, and `Save failed`.
 
+G7. Explorer scrolling
+
+Status: completed
+
+Make the explorer tree usable when there are more rows than fit in the sidebar viewport.
+
+Acceptance
+
+- Mouse wheel scrolling over the explorer scrolls the explorer tree, not the editor panes.
+- Hidden lower and upper rows can be reached by scrolling.
+- Moving the selected row with `j`, `k`, Up, or Down scrolls the newly selected row into view when it crosses the visible edge.
+- Selection-follow scrolling works in both directions.
+
 Epic H - Optional Basic Vim Mode
 
 H1. Vim mode setting
