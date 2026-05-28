@@ -324,38 +324,30 @@ fn canvas_text_position_from_world(
         ((text_y / line_height).floor() as usize).min(document.line_count().saturating_sub(1));
     let fallback_column = ((text_x / char_width).round() as usize)
         .min(document.line_len_chars(fallback_line));
-
-    let Some((layout, inverse_scale)) = layout else {
-        return Position {
-            line: fallback_line,
-            column: fallback_column,
-        };
-    };
-
-    let visual_line = line_index_from_layout_y(
-        layout,
-        text_y,
-        canvas_text_layout_visual_line_count(layout),
-        inverse_scale,
-    )
-    .unwrap_or(fallback_line);
-    if let Some(position) = canvas_text_position_from_layout(
-        &document,
-        layout,
-        visual_line,
-        text_x,
-        inverse_scale,
-        char_width,
-    ) {
-        return position;
+    if let Some((layout, inverse_scale)) = layout {
+        let visual_line = line_index_from_layout_y(
+            layout,
+            text_y,
+            canvas_text_layout_visual_line_count(layout),
+            inverse_scale,
+        )
+        .unwrap_or(fallback_line);
+        if let Some(position) = canvas_text_position_from_layout(
+            &document,
+            layout,
+            visual_line,
+            text_x,
+            inverse_scale,
+            char_width,
+        ) {
+            return position;
+        }
     }
 
-    let line = fallback_line;
-    let line_text = document.line(line).unwrap_or_default();
-    let column = column_from_layout_x(layout, line, text_x, line_text, inverse_scale, char_width)
-        .unwrap_or_else(|| (text_x / char_width).round() as usize)
-        .min(document.line_len_chars(line));
-    Position { line, column }
+    Position {
+        line: fallback_line,
+        column: fallback_column,
+    }
 }
 
 fn move_canvas_text_cursor_by_key(
@@ -457,16 +449,6 @@ fn canvas_text_line_height(zoom: f32) -> f32 {
 
 fn canvas_text_char_width(zoom: f32) -> f32 {
     (canvas_text_font_size(zoom) * 0.55).max(1.0)
-}
-
-fn canvas_text_layout_for_node<'a>(
-    text_layout_query: &'a Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
-    node_index: usize,
-) -> Option<(&'a TextLayoutInfo, f32)> {
-    text_layout_query
-        .iter()
-        .find(|(node_text, _, _)| node_text.index == node_index)
-        .map(|(_, layout, computed)| (layout, computed.inverse_scale_factor()))
 }
 
 fn canvas_node_size(width: f32, height: f32) -> Vec2 {
@@ -638,9 +620,7 @@ fn start_canvas_drag_if_requested(
                         text,
                         world_pos,
                         state.zoom,
-                        (state.canvas_editing_node_id.as_deref() == Some(node.id.as_str()))
-                            .then(|| canvas_text_layout_for_node(text_layout_query, node_index))
-                            .flatten(),
+                        canvas_text_layout_for_node(text_layout_query, node_index),
                     )),
                 ),
                 _ => (node.id.clone(), None),
