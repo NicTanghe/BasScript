@@ -501,21 +501,22 @@ fn spawn_canvas_text_preview(
     fonts: &EditorFonts,
     zoom: f32,
 ) {
-    let preview = canvas_text_preview(text, mode, state);
     if mode == CanvasTextRenderMode::PlainInteractive {
         spawn_canvas_text_selection_rects(parent, index);
         spawn_canvas_text_caret(parent, index);
     }
 
-    let text_font = match mode {
-        CanvasTextRenderMode::Rendered => fonts.markdown_regular.clone(),
-        CanvasTextRenderMode::Plain | CanvasTextRenderMode::PlainInteractive => fonts.regular.clone(),
-    };
+    if mode == CanvasTextRenderMode::Rendered {
+        spawn_canvas_rendered_text_preview(parent, index, text, fonts, zoom);
+        return;
+    }
+
+    let preview = canvas_text_preview(text, mode, state);
     parent
         .spawn((
             Text::new(preview.text),
             TextFont {
-                font: text_font,
+                font: fonts.regular.clone(),
                 font_size: canvas_text_font_size(zoom),
                 ..default()
             },
@@ -533,6 +534,63 @@ fn spawn_canvas_text_preview(
             ZIndex(1),
             CanvasRenderedNodeText { index },
         ));
+}
+
+fn spawn_canvas_rendered_text_preview(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+    text: &str,
+    fonts: &EditorFonts,
+    zoom: f32,
+) {
+    let font_size = canvas_text_font_size(zoom);
+    let line_height = canvas_text_line_height(zoom);
+    parent
+        .spawn((
+            Text::new(""),
+            TextFont {
+                font: fonts.markdown_regular.clone(),
+                font_size,
+                ..default()
+            },
+            LineHeight::Px(line_height),
+            TextColor(COLOR_TEXT_MAIN),
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(CANVAS_TEXT_PADDING_X),
+                top: px(CANVAS_TEXT_PADDING_Y),
+                right: px(CANVAS_TEXT_PADDING_X),
+                bottom: px(CANVAS_TEXT_PADDING_Y),
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            ZIndex(1),
+            CanvasRenderedNodeText { index },
+        ))
+        .with_children(|text_parent| {
+            for span in canvas_rendered_text_spans(text) {
+                text_parent.spawn((
+                    TextSpan::new(span.text),
+                    TextFont {
+                        font: font_for_variant_with_format(
+                            fonts,
+                            span.style.font_variant,
+                            DocumentFormat::Canvas,
+                        ),
+                        font_size: font_size * span.style.font_scale,
+                        ..default()
+                    },
+                    LineHeight::Px(line_height * span.style.line_height_scale),
+                    TextColor(span.style.color),
+                ));
+            }
+        });
+}
+
+#[derive(Clone, Debug)]
+struct CanvasTextPreviewSpan {
+    text: String,
+    style: LineRenderStyle,
 }
 
 #[derive(Default)]
@@ -1591,6 +1649,54 @@ fn canvas_text_preview(
         },
         CanvasTextRenderMode::PlainInteractive => CanvasTextPreview { text: normalized },
     }
+}
+
+fn canvas_rendered_text_spans(text: &str) -> Vec<CanvasTextPreviewSpan> {
+    let normalized = text.replace("\r\n", "\n");
+    let lines = normalized.split('\n').collect::<Vec<_>>();
+    if lines.is_empty() {
+        return vec![CanvasTextPreviewSpan {
+            text: String::new(),
+            style: default_line_render_style(),
+        }];
+    }
+
+    lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| {
+            let render_override = markdown_render_override_for_raw(line);
+            let style = render_override
+                .as_ref()
+                .map(|override_style| {
+                    processed_line_style_for_kind(
+                        &override_style.kind,
+                        override_style.markdown_heading_level,
+                    )
+                })
+                .unwrap_or_else(default_line_render_style);
+            let mut rendered = render_override
+                .as_ref()
+                .and_then(|override_style| {
+                    markdown_visual_text_for_kind(
+                        line,
+                        &override_style.kind,
+                        override_style.markdown_heading_level,
+                    )
+                })
+                .map(|(_, rendered, _)| rendered)
+                .unwrap_or_else(|| (*line).to_owned());
+
+            if index + 1 < lines.len() {
+                rendered.push('\n');
+            }
+
+            CanvasTextPreviewSpan {
+                text: rendered,
+                style,
+            }
+        })
+        .collect()
 }
 
 fn canvas_file_placeholder(file: &str) -> String {

@@ -1,18 +1,44 @@
 fn markdown_visual_text(parsed_line: &ParsedLine) -> Option<(usize, String, Option<bool>)> {
-    match parsed_line.kind {
+    markdown_visual_text_for_kind(
+        &parsed_line.raw,
+        &parsed_line.kind,
+        parsed_line.markdown_heading_level,
+    )
+}
+
+fn markdown_visual_text_for_kind(
+    raw: &str,
+    kind: &LineKind,
+    _markdown_heading_level: Option<u8>,
+) -> Option<(usize, String, Option<bool>)> {
+    match kind {
         LineKind::MarkdownHeading => {
-            let (consumed, rendered) = markdown_heading_visual(&parsed_line.raw);
+            let (consumed, rendered) = markdown_heading_visual(raw);
             Some((consumed, rendered, None))
         }
-        LineKind::MarkdownListItem => Some(markdown_list_item_visual(&parsed_line.raw)),
+        LineKind::MarkdownListItem => Some(markdown_list_item_visual(raw)),
         LineKind::MarkdownQuote => {
-            let (consumed, rendered) = markdown_quote_visual(&parsed_line.raw);
+            let (consumed, rendered) = markdown_quote_visual(raw);
             Some((consumed, rendered, None))
         }
         LineKind::MarkdownRule => Some((0, "────────────────────────".to_string(), None)),
         LineKind::MarkdownCodeFence => Some((0, "```".to_string(), None)),
         _ => None,
     }
+}
+
+fn markdown_render_override_for_raw(raw: &str) -> Option<ProcessedLineRenderOverride> {
+    let parsed_line = parse_document_with_format(&Document::from_text(raw), DocumentFormat::Markdown)
+        .into_iter()
+        .next()?;
+    if matches!(parsed_line.kind, LineKind::MarkdownParagraph | LineKind::Empty) {
+        return None;
+    }
+
+    Some(ProcessedLineRenderOverride {
+        kind: parsed_line.kind,
+        markdown_heading_level: parsed_line.markdown_heading_level,
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -285,5 +311,30 @@ mod tests {
 
         assert_eq!(front_matter.closing_line_index, 3);
         assert_eq!(front_matter.rendered_title, "door kitchen main");
+    }
+
+    #[test]
+    fn detects_markdown_heading_override_from_raw_line() {
+        let render_override =
+            markdown_render_override_for_raw("# test").expect("heading should be detected");
+
+        assert_eq!(render_override.kind, LineKind::MarkdownHeading);
+        assert_eq!(render_override.markdown_heading_level, Some(1));
+
+        let (consumed, rendered, checklist) = markdown_visual_text_for_kind(
+            "# test",
+            &render_override.kind,
+            render_override.markdown_heading_level,
+        )
+        .expect("heading should render as markdown");
+
+        assert_eq!(consumed, 2);
+        assert_eq!(rendered, "test");
+        assert_eq!(checklist, None);
+    }
+
+    #[test]
+    fn leaves_plain_raw_line_without_markdown_override() {
+        assert!(markdown_render_override_for_raw("plain text").is_none());
     }
 }

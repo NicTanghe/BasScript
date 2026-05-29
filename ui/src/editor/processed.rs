@@ -252,6 +252,7 @@ fn build_link_targets(
 fn prepare_processed_line_text(
     parsed_line: &ParsedLine,
     raw_override_active: bool,
+    render_override: Option<&ProcessedLineRenderOverride>,
 ) -> (PreparedProcessedText, Option<bool>) {
     if !raw_override_active && !parsed_line.image_embeds.is_empty() {
         return (prepare_image_embed_line_text(parsed_line), None);
@@ -260,7 +261,16 @@ fn prepare_processed_line_text(
     let (raw_column_base, rendered_raw, checklist_state) = if raw_override_active {
         (0, parsed_line.raw.clone(), None)
     } else {
-        markdown_visual_text(parsed_line).unwrap_or_else(|| (0, parsed_line.raw.clone(), None))
+        render_override
+            .and_then(|override_style| {
+                markdown_visual_text_for_kind(
+                    &parsed_line.raw,
+                    &override_style.kind,
+                    override_style.markdown_heading_level,
+                )
+            })
+            .or_else(|| markdown_visual_text(parsed_line))
+            .unwrap_or_else(|| (0, parsed_line.raw.clone(), None))
     };
     let rendered = if raw_override_active {
         identity_link_display_text(&rendered_raw)
@@ -366,7 +376,7 @@ fn build_processed_segment_lines(
             continue;
         }
 
-        let render_override = (!raw_override_active)
+        let front_matter_render_override = (!raw_override_active)
             .then(|| markdown_front_matter.as_ref())
             .flatten()
             .filter(|_| source_line == 0)
@@ -374,6 +384,14 @@ fn build_processed_segment_lines(
                 kind: LineKind::MarkdownHeading,
                 markdown_heading_level: Some(1),
             });
+        let markdown_render_override = (!raw_override_active)
+            .then(|| markdown_render_override_for_raw(&parsed_line.raw))
+            .flatten();
+        let render_override = front_matter_render_override.or(markdown_render_override);
+        let effective_kind = render_override
+            .as_ref()
+            .map(|override_style| &override_style.kind)
+            .unwrap_or(&parsed_line.kind);
         let indent_width = if raw_override_active {
             0
         } else {
@@ -383,7 +401,7 @@ fn build_processed_segment_lines(
             false
         } else {
             matches!(
-                parsed_line.kind,
+                effective_kind,
                 LineKind::SceneHeading | LineKind::Transition | LineKind::Character
             )
         };
@@ -397,7 +415,7 @@ fn build_processed_segment_lines(
                 None,
             )
         } else {
-            prepare_processed_line_text(parsed_line, raw_override_active)
+            prepare_processed_line_text(parsed_line, raw_override_active, render_override.as_ref())
         };
         let mut wrapped = Vec::<ProcessedVisualLine>::new();
 
@@ -407,7 +425,7 @@ fn build_processed_segment_lines(
 
         if !should_render_text_for_line {
             // Image-only lines use the image block itself as the visible processed row.
-        } else if should_split_on_double_space(state, &parsed_line.kind) {
+        } else if should_split_on_double_space(state, effective_kind) {
             for (segment_start, segment_end) in double_space_segments(&prepared_text.text) {
                 push_wrapped_visual_lines(
                     &mut wrapped,
