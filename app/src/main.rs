@@ -6,7 +6,14 @@ use bevy::render::{
 };
 #[cfg(target_os = "windows")]
 use bevy::window::CompositeAlphaMode;
-use bevy::{asset::AssetPlugin, prelude::*, window::WindowPlugin};
+use bevy::{
+    asset::AssetPlugin,
+    prelude::*,
+    window::{WindowPlugin, WindowResizeConstraints},
+};
+
+const MIN_WINDOW_WIDTH: f32 = 640.0;
+const MIN_WINDOW_HEIGHT: f32 = 360.0;
 
 fn main() {
     #[cfg(target_os = "windows")]
@@ -25,6 +32,11 @@ fn main() {
             primary_window: Some(Window {
                 decorations: false,
                 transparent: true,
+                resize_constraints: WindowResizeConstraints {
+                    min_width: MIN_WINDOW_WIDTH,
+                    min_height: MIN_WINDOW_HEIGHT,
+                    ..default()
+                },
                 #[cfg(target_os = "windows")]
                 composite_alpha_mode: CompositeAlphaMode::PreMultiplied,
                 ..default()

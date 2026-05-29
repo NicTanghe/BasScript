@@ -915,9 +915,14 @@ pub(crate) fn react_to_resize(
     size: PhysicalSize<u32>,
     window_resized: &mut MessageWriter<WindowResized>,
 ) {
-    window
-        .resolution
-        .set_physical_resolution(size.width, size.height);
+    let constraints = window.resize_constraints.check_constraints();
+    let scale_factor = window.resolution.scale_factor().max(f32::EPSILON);
+    let min_physical_width = (constraints.min_width * scale_factor).ceil().max(1.0) as u32;
+    let min_physical_height = (constraints.min_height * scale_factor).ceil().max(1.0) as u32;
+    let width = size.width.max(min_physical_width);
+    let height = size.height.max(min_physical_height);
+
+    window.resolution.set_physical_resolution(width, height);
 
     window_resized.write(WindowResized {
         window: window_entity,

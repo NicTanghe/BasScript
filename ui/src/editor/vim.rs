@@ -3,6 +3,7 @@ fn handle_vim_input(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     body_query: Query<(&PanelBody, &ComputedNode)>,
+    text_layout_query: Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
     mut repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
 ) {
@@ -11,7 +12,14 @@ fn handle_vim_input(
     }
 
     if state.document_format == DocumentFormat::Canvas {
-        handle_canvas_vim_input(&mut keyboard_inputs, &keys, &time, &mut repeat, &mut state);
+        handle_canvas_vim_input(
+            &mut keyboard_inputs,
+            &keys,
+            &time,
+            &text_layout_query,
+            &mut repeat,
+            &mut state,
+        );
         return;
     }
 
@@ -108,6 +116,7 @@ fn handle_canvas_vim_input(
     keyboard_inputs: &mut MessageReader<KeyboardInput>,
     keys: &ButtonInput<KeyCode>,
     time: &Time,
+    text_layout_query: &Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
     repeat: &mut NavigationRepeatState,
     state: &mut EditorState,
 ) {
@@ -166,6 +175,8 @@ fn handle_canvas_vim_input(
         reset_vim_repeat(repeat);
         return;
     };
+    let active_layout = active_canvas_text_layout(state, text_layout_query);
+    let zoom = state.zoom;
 
     if state.vim_mode == VimMode::Normal && keys.just_pressed(KeyCode::KeyI) {
         canvas_vim_enter_insert_mode(state);
@@ -194,7 +205,8 @@ fn handle_canvas_vim_input(
     let previous_active_key = repeat.active_arrow;
     let mut moved = false;
     if let Some(key) = just_pressed_vim_movement_key(keys) {
-        moved |= canvas_vim_move_text_cursor(state, &document, key, extend_selection);
+        moved |=
+            canvas_vim_move_text_cursor(state, &document, key, extend_selection, active_layout, zoom);
         repeat.active_arrow = Some(key);
         repeat.repeat_cooldown_secs = NAVIGATION_REPEAT_INITIAL_DELAY_SECS;
     } else {
@@ -212,7 +224,14 @@ fn handle_canvas_vim_input(
         if let Some(key) = active_key {
             repeat.repeat_cooldown_secs -= time.delta_secs().max(0.0);
             while repeat.repeat_cooldown_secs <= 0.0 {
-                moved |= canvas_vim_move_text_cursor(state, &document, key, extend_selection);
+                moved |= canvas_vim_move_text_cursor(
+                    state,
+                    &document,
+                    key,
+                    extend_selection,
+                    active_layout,
+                    zoom,
+                );
                 repeat.repeat_cooldown_secs += NAVIGATION_REPEAT_INTERVAL_SECS;
             }
         } else {
@@ -284,6 +303,8 @@ fn canvas_vim_move_text_cursor(
     document: &Document,
     key: KeyCode,
     extend_selection: bool,
+    layout: Option<(&TextLayoutInfo, f32)>,
+    zoom: f32,
 ) -> bool {
     let Some(arrow) = vim_movement_key_to_arrow(key) else {
         return false;
@@ -293,7 +314,7 @@ fn canvas_vim_move_text_cursor(
         return canvas_vim_move_visual_line(state, document, arrow);
     }
 
-    move_canvas_text_cursor_by_key(state, document, arrow, extend_selection)
+    move_canvas_text_cursor_by_key(state, document, arrow, extend_selection, layout, zoom)
 }
 
 fn canvas_vim_move_visual_line(

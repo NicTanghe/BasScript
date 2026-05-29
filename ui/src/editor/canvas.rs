@@ -245,6 +245,15 @@ impl EditorState {
             .map(|text| Document::from_text(&text))
     }
 
+    fn active_canvas_text_node_index(&self) -> Option<usize> {
+        let node_id = self.canvas_editing_node_id.as_deref()?;
+        self.canvas_document
+            .as_ref()?
+            .nodes
+            .iter()
+            .position(|node| node.id == node_id)
+    }
+
     fn canvas_text_selection_bounds(&self, document: &Document) -> Option<(Position, Position)> {
         let anchor = self.canvas_text_selection_anchor?;
         let anchor = document.clamp_position(anchor);
@@ -325,13 +334,8 @@ fn canvas_text_position_from_world(
     let fallback_column = ((text_x / char_width).round() as usize)
         .min(document.line_len_chars(fallback_line));
     if let Some((layout, inverse_scale)) = layout {
-        let visual_line = line_index_from_layout_y(
-            layout,
-            text_y,
-            canvas_text_layout_visual_line_count(layout),
-            inverse_scale,
-        )
-        .unwrap_or(fallback_line);
+        let visual_line =
+            canvas_text_visual_line_from_y(layout, text_y, inverse_scale).unwrap_or(fallback_line);
         if let Some(position) = canvas_text_position_from_layout(
             &document,
             layout,
@@ -350,18 +354,34 @@ fn canvas_text_position_from_world(
     }
 }
 
+fn active_canvas_text_layout<'a>(
+    state: &EditorState,
+    text_layout_query: &'a Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+) -> Option<(&'a TextLayoutInfo, f32)> {
+    let node_index = state.active_canvas_text_node_index()?;
+    canvas_text_layout_for_node(text_layout_query, node_index)
+}
+
 fn move_canvas_text_cursor_by_key(
     state: &mut EditorState,
     document: &Document,
     key: KeyCode,
     extend_selection: bool,
+    layout: Option<(&TextLayoutInfo, f32)>,
+    zoom: f32,
 ) -> bool {
     let current = document.clamp_position(state.canvas_text_cursor.position);
     let next = match key {
         KeyCode::ArrowLeft => document.move_left(current),
         KeyCode::ArrowRight => document.move_right(current),
-        KeyCode::ArrowUp => document.move_up(current, state.canvas_text_cursor.preferred_column),
-        KeyCode::ArrowDown => document.move_down(current, state.canvas_text_cursor.preferred_column),
+        KeyCode::ArrowUp => canvas_text_visual_arrow_position(document, current, key, layout, zoom)
+            .unwrap_or_else(|| document.move_up(current, state.canvas_text_cursor.preferred_column)),
+        KeyCode::ArrowDown => {
+            canvas_text_visual_arrow_position(document, current, key, layout, zoom)
+                .unwrap_or_else(|| {
+                    document.move_down(current, state.canvas_text_cursor.preferred_column)
+                })
+        }
         KeyCode::Home => Position {
             line: current.line,
             column: 0,
@@ -375,6 +395,56 @@ fn move_canvas_text_cursor_by_key(
     let update_preferred = !matches!(key, KeyCode::ArrowUp | KeyCode::ArrowDown);
     state.set_canvas_text_cursor_with_selection(document, next, update_preferred, extend_selection);
     next != current || extend_selection
+}
+
+fn canvas_text_visual_arrow_position(
+    document: &Document,
+    current: Position,
+    key: KeyCode,
+    layout: Option<(&TextLayoutInfo, f32)>,
+    zoom: f32,
+) -> Option<Position> {
+    let (layout, inverse_scale) = layout?;
+    let line_text = document.line(current.line)?;
+    let display_len = line_text.chars().count();
+    let byte_index = char_to_byte_index(line_text, current.column.min(display_len));
+    let segment = canvas_text_layout_segment_for_position(
+        layout,
+        document,
+        current.line,
+        byte_index,
+        inverse_scale,
+    )?;
+    let visual_line_count = canvas_text_layout_visual_line_count(layout, inverse_scale);
+    let target_visual_line = match key {
+        KeyCode::ArrowUp => segment.visual_line.checked_sub(1)?,
+        KeyCode::ArrowDown => {
+            let next = segment.visual_line.saturating_add(1);
+            (next < visual_line_count).then_some(next)?
+        }
+        _ => return None,
+    };
+    let fallback_char_width = canvas_text_char_width(zoom);
+    let layout_byte = canvas_text_segment_layout_byte(segment, byte_index);
+    let current_x = canvas_caret_x_from_layout(
+        layout,
+        segment,
+        line_text,
+        layout_byte,
+        inverse_scale,
+        fallback_char_width,
+    )
+    .unwrap_or(current.column as f32 * fallback_char_width);
+
+    canvas_text_position_from_layout(
+        document,
+        layout,
+        target_visual_line,
+        current_x,
+        inverse_scale,
+        fallback_char_width,
+    )
+    .map(|position| document.clamp_position(position))
 }
 
 fn update_canvas_text_drag_selection(
@@ -683,6 +753,7 @@ fn canvas_drag_mode_still_active(
 fn handle_canvas_text_edit_input(
     mut keyboard_inputs: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
+    text_layout_query: Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
     mut state: ResMut<EditorState>,
 ) {
     if state.document_format != DocumentFormat::Canvas {
@@ -733,6 +804,8 @@ fn handle_canvas_text_edit_input(
 
     let mut text_changed = false;
     let mut view_changed = false;
+    let active_layout = active_canvas_text_layout(&state, &text_layout_query);
+    let zoom = state.zoom;
 
     for key_input in keyboard_inputs.read() {
         if !key_input.state.is_pressed() {
@@ -745,6 +818,8 @@ fn handle_canvas_text_edit_input(
                 &document,
                 key_input.key_code,
                 shift_modifier_pressed(&keys),
+                active_layout,
+                zoom,
             );
             continue;
         }
