@@ -798,10 +798,6 @@ fn handle_canvas_text_edit_input(
         return;
     }
 
-    if text_input_modifier_pressed(&keys) {
-        return;
-    }
-
     let mut text_changed = false;
     let mut view_changed = false;
     let active_layout = active_canvas_text_layout(&state, &text_layout_query);
@@ -809,6 +805,10 @@ fn handle_canvas_text_edit_input(
 
     for key_input in keyboard_inputs.read() {
         if !key_input.state.is_pressed() {
+            continue;
+        }
+
+        if text_input_should_skip_for_shortcut(&keys, key_input, &state.keybinds) {
             continue;
         }
 

@@ -1,4 +1,8 @@
 fn platform_shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+    if alt_gr_modifier_pressed(keys) {
+        return false;
+    }
+
     keys.any_pressed([
         KeyCode::ControlLeft,
         KeyCode::ControlRight,
@@ -12,14 +16,44 @@ fn shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
 }
 
 fn text_input_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+    if keys.any_pressed([KeyCode::SuperLeft, KeyCode::SuperRight]) {
+        return true;
+    }
+
+    if alt_gr_modifier_pressed(keys) {
+        return false;
+    }
+
     keys.any_pressed([
         KeyCode::ControlLeft,
         KeyCode::ControlRight,
         KeyCode::AltLeft,
         KeyCode::AltRight,
-        KeyCode::SuperLeft,
-        KeyCode::SuperRight,
     ])
+}
+
+fn alt_gr_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+    keys.pressed(KeyCode::AltRight)
+        && keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
+}
+
+fn text_input_should_skip_for_shortcut(
+    keys: &ButtonInput<KeyCode>,
+    input: &KeyboardInput,
+    keybinds: &KeybindSettings,
+) -> bool {
+    input.state.is_pressed()
+        && SHORTCUT_ACTIONS.iter().copied().any(|action| {
+            key_combination_matches_binding(keys, input.key_code, keybinds.binding(action))
+        })
+}
+
+fn key_combination_matches_binding(
+    keys: &ButtonInput<KeyCode>,
+    key_code: KeyCode,
+    binding: ShortcutBinding,
+) -> bool {
+    key_code == binding.key && shortcut_binding_modifier_pressed(keys, binding)
 }
 
 fn shift_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
@@ -57,6 +91,87 @@ fn shortcut_binding_modifier_pressed(
         ShortcutModifier::Alt => alt && !ctrl && !super_pressed && !space,
         ShortcutModifier::Super => super_pressed && !ctrl && !alt && !space,
         ShortcutModifier::Space => space && !ctrl && !alt && !super_pressed,
+    }
+}
+
+#[cfg(test)]
+mod modifier_key_tests {
+    use super::*;
+    use bevy::input::ButtonState;
+
+    #[test]
+    fn alt_gr_does_not_block_text_input() {
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::ControlLeft);
+        keys.press(KeyCode::AltRight);
+
+        assert!(!text_input_modifier_pressed(&keys));
+        assert!(!platform_shortcut_modifier_pressed(&keys));
+    }
+
+    #[test]
+    fn only_known_shortcuts_skip_text_input() {
+        let keybinds = KeybindSettings::default();
+        let input = KeyboardInput {
+            key_code: KeyCode::KeyQ,
+            logical_key: Key::Character("q".into()),
+            state: ButtonState::Pressed,
+            text: Some("q".into()),
+            repeat: false,
+            window: Entity::PLACEHOLDER,
+        };
+
+        let mut unknown_combo = ButtonInput::<KeyCode>::default();
+        unknown_combo.press(KeyCode::ControlLeft);
+        assert!(!text_input_should_skip_for_shortcut(
+            &unknown_combo,
+            &input,
+            &keybinds
+        ));
+
+        let save_input = KeyboardInput {
+            key_code: KeyCode::KeyS,
+            logical_key: Key::Character("s".into()),
+            state: ButtonState::Pressed,
+            text: Some("s".into()),
+            repeat: false,
+            window: Entity::PLACEHOLDER,
+        };
+        let mut save_combo = ButtonInput::<KeyCode>::default();
+        save_combo.press(KeyCode::ControlLeft);
+        assert!(text_input_should_skip_for_shortcut(
+            &save_combo,
+            &save_input,
+            &keybinds
+        ));
+    }
+
+    #[test]
+    fn alt_gr_digit_does_not_match_platform_digit_shortcut() {
+        let keybinds = KeybindSettings::default();
+        let input = KeyboardInput {
+            key_code: KeyCode::Digit3,
+            logical_key: Key::Character("#".into()),
+            state: ButtonState::Pressed,
+            text: Some("#".into()),
+            repeat: false,
+            window: Entity::PLACEHOLDER,
+        };
+
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::ControlLeft);
+        keys.press(KeyCode::AltRight);
+        assert!(!text_input_should_skip_for_shortcut(
+            &keys, &input, &keybinds
+        ));
+
+        let mut shortcut_keys = ButtonInput::<KeyCode>::default();
+        shortcut_keys.press(KeyCode::ControlLeft);
+        assert!(text_input_should_skip_for_shortcut(
+            &shortcut_keys,
+            &input,
+            &keybinds
+        ));
     }
 }
 

@@ -164,15 +164,20 @@ fn handle_workspace_prompt_input(
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<EditorState>,
 ) {
-    let Some(prompt) = state.workspace_prompt.as_mut() else {
+    if state.workspace_prompt.is_none() {
         return;
-    };
+    }
 
     if keys.just_pressed(KeyCode::Escape) {
         state.workspace_prompt = None;
         state.status_message = "Explorer prompt canceled.".to_string();
         return;
     }
+
+    let keybinds = state.keybinds.clone();
+    let Some(prompt) = state.workspace_prompt.as_mut() else {
+        return;
+    };
 
     enum PromptAction {
         ConfirmCreate(String),
@@ -183,12 +188,12 @@ fn handle_workspace_prompt_input(
     let mut action = None::<PromptAction>;
     match prompt {
         WorkspacePrompt::Create { input } => {
-            if text_input_modifier_pressed(&keys) {
-                return;
-            }
-
             for key_input in keyboard_inputs.read() {
                 if !key_input.state.is_pressed() {
+                    continue;
+                }
+
+                if text_input_should_skip_for_shortcut(&keys, key_input, &keybinds) {
                     continue;
                 }
 

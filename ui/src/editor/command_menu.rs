@@ -88,7 +88,6 @@ fn handle_command_menu_open_input(
     if state.command_menu.is_some()
         || state.workspace_prompt.is_some()
         || state.workspace_focused
-        || text_input_modifier_pressed(&keys)
     {
         return;
     }
@@ -111,6 +110,7 @@ fn handle_command_menu_input(
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<EditorState>,
 ) {
+    let keybinds = state.keybinds.clone();
     let Some(command_menu) = state.command_menu.as_mut() else {
         return;
     };
@@ -140,7 +140,7 @@ fn handle_command_menu_input(
                 command_menu.input.pop();
             }
             Key::Delete => {}
-            _ if text_input_modifier_pressed(&keys) => {}
+            _ if text_input_should_skip_for_shortcut(&keys, input, &keybinds) => {}
             _ => {
                 if let Some(inserted_text) = &input.text {
                     if !inserted_text.is_empty() && inserted_text.chars().all(is_printable_char) {

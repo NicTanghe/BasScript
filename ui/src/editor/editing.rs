@@ -62,7 +62,7 @@ fn handle_text_input(
         if input.key_code == KeyCode::Space {
             if keys.just_pressed(KeyCode::Space)
                 && !state.pending_space_insert
-                && !text_input_modifier_pressed(&keys)
+                && !text_input_should_skip_for_shortcut(&keys, input, &state.keybinds)
             {
                 state.pending_space_insert = true;
             }
@@ -79,7 +79,7 @@ fn handle_text_input(
             continue;
         }
 
-        if text_input_modifier_pressed(&keys) {
+        if text_input_should_skip_for_shortcut(&keys, input, &state.keybinds) {
             continue;
         }
 
