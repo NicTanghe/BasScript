@@ -300,48 +300,12 @@ fn handle_navigation_input(
     }
 
     if state.document_format == DocumentFormat::Canvas {
-        navigation_repeat.active_arrow = None;
-        navigation_repeat.repeat_cooldown_secs = 0.0;
         return;
     }
 
-    let previous_active_arrow = navigation_repeat.active_arrow;
-    if let Some(arrow) = just_pressed_navigation_arrow(&keys) {
-        moved |= move_cursor_by_arrow_key(
-            &mut state,
-            arrow,
-            extend_selection,
-            processed_panel_size,
-        );
-        navigation_repeat.active_arrow = Some(arrow);
-        navigation_repeat.repeat_cooldown_secs = NAVIGATION_REPEAT_INITIAL_DELAY_SECS;
-    } else {
-        let active_arrow = navigation_repeat
-            .active_arrow
-            .filter(|arrow| keys.pressed(*arrow))
-            .or_else(|| held_navigation_arrow(&keys));
-
-        if active_arrow != previous_active_arrow {
-            navigation_repeat.repeat_cooldown_secs = NAVIGATION_REPEAT_INITIAL_DELAY_SECS;
-        }
-
-        navigation_repeat.active_arrow = active_arrow;
-
-        if let Some(arrow) = active_arrow {
-            navigation_repeat.repeat_cooldown_secs -= time.delta_secs().max(0.0);
-            while navigation_repeat.repeat_cooldown_secs <= 0.0 {
-                moved |= move_cursor_by_arrow_key(
-                    &mut state,
-                    arrow,
-                    extend_selection,
-                    processed_panel_size,
-                );
-                navigation_repeat.repeat_cooldown_secs += NAVIGATION_REPEAT_INTERVAL_SECS;
-            }
-        } else {
-            navigation_repeat.repeat_cooldown_secs = 0.0;
-        }
-    }
+    moved |= repeat_navigation_arrow_input(&keys, &time, &mut navigation_repeat, |arrow| {
+        move_cursor_by_arrow_key(&mut state, arrow, extend_selection, processed_panel_size)
+    });
 
     if keys.just_pressed(KeyCode::Home) {
         let line = state.cursor.position.line;
@@ -425,6 +389,64 @@ fn held_navigation_arrow(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
     ]
     .into_iter()
     .find(|key| keys.pressed(*key))
+}
+
+fn repeat_navigation_arrow_input(
+    keys: &ButtonInput<KeyCode>,
+    time: &Time,
+    repeat: &mut NavigationRepeatState,
+    on_key: impl FnMut(KeyCode) -> bool,
+) -> bool {
+    repeat_key_input(
+        keys,
+        time,
+        repeat,
+        just_pressed_navigation_arrow,
+        held_navigation_arrow,
+        |keys, key| keys.pressed(key),
+        on_key,
+    )
+}
+
+fn repeat_key_input(
+    keys: &ButtonInput<KeyCode>,
+    time: &Time,
+    repeat: &mut NavigationRepeatState,
+    just_pressed_key: impl Fn(&ButtonInput<KeyCode>) -> Option<KeyCode>,
+    held_key: impl Fn(&ButtonInput<KeyCode>) -> Option<KeyCode>,
+    key_still_pressed: impl Fn(&ButtonInput<KeyCode>, KeyCode) -> bool,
+    mut on_key: impl FnMut(KeyCode) -> bool,
+) -> bool {
+    let previous_active_key = repeat.active_arrow;
+    let mut moved = false;
+    if let Some(key) = just_pressed_key(keys) {
+        moved |= on_key(key);
+        repeat.active_arrow = Some(key);
+        repeat.repeat_cooldown_secs = NAVIGATION_REPEAT_INITIAL_DELAY_SECS;
+    } else {
+        let active_key = repeat
+            .active_arrow
+            .filter(|key| key_still_pressed(keys, *key))
+            .or_else(|| held_key(keys));
+
+        if active_key != previous_active_key {
+            repeat.repeat_cooldown_secs = NAVIGATION_REPEAT_INITIAL_DELAY_SECS;
+        }
+
+        repeat.active_arrow = active_key;
+
+        if let Some(key) = active_key {
+            repeat.repeat_cooldown_secs -= time.delta_secs().max(0.0);
+            while repeat.repeat_cooldown_secs <= 0.0 {
+                moved |= on_key(key);
+                repeat.repeat_cooldown_secs += NAVIGATION_REPEAT_INTERVAL_SECS;
+            }
+        } else {
+            repeat.repeat_cooldown_secs = 0.0;
+        }
+    }
+
+    moved
 }
 
 fn move_cursor_by_arrow_key(

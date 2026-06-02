@@ -509,6 +509,13 @@ fn canvas_text_editable_key(key: KeyCode) -> bool {
     )
 }
 
+fn canvas_text_arrow_key(key: KeyCode) -> bool {
+    matches!(
+        key,
+        KeyCode::ArrowLeft | KeyCode::ArrowRight | KeyCode::ArrowUp | KeyCode::ArrowDown
+    )
+}
+
 fn canvas_text_font_size(zoom: f32) -> f32 {
     (FONT_SIZE * zoom.max(CANVAS_ZOOM_MIN)).clamp(7.0, 28.0)
 }
@@ -753,7 +760,9 @@ fn canvas_drag_mode_still_active(
 fn handle_canvas_text_edit_input(
     mut keyboard_inputs: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
     text_layout_query: Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+    mut navigation_repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
 ) {
     if state.document_format != DocumentFormat::Canvas {
@@ -802,6 +811,18 @@ fn handle_canvas_text_edit_input(
     let mut view_changed = false;
     let active_layout = active_canvas_text_layout(&state, &text_layout_query);
     let zoom = state.zoom;
+    let extend_selection = shift_modifier_pressed(&keys);
+
+    view_changed |= repeat_navigation_arrow_input(&keys, &time, &mut navigation_repeat, |arrow| {
+        move_canvas_text_cursor_by_key(
+            &mut state,
+            &document,
+            arrow,
+            extend_selection,
+            active_layout,
+            zoom,
+        )
+    });
 
     for key_input in keyboard_inputs.read() {
         if !key_input.state.is_pressed() {
@@ -812,12 +833,16 @@ fn handle_canvas_text_edit_input(
             continue;
         }
 
+        if canvas_text_arrow_key(key_input.key_code) {
+            continue;
+        }
+
         if canvas_text_editable_key(key_input.key_code) {
             view_changed |= move_canvas_text_cursor_by_key(
                 &mut state,
                 &document,
                 key_input.key_code,
-                shift_modifier_pressed(&keys),
+                extend_selection,
                 active_layout,
                 zoom,
             );
