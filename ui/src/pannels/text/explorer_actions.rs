@@ -174,6 +174,23 @@ fn handle_workspace_prompt_input(
         return;
     }
 
+    if paste_shortcut_just_pressed(&keys) {
+        let mut status_message = None::<String>;
+        if let Some(WorkspacePrompt::Create { input }) = state.workspace_prompt.as_mut() {
+            if let Some(text) = read_system_clipboard_text() {
+                input.push_str(&text.replace('\n', ""));
+                status_message = Some("Pasted clipboard into explorer prompt.".to_string());
+            } else {
+                status_message = Some("Clipboard is empty or unavailable.".to_string());
+            }
+        }
+        if let Some(message) = status_message {
+            state.status_message = message;
+        }
+        for _ in keyboard_inputs.read() {}
+        return;
+    }
+
     let keybinds = state.keybinds.clone();
     let Some(prompt) = state.workspace_prompt.as_mut() else {
         return;

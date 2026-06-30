@@ -1,8 +1,41 @@
+fn copy_shortcut_just_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+    shortcut_just_pressed(
+        keys,
+        ShortcutBinding::platform(KeyCode::KeyC, false),
+    )
+}
+
+fn cut_shortcut_just_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+    shortcut_just_pressed(
+        keys,
+        ShortcutBinding::platform(KeyCode::KeyX, false),
+    )
+}
+
 fn paste_shortcut_just_pressed(keys: &ButtonInput<KeyCode>) -> bool {
     shortcut_just_pressed(
         keys,
         ShortcutBinding::platform(KeyCode::KeyV, false),
     )
+}
+
+fn clipboard_shortcut_matches(keys: &ButtonInput<KeyCode>, key_code: KeyCode) -> bool {
+    [KeyCode::KeyC, KeyCode::KeyX, KeyCode::KeyV]
+        .into_iter()
+        .any(|key| key_combination_matches_binding(
+            keys,
+            key_code,
+            ShortcutBinding::platform(key, false),
+        ))
+}
+
+fn clipboard_input_matches(
+    keys: &ButtonInput<KeyCode>,
+    input: &KeyboardInput,
+    key: KeyCode,
+) -> bool {
+    input.state.is_pressed()
+        && key_combination_matches_binding(keys, input.key_code, ShortcutBinding::platform(key, false))
 }
 
 fn read_system_clipboard_text() -> Option<String> {
@@ -52,133 +85,160 @@ fn current_vim_register(state: &mut EditorState) -> Option<VimRegister> {
     Some(register)
 }
 
-#[cfg(windows)]
+#[cfg(any(target_os = "linux", windows))]
+thread_local! {
+    static ARBOARD_CLIPBOARD: std::cell::RefCell<Option<arboard::Clipboard>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(any(target_os = "linux", windows))]
+fn with_arboard_clipboard<R>(
+    mut operation: impl FnMut(&mut arboard::Clipboard) -> Result<R, arboard::Error>,
+) -> Option<R> {
+    ARBOARD_CLIPBOARD.with(|slot| {
+        let mut clipboard = slot.borrow_mut();
+        if clipboard.is_none() {
+            *clipboard = arboard::Clipboard::new().ok();
+        }
+
+        if let Some(result) = clipboard.as_mut().and_then(|clipboard| operation(clipboard).ok()) {
+            return Some(result);
+        }
+
+        *clipboard = arboard::Clipboard::new().ok();
+        clipboard
+            .as_mut()
+            .and_then(|clipboard| operation(clipboard).ok())
+    })
+}
+
+#[cfg(any(target_os = "linux", windows))]
 fn platform_clipboard_text() -> Option<String> {
-    use std::slice;
-
-    use windows_sys::Win32::System::{
-        DataExchange::{
-            CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
-        },
-        Memory::{GlobalLock, GlobalUnlock},
-        Ole::CF_UNICODETEXT,
-    };
-
-    struct ClipboardGuard;
-
-    impl Drop for ClipboardGuard {
-        fn drop(&mut self) {
-            unsafe {
-                CloseClipboard();
-            }
-        }
-    }
-
-    struct GlobalLockGuard(*mut core::ffi::c_void);
-
-    impl Drop for GlobalLockGuard {
-        fn drop(&mut self) {
-            unsafe {
-                GlobalUnlock(self.0);
-            }
-        }
-    }
-
-    unsafe {
-        let format = u32::from(CF_UNICODETEXT);
-        if IsClipboardFormatAvailable(format) == 0 {
-            return None;
-        }
-        if OpenClipboard(std::ptr::null_mut()) == 0 {
-            return None;
-        }
-        let _clipboard_guard = ClipboardGuard;
-
-        let handle = GetClipboardData(format);
-        if handle.is_null() {
-            return None;
-        }
-
-        let locked = GlobalLock(handle);
-        if locked.is_null() {
-            return None;
-        }
-        let _lock_guard = GlobalLockGuard(handle);
-
-        let wide = locked.cast::<u16>();
-        let mut len = 0;
-        while *wide.add(len) != 0 {
-            len += 1;
-        }
-
-        Some(String::from_utf16_lossy(slice::from_raw_parts(wide, len)))
-    }
+    with_arboard_clipboard(|clipboard| clipboard.get_text())
 }
 
-#[cfg(windows)]
+#[cfg(any(target_os = "linux", windows))]
 fn platform_set_clipboard_text(text: &str) -> bool {
-    use windows_sys::Win32::{
-        Foundation::GlobalFree,
-        System::{
-            DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData},
-            Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock},
-            Ole::CF_UNICODETEXT,
-        },
-    };
-
-    struct ClipboardGuard;
-
-    impl Drop for ClipboardGuard {
-        fn drop(&mut self) {
-            unsafe {
-                CloseClipboard();
-            }
-        }
-    }
-
-    unsafe {
-        if OpenClipboard(std::ptr::null_mut()) == 0 {
-            return false;
-        }
-        let _clipboard_guard = ClipboardGuard;
-
-        let mut wide: Vec<u16> = text.replace('\n', "\r\n").encode_utf16().collect();
-        wide.push(0);
-        let bytes = wide.len() * std::mem::size_of::<u16>();
-        let handle = GlobalAlloc(GMEM_MOVEABLE, bytes);
-        if handle.is_null() {
-            return false;
-        }
-
-        let locked = GlobalLock(handle);
-        if locked.is_null() {
-            GlobalFree(handle);
-            return false;
-        }
-        std::ptr::copy_nonoverlapping(wide.as_ptr(), locked.cast::<u16>(), wide.len());
-        GlobalUnlock(handle);
-
-        if EmptyClipboard() == 0 {
-            GlobalFree(handle);
-            return false;
-        }
-
-        if SetClipboardData(u32::from(CF_UNICODETEXT), handle).is_null() {
-            GlobalFree(handle);
-            return false;
-        }
-
-        true
-    }
+    with_arboard_clipboard(|clipboard| clipboard.set_text(text.to_owned())).is_some()
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(target_os = "linux", windows)))]
 fn platform_clipboard_text() -> Option<String> {
     None
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(target_os = "linux", windows)))]
 fn platform_set_clipboard_text(_text: &str) -> bool {
+    false
+}
+
+fn copy_document_selection_to_clipboard(state: &mut EditorState) -> bool {
+    let Some((start, end)) = state.selection_bounds() else {
+        state.status_message = "Nothing selected.".to_string();
+        return false;
+    };
+
+    let text = document_text_range(&state.document, start, end);
+    if text.is_empty() {
+        state.status_message = "Nothing selected.".to_string();
+        return false;
+    }
+
+    if !write_system_clipboard_text(&text) {
+        state.status_message = "Clipboard is unavailable.".to_string();
+        return false;
+    }
+
+    state.vim_register = Some(VimRegister::Characterwise(text));
+    state.status_message = "Copied selection.".to_string();
+    true
+}
+
+fn cut_document_selection_to_clipboard(state: &mut EditorState) -> Option<usize> {
+    let Some((start, end)) = state.selection_bounds() else {
+        state.status_message = "Nothing selected.".to_string();
+        return None;
+    };
+
+    let text = document_text_range(&state.document, start, end);
+    if text.is_empty() {
+        state.status_message = "Nothing selected.".to_string();
+        return None;
+    }
+
+    if !write_system_clipboard_text(&text) {
+        state.status_message = "Clipboard is unavailable.".to_string();
+        return None;
+    }
+
+    let snapshot = state.history_snapshot();
+    let next = state.document.delete_range(start, end);
+    state.set_cursor(next, true);
+    state.vim_register = Some(VimRegister::Characterwise(text));
+    state.push_undo_snapshot(snapshot);
+    state.status_message = "Cut selection.".to_string();
+
+    Some(start.line)
+}
+
+fn handle_document_clipboard_key_shortcut(
+    keys: &ButtonInput<KeyCode>,
+    state: &mut EditorState,
+    processed_panel_size: Option<Vec2>,
+    visible_lines: usize,
+) -> bool {
+    if copy_shortcut_just_pressed(keys) {
+        copy_document_selection_to_clipboard(state);
+        return true;
+    }
+
+    if cut_shortcut_just_pressed(keys) {
+        if let Some(dirty_line) = cut_document_selection_to_clipboard(state) {
+            state.reparse_with_dirty_hint(dirty_line);
+            apply_cursor_follow_scroll_policy(state, processed_panel_size, visible_lines);
+        }
+        return true;
+    }
+
+    if paste_shortcut_just_pressed(keys) {
+        if let Some(dirty_line) = paste_clipboard_into_document(state) {
+            state.reparse_with_dirty_hint(dirty_line);
+            apply_cursor_follow_scroll_policy(state, processed_panel_size, visible_lines);
+        }
+        return true;
+    }
+
+    false
+}
+
+fn handle_document_clipboard_input_shortcut(
+    keys: &ButtonInput<KeyCode>,
+    input: &KeyboardInput,
+    state: &mut EditorState,
+    processed_panel_size: Option<Vec2>,
+    visible_lines: usize,
+) -> bool {
+    if clipboard_input_matches(keys, input, KeyCode::KeyC) {
+        copy_document_selection_to_clipboard(state);
+        return true;
+    }
+
+    if clipboard_input_matches(keys, input, KeyCode::KeyX) {
+        if let Some(dirty_line) = cut_document_selection_to_clipboard(state) {
+            state.reparse_with_dirty_hint(dirty_line);
+            apply_cursor_follow_scroll_policy(state, processed_panel_size, visible_lines);
+        }
+        return true;
+    }
+
+    if clipboard_input_matches(keys, input, KeyCode::KeyV) {
+        if let Some(dirty_line) = paste_clipboard_into_document(state) {
+            state.reparse_with_dirty_hint(dirty_line);
+            apply_cursor_follow_scroll_policy(state, processed_panel_size, visible_lines);
+        }
+        return true;
+    }
+
     false
 }
 
@@ -204,6 +264,55 @@ fn paste_clipboard_into_document(state: &mut EditorState) -> Option<usize> {
     Some(dirty_line)
 }
 
+fn copy_canvas_text_selection_to_clipboard(state: &mut EditorState, document: &Document) -> bool {
+    let Some((start, end)) = state.canvas_text_selection_bounds(document) else {
+        state.status_message = "Nothing selected.".to_string();
+        return false;
+    };
+
+    let text = document_text_range(document, start, end);
+    if text.is_empty() {
+        state.status_message = "Nothing selected.".to_string();
+        return false;
+    }
+
+    if !write_system_clipboard_text(&text) {
+        state.status_message = "Clipboard is unavailable.".to_string();
+        return false;
+    }
+
+    state.vim_register = Some(VimRegister::Characterwise(text));
+    state.status_message = "Copied canvas text.".to_string();
+    true
+}
+
+fn cut_canvas_text_selection_to_clipboard(
+    state: &mut EditorState,
+    document: &mut Document,
+) -> bool {
+    let Some((start, end)) = state.canvas_text_selection_bounds(document) else {
+        state.status_message = "Nothing selected.".to_string();
+        return false;
+    };
+
+    let text = document_text_range(document, start, end);
+    if text.is_empty() {
+        state.status_message = "Nothing selected.".to_string();
+        return false;
+    }
+
+    if !write_system_clipboard_text(&text) {
+        state.status_message = "Clipboard is unavailable.".to_string();
+        return false;
+    }
+
+    let next = document.delete_range(start, end);
+    state.canvas_text_cursor.set_position(next);
+    state.canvas_text_selection_anchor = None;
+    state.vim_register = Some(VimRegister::Characterwise(text));
+    true
+}
+
 #[cfg(test)]
 mod clipboard_tests {
     use super::*;
@@ -223,5 +332,20 @@ mod clipboard_tests {
         keys.press(KeyCode::KeyV);
 
         assert!(paste_shortcut_just_pressed(&keys));
+    }
+
+    #[test]
+    fn clipboard_shortcuts_use_platform_modifier() {
+        let mut copy = ButtonInput::<KeyCode>::default();
+        copy.press(KeyCode::ControlLeft);
+        copy.press(KeyCode::KeyC);
+        assert!(copy_shortcut_just_pressed(&copy));
+        assert!(clipboard_shortcut_matches(&copy, KeyCode::KeyC));
+
+        let mut cut = ButtonInput::<KeyCode>::default();
+        cut.press(KeyCode::ControlLeft);
+        cut.press(KeyCode::KeyX);
+        assert!(cut_shortcut_just_pressed(&cut));
+        assert!(clipboard_shortcut_matches(&cut, KeyCode::KeyX));
     }
 }

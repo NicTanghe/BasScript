@@ -798,6 +798,25 @@ fn handle_canvas_text_edit_input(
         return;
     };
 
+    if copy_shortcut_just_pressed(&keys) {
+        copy_canvas_text_selection_to_clipboard(&mut state, &document);
+        for _ in keyboard_inputs.read() {}
+        return;
+    }
+
+    if cut_shortcut_just_pressed(&keys) {
+        if cut_canvas_text_selection_to_clipboard(&mut state, &mut document) {
+            if let Some(snapshot) = state.canvas_text_edit_undo_snapshot.take() {
+                state.push_undo_snapshot(snapshot);
+            }
+            if state.set_canvas_text_node_content(&node_id, document.to_text()) {
+                state.status_message = "Cut canvas text.".to_string();
+            }
+        }
+        for _ in keyboard_inputs.read() {}
+        return;
+    }
+
     if paste_shortcut_just_pressed(&keys) {
         if let Some(text) = read_system_clipboard_text() {
             state.delete_canvas_text_selection(&mut document);

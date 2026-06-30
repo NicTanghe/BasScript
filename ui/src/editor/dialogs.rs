@@ -43,9 +43,10 @@ fn text_input_should_skip_for_shortcut(
     keybinds: &KeybindSettings,
 ) -> bool {
     input.state.is_pressed()
-        && SHORTCUT_ACTIONS.iter().copied().any(|action| {
-            key_combination_matches_binding(keys, input.key_code, keybinds.binding(action))
-        })
+        && (clipboard_shortcut_matches(keys, input.key_code)
+            || SHORTCUT_ACTIONS.iter().copied().any(|action| {
+                key_combination_matches_binding(keys, input.key_code, keybinds.binding(action))
+            }))
 }
 
 fn key_combination_matches_binding(

@@ -44,6 +44,19 @@ fn handle_vim_input(
         .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
     state.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
 
+    if state.vim_mode != VimMode::Insert
+        && handle_document_clipboard_key_shortcut(
+            &keys,
+            &mut state,
+            processed_panel_size,
+            visible_lines,
+        )
+    {
+        for _ in keyboard_inputs.read() {}
+        reset_vim_repeat(&mut repeat);
+        return;
+    }
+
     if keys.just_pressed(KeyCode::Escape) {
         vim_enter_normal_mode(&mut state, true);
         reset_vim_repeat(&mut repeat);
@@ -519,6 +532,14 @@ fn handle_vim_normal_command(
     }
 
     if keys.just_pressed(KeyCode::KeyY) {
+        if let Some((start, end)) = state.selection_bounds() {
+            let text = document_text_range(&state.document, start, end);
+            set_vim_register_and_clipboard(state, VimRegister::Characterwise(text));
+            state.vim_pending_operator = None;
+            state.status_message = "Yanked selection.".to_string();
+            return true;
+        }
+
         if state.vim_pending_operator == Some(VimPendingOperator::Yank) {
             state.vim_pending_operator = None;
             vim_yank_current_line(state);
@@ -530,6 +551,15 @@ fn handle_vim_normal_command(
     }
 
     if keys.just_pressed(KeyCode::KeyD) {
+        if state.selection_bounds().is_some() {
+            state.vim_pending_operator = None;
+            if let Some(dirty_line) = vim_delete_normal_selection(state) {
+                state.reparse_with_dirty_hint(dirty_line);
+                apply_cursor_follow_scroll_policy(state, processed_panel_size, visible_lines);
+            }
+            return true;
+        }
+
         if state.vim_pending_operator == Some(VimPendingOperator::Delete) {
             state.vim_pending_operator = None;
             if let Some(dirty_line) = vim_delete_current_line(state) {
@@ -544,6 +574,23 @@ fn handle_vim_normal_command(
     }
 
     false
+}
+
+fn vim_delete_normal_selection(state: &mut EditorState) -> Option<usize> {
+    let (start, end) = state.selection_bounds()?;
+    let text = document_text_range(&state.document, start, end);
+    if text.is_empty() {
+        state.status_message = "Nothing selected.".to_string();
+        return None;
+    }
+
+    let snapshot = state.history_snapshot();
+    let next = state.document.delete_range(start, end);
+    set_vim_register_and_clipboard(state, VimRegister::Characterwise(text));
+    state.set_cursor(next, true);
+    state.push_undo_snapshot(snapshot);
+    state.status_message = "Deleted selection.".to_string();
+    Some(start.line)
 }
 
 fn handle_vim_visual_command(

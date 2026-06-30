@@ -26,11 +26,12 @@ fn handle_text_input(
         .find(|(panel, _)| panel.kind == PanelKind::Processed)
         .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
 
-    if paste_shortcut_just_pressed(&keys) {
-        if let Some(dirty_line) = paste_clipboard_into_document(&mut state) {
-            state.reparse_with_dirty_hint(dirty_line);
-            apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
-        }
+    if handle_document_clipboard_key_shortcut(
+        &keys,
+        &mut state,
+        processed_panel_size,
+        visible_lines,
+    ) {
         for _ in keyboard_inputs.read() {}
         return;
     }
@@ -67,6 +68,16 @@ fn handle_text_input(
                 edited = true;
             }
             continue;
+        }
+
+        if handle_document_clipboard_input_shortcut(
+            &keys,
+            input,
+            &mut state,
+            processed_panel_size,
+            visible_lines,
+        ) {
+            return;
         }
 
         if input.key_code == KeyCode::Space {

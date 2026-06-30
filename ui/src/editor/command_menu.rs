@@ -121,6 +121,19 @@ fn handle_command_menu_input(
         return;
     }
 
+    if paste_shortcut_just_pressed(&keys) {
+        let status_message;
+        if let Some(text) = read_system_clipboard_text() {
+            command_menu.input.push_str(&text.replace('\n', " "));
+            status_message = "Pasted clipboard into command.".to_string();
+        } else {
+            status_message = "Clipboard is empty or unavailable.".to_string();
+        }
+        state.status_message = status_message;
+        for _ in keyboard_inputs.read() {}
+        return;
+    }
+
     enum CommandMenuAction {
         Run(String),
     }
