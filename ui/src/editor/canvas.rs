@@ -798,6 +798,26 @@ fn handle_canvas_text_edit_input(
         return;
     };
 
+    if paste_shortcut_just_pressed(&keys) {
+        if let Some(text) = read_system_clipboard_text() {
+            state.delete_canvas_text_selection(&mut document);
+            let next = document.insert_text(state.canvas_text_cursor.position, &text);
+            state.canvas_text_cursor.set_position(next);
+            state.canvas_text_selection_anchor = None;
+            state.vim_register = Some(VimRegister::Characterwise(text));
+            if let Some(snapshot) = state.canvas_text_edit_undo_snapshot.take() {
+                state.push_undo_snapshot(snapshot);
+            }
+            if state.set_canvas_text_node_content(&node_id, document.to_text()) {
+                state.status_message = "Pasted clipboard.".to_string();
+            }
+        } else {
+            state.status_message = "Clipboard is empty or unavailable.".to_string();
+        }
+        for _ in keyboard_inputs.read() {}
+        return;
+    }
+
     if platform_shortcut_modifier_pressed(&keys) && keys.just_pressed(KeyCode::KeyA) {
         let end = canvas_text_end_position(&document.to_text());
         state.canvas_text_cursor.set_position(end);

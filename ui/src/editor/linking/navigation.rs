@@ -1,6 +1,6 @@
 use basscript_core::{
-    EntityDocument, is_valid_target_key, scaffold_entity, script_link_contains_visible_column,
-    script_link_visible_column_range,
+    EntityDocument, ScriptLinkSyntax, is_valid_target_key, scaffold_entity,
+    script_link_contains_visible_column, script_link_visible_column_range,
 };
 
 impl EditorState {
@@ -10,10 +10,14 @@ impl EditorState {
     }
 
     fn ensure_current_script_link_targets_cached(&mut self) {
-        let targets = self
+        let links = self
             .parsed
             .iter()
-            .flat_map(|line| line.script_links.iter().map(|link| link.target.clone()))
+            .flat_map(|line| line.script_links.iter().cloned())
+            .collect::<Vec<_>>();
+        let targets = links
+            .iter()
+            .map(|link| link.target.clone())
             .collect::<BTreeSet<_>>();
 
         self.script_link_target_types
@@ -21,7 +25,8 @@ impl EditorState {
         self.missing_script_link_targets
             .retain(|target| targets.contains(target));
 
-        for target in targets {
+        for link in links {
+            let target = link.target.clone();
             if self.script_link_target_types.contains_key(&target)
                 || self.missing_script_link_targets.contains(&target)
             {
@@ -29,7 +34,7 @@ impl EditorState {
             }
 
             let entity_type = self
-                .resolve_script_target_path(&target)
+                .resolve_script_link_path(&link)
                 .ok()
                 .and_then(|path| EntityDocument::load(&path).ok())
                 .map(|document| document.metadata.entity_type.trim().to_ascii_lowercase());
@@ -43,11 +48,11 @@ impl EditorState {
     }
 
     fn open_script_link_at(&mut self, position: Position) -> bool {
-        let Some(target) = self.script_link_target_at(position).map(str::to_string) else {
+        let Some(link) = self.script_link_at(position).cloned() else {
             return false;
         };
 
-        match self.resolve_script_target_path(&target) {
+        match self.resolve_script_link_path(&link) {
             Ok(path) => {
                 let metadata_warning = EntityDocument::load(&path).err();
                 self.load_from_path(path.clone());
@@ -64,6 +69,22 @@ impl EditorState {
         }
 
         true
+    }
+
+    fn resolve_script_link_path(&self, link: &ScriptLink) -> Result<PathBuf, String> {
+        match self.resolve_script_target_path(&link.target) {
+            Ok(path) => Ok(path),
+            Err(target_error) => {
+                let can_resolve_by_mention =
+                    link.syntax == ScriptLinkSyntax::TargetOnly && link.label != link.target;
+                if !can_resolve_by_mention {
+                    return Err(target_error);
+                }
+
+                self.resolve_script_mention_path(&link.label)
+                    .map_err(|_| target_error)
+            }
+        }
     }
 
     fn resolve_script_target_path(&self, target: &str) -> Result<PathBuf, String> {
@@ -110,6 +131,59 @@ impl EditorState {
         }
     }
 
+    fn resolve_script_mention_path(&self, mention: &str) -> Result<PathBuf, String> {
+        let lookup = normalize_script_mention(mention);
+        if lookup.is_empty() {
+            return Err(format!("Unresolved mention `{mention}`."));
+        }
+
+        let existing = self
+            .script_entity_candidate_files()
+            .into_iter()
+            .filter_map(|path| {
+                let document = EntityDocument::load(&path).ok()?;
+                entity_document_matches_mention(&document, &lookup)
+                    .then(|| path.canonicalize().unwrap_or(path))
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        match existing.as_slice() {
+            [] => Err(format!("No entity name or alias matches `{mention}`.")),
+            [path] => Ok(path.clone()),
+            many => Err(format!(
+                "Ambiguous mention `{mention}`. Multiple entity files match: {}.",
+                many.iter()
+                    .map(|path| status_path_label(path))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+        }
+    }
+
+    fn script_entity_candidate_files(&self) -> BTreeSet<PathBuf> {
+        let mut candidates = BTreeSet::<PathBuf>::new();
+        if let Some(parent) = self.paths.load_path.parent()
+            && let Ok(entries) = fs::read_dir(parent)
+        {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if is_markdown_entity_file(&path) {
+                    candidates.insert(path);
+                }
+            }
+        }
+
+        for entry in &self.workspace_files {
+            if is_markdown_entity_file(&entry.path) {
+                candidates.insert(entry.path.clone());
+            }
+        }
+
+        candidates
+    }
+
     fn default_script_link_root(&self) -> PathBuf {
         self.paths
             .load_path
@@ -127,10 +201,6 @@ impl EditorState {
         })
     }
 
-    fn script_link_target_at(&self, position: Position) -> Option<&str> {
-        self.script_link_at(position).map(|link| link.target.as_str())
-    }
-
     fn hovered_processed_link_at(&self, position: Position) -> Option<HoveredProcessedLink> {
         let link = self.script_link_at(position)?;
         let visible = script_link_visible_column_range(link);
@@ -142,12 +212,44 @@ impl EditorState {
     }
 }
 
+fn entity_document_matches_mention(document: &EntityDocument, lookup: &str) -> bool {
+    normalize_script_mention(&document.metadata.name) == lookup
+        || document
+            .metadata
+            .aliases
+            .iter()
+            .any(|alias| normalize_script_mention(alias) == lookup)
+}
+
+fn normalize_script_mention(input: &str) -> String {
+    input
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn is_matching_link_target_file(path: &Path, target: &str) -> bool {
+    if !is_markdown_entity_file(path) {
+        return false;
+    }
+
+    path.file_stem().and_then(|stem| stem.to_str()) == Some(target)
+}
+
+fn is_markdown_entity_file(path: &Path) -> bool {
     let extension = path
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| ext.to_ascii_lowercase());
-    let stem = path.file_stem().and_then(|stem| stem.to_str());
 
-    stem == Some(target) && matches!(extension.as_deref(), Some("md") | Some("markdown"))
+    matches!(extension.as_deref(), Some("md") | Some("markdown"))
 }

@@ -32,6 +32,8 @@ include!("../pannels/text/scrolling/modes/ctrl_left_drag.rs");
 include!("../pannels/text/scrolling/modes/middle_autoscroll.rs");
 // Native file dialog and shortcut handling.
 include!("dialogs.rs");
+// System clipboard read helpers for paste commands.
+include!("clipboard.rs");
 // Optional Vim-style modal editing commands.
 include!("vim.rs");
 // Text editing/navigation/mouse interaction systems.

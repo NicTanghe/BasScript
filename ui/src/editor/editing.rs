@@ -25,6 +25,16 @@ fn handle_text_input(
         .iter()
         .find(|(panel, _)| panel.kind == PanelKind::Processed)
         .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
+
+    if paste_shortcut_just_pressed(&keys) {
+        if let Some(dirty_line) = paste_clipboard_into_document(&mut state) {
+            state.reparse_with_dirty_hint(dirty_line);
+            apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
+        }
+        for _ in keyboard_inputs.read() {}
+        return;
+    }
+
     let mut edited = false;
     let mut dirty_from_line = None::<usize>;
     let mut undo_snapshot = None::<EditorHistorySnapshot>;

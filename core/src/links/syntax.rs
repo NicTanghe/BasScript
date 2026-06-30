@@ -56,11 +56,11 @@ pub fn extract_script_links(input: &str) -> Vec<ScriptLink> {
             continue;
         }
 
-        if is_valid_target_key(&label) {
+        if let Some(target) = target_key_from_bare_label(&label) {
             links.push(ScriptLink {
                 span: index..label_end + 1,
                 label: label.clone(),
-                target: label,
+                target,
                 syntax: ScriptLinkSyntax::TargetOnly,
             });
             index = label_end + 1;
@@ -126,6 +126,67 @@ pub fn is_valid_target_key(target: &str) -> bool {
         part.chars()
             .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
     })
+}
+
+fn target_key_from_bare_label(label: &str) -> Option<String> {
+    if is_valid_target_key(label) {
+        return Some(label.to_owned());
+    }
+
+    if !looks_like_title_case_mention(label) {
+        return None;
+    }
+
+    let target = slugify_bare_label(label)?;
+    is_valid_target_key(&target).then_some(target)
+}
+
+fn looks_like_title_case_mention(label: &str) -> bool {
+    let trimmed = label.trim();
+    if trimmed.is_empty() || trimmed != label {
+        return false;
+    }
+
+    let has_upper = trimmed.chars().any(|ch| ch.is_ascii_uppercase());
+    let has_lower = trimmed.chars().any(|ch| ch.is_ascii_lowercase());
+    if !(has_upper && has_lower) {
+        return false;
+    }
+
+    trimmed.split_whitespace().all(|word| {
+        word.chars()
+            .find(|ch| ch.is_ascii_alphabetic())
+            .is_some_and(|ch| ch.is_ascii_uppercase())
+    })
+}
+
+fn slugify_bare_label(label: &str) -> Option<String> {
+    let mut target = String::new();
+    let mut previous_was_separator = true;
+
+    for ch in label.chars() {
+        if ch.is_ascii_alphanumeric() {
+            target.push(ch.to_ascii_lowercase());
+            previous_was_separator = false;
+            continue;
+        }
+
+        if matches!(ch, ' ' | '\t' | '-' | '_' | '\'' | '.') {
+            if !previous_was_separator {
+                target.push('-');
+                previous_was_separator = true;
+            }
+            continue;
+        }
+
+        return None;
+    }
+
+    while target.ends_with('-') {
+        target.pop();
+    }
+
+    (!target.is_empty()).then_some(target)
 }
 
 pub fn script_link_visible_column_range(link: &ScriptLink) -> RangeInclusive<usize> {

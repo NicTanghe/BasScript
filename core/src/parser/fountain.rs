@@ -1,4 +1,5 @@
 use crate::buffer::Document;
+use crate::links::{extract_script_links, render_script_link_text};
 use crate::model::LineKind;
 
 use super::shared::{line_is_only_image_embed, parsed_line};
@@ -74,6 +75,40 @@ fn is_transition(line: &str) -> bool {
 }
 
 fn is_character(line: &str) -> bool {
+    if is_character_cue_text(line) {
+        return true;
+    }
+
+    linked_character_cue_text(line)
+        .map(|rendered| is_character_cue_text(&rendered.to_uppercase()))
+        .unwrap_or(false)
+}
+
+fn linked_character_cue_text(line: &str) -> Option<String> {
+    let links = extract_script_links(line);
+    let [link] = links.as_slice() else {
+        return None;
+    };
+
+    if !link.label.chars().any(|ch| ch.is_ascii_uppercase()) {
+        return None;
+    }
+
+    let chars = line.chars().collect::<Vec<_>>();
+    if !chars[..link.span.start].iter().all(|ch| ch.is_whitespace()) {
+        return None;
+    }
+
+    let after = chars[link.span.end..].iter().collect::<String>();
+    let trimmed_after = after.trim();
+    if !trimmed_after.is_empty() && !is_parenthetical(trimmed_after) {
+        return None;
+    }
+
+    Some(render_script_link_text(line).text)
+}
+
+fn is_character_cue_text(line: &str) -> bool {
     if line.chars().count() > 32 {
         return false;
     }
@@ -124,6 +159,41 @@ mod tests {
 
         assert_eq!(parsed[0].kind, LineKind::SceneHeading);
         assert_eq!(parsed[1].kind, LineKind::Action);
+    }
+
+    #[test]
+    fn linked_title_case_character_cue_starts_dialogue() {
+        let doc = Document::from_text("[Eoghan]\nIt is just text.");
+        let parsed = parse(&doc);
+
+        assert_eq!(parsed[0].kind, LineKind::Character);
+        assert_eq!(parsed[0].script_links.len(), 1);
+        assert_eq!(parsed[0].script_links[0].label, "Eoghan");
+        assert_eq!(parsed[0].script_links[0].target, "eoghan");
+        assert_eq!(parsed[1].kind, LineKind::Dialogue);
+    }
+
+    #[test]
+    fn linked_mentions_with_connective_remain_action() {
+        let doc = Document::from_text("EXT. forest road.\n\n[Eoghan] and [Thorin]\nim pretty sure");
+        let parsed = parse(&doc);
+
+        assert_eq!(parsed[2].kind, LineKind::Action);
+        assert_eq!(parsed[2].script_links.len(), 2);
+        assert_eq!(parsed[3].kind, LineKind::Action);
+    }
+
+    #[test]
+    fn linked_mention_inside_action_sentence_remains_action() {
+        let doc = Document::from_text(
+            "EXT. forest road.\n\n[Eoghan] and [Thorin] are dilly dallying along the forrest road\nwhen suddenly [Elizah] appears.",
+        );
+        let parsed = parse(&doc);
+
+        assert_eq!(parsed[2].kind, LineKind::Action);
+        assert_eq!(parsed[3].kind, LineKind::Action);
+        assert_eq!(parsed[3].script_links.len(), 1);
+        assert_eq!(parsed[3].script_links[0].target, "elizah");
     }
 
     #[test]

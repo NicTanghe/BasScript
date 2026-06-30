@@ -1,4 +1,4 @@
 (
 	workspace_sidebar_visible: true,
-	top_menu_collapsed: true,
+	top_menu_collapsed: false,
 )

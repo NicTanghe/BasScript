@@ -348,9 +348,12 @@ fn canvas_vim_handle_normal_command(
                 .position
                 .line
                 .min(document.line_count().saturating_sub(1));
-            state.vim_register = Some(VimRegister::Linewise(
+            set_vim_register_and_clipboard(
+                state,
+                VimRegister::Linewise(
                 document.line(line).unwrap_or("").to_string(),
-            ));
+                ),
+            );
             state.status_message = "Yanked canvas line.".to_string();
         } else {
             state.vim_pending_operator = Some(VimPendingOperator::Yank);
@@ -393,11 +396,12 @@ fn canvas_vim_handle_visual_command(
             return true;
         };
         let text = document_text_range(document, start, end);
-        state.vim_register = Some(if state.vim_mode == VimMode::VisualLine {
+        let register = if state.vim_mode == VimMode::VisualLine {
             VimRegister::Linewise(text)
         } else {
             VimRegister::Characterwise(text)
-        });
+        };
+        set_vim_register_and_clipboard(state, register);
         canvas_vim_enter_normal_mode(state, true);
         state.status_message = "Yanked canvas selection.".to_string();
         return true;
@@ -436,15 +440,15 @@ fn canvas_delete_current_text_line(state: &mut EditorState, document: &mut Docum
         }
     };
     let deleted = document_text_range(document, start, end);
-    state.vim_register = Some(VimRegister::Linewise(deleted));
+    set_vim_register_and_clipboard(state, VimRegister::Linewise(deleted));
     let next = document.delete_range(start, end);
     state.canvas_text_cursor.set_position(next);
     state.canvas_text_selection_anchor = None;
 }
 
 fn canvas_paste_vim_register(state: &mut EditorState, document: &mut Document) -> bool {
-    let Some(register) = state.vim_register.clone() else {
-        state.status_message = "Vim register is empty.".to_string();
+    let Some(register) = current_vim_register(state) else {
+        state.status_message = "Vim register and clipboard are empty.".to_string();
         return false;
     };
 
@@ -699,7 +703,7 @@ fn vim_yank_current_line(state: &mut EditorState) {
         .line
         .min(state.document.line_count().saturating_sub(1));
     let text = state.document.line(line).unwrap_or("").to_string();
-    state.vim_register = Some(VimRegister::Linewise(text));
+    set_vim_register_and_clipboard(state, VimRegister::Linewise(text));
     state.status_message = "Yanked line.".to_string();
 }
 
@@ -707,7 +711,7 @@ fn vim_yank_visual_selection(state: &mut EditorState) {
     match state.vim_mode {
         VimMode::VisualLine => {
             let text = vim_linewise_selection_text(state);
-            state.vim_register = Some(VimRegister::Linewise(text));
+            set_vim_register_and_clipboard(state, VimRegister::Linewise(text));
             state.status_message = "Yanked lines.".to_string();
         }
         VimMode::VisualChar => {
@@ -716,7 +720,7 @@ fn vim_yank_visual_selection(state: &mut EditorState) {
                 return;
             };
             let text = document_text_range(&state.document, start, end);
-            state.vim_register = Some(VimRegister::Characterwise(text));
+            set_vim_register_and_clipboard(state, VimRegister::Characterwise(text));
             state.status_message = "Yanked selection.".to_string();
         }
         VimMode::Normal | VimMode::Insert => {}
@@ -779,7 +783,7 @@ fn vim_delete_current_line(state: &mut EditorState) -> Option<usize> {
         );
     }
 
-    state.vim_register = Some(VimRegister::Linewise(text));
+    set_vim_register_and_clipboard(state, VimRegister::Linewise(text));
     state.push_undo_snapshot(snapshot);
     state.status_message = "Deleted line.".to_string();
     Some(dirty_line)
@@ -807,7 +811,7 @@ fn vim_delete_visual_selection(state: &mut EditorState) -> Option<usize> {
 
     let snapshot = state.history_snapshot();
     let next = state.document.delete_range(start, end);
-    state.vim_register = Some(register);
+    set_vim_register_and_clipboard(state, register);
     state.set_cursor(next, true);
     state.push_undo_snapshot(snapshot);
     state.status_message = "Deleted selection.".to_string();
@@ -815,8 +819,8 @@ fn vim_delete_visual_selection(state: &mut EditorState) -> Option<usize> {
 }
 
 fn vim_paste_register(state: &mut EditorState) -> Option<usize> {
-    let Some(register) = state.vim_register.clone() else {
-        state.status_message = "Vim register is empty.".to_string();
+    let Some(register) = current_vim_register(state) else {
+        state.status_message = "Vim register and clipboard are empty.".to_string();
         return None;
     };
 

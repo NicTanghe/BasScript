@@ -60,6 +60,24 @@ fn extracts_direct_and_labelled_links() {
 }
 
 #[test]
+fn extracts_title_case_bare_mentions_as_slug_targets() {
+    let links = extract_script_links("[Eoghan] meets [Thorin Oakenshield].");
+
+    assert_eq!(links.len(), 2);
+    assert_eq!(links[0].label, "Eoghan");
+    assert_eq!(links[0].target, "eoghan");
+    assert_eq!(links[0].syntax, ScriptLinkSyntax::TargetOnly);
+    assert_eq!(links[1].label, "Thorin Oakenshield");
+    assert_eq!(links[1].target, "thorin-oakenshield");
+}
+
+#[test]
+fn ignores_all_caps_fountain_bracket_notes_as_bare_mentions() {
+    let links = extract_script_links("INT. HALLWAY - NIGHT [CONTINUOUS]");
+    assert!(links.is_empty());
+}
+
+#[test]
 fn ignores_non_slug_targets() {
     let links = extract_script_links("Ignore [site](https://example.com) and [not a target].");
     assert!(links.is_empty());
