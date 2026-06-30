@@ -348,12 +348,8 @@ fn canvas_vim_handle_normal_command(
                 .position
                 .line
                 .min(document.line_count().saturating_sub(1));
-            set_vim_register_and_clipboard(
-                state,
-                VimRegister::Linewise(
-                document.line(line).unwrap_or("").to_string(),
-                ),
-            );
+            let text = document.line(line).unwrap_or("").to_string();
+            set_vim_register_and_clipboard(state, VimRegister::Linewise(text));
             state.status_message = "Yanked canvas line.".to_string();
         } else {
             state.vim_pending_operator = Some(VimPendingOperator::Yank);
