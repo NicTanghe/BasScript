@@ -125,10 +125,12 @@ impl EditorState {
                     default_expanded_workspace_folders(&self.workspace_folders, &self.workspace_files);
                 self.sync_workspace_active_file();
                 self.normalize_workspace_selected_row();
+                let story_index_status = self.open_story_index_for_workspace(&normalized_root);
                 self.status_message = format!(
-                    "Opened workspace {} ({} files).",
+                    "Opened workspace {} ({} files). {}",
                     normalized_root.display(),
-                    self.workspace_files.len()
+                    self.workspace_files.len(),
+                    story_index_status
                 );
             }
             Err(error) => {
@@ -137,6 +139,7 @@ impl EditorState {
                 self.workspace_active_file = None;
                 self.workspace_selected_row = None;
                 self.workspace_expanded_folders.clear();
+                self.story_index = None;
                 self.status_message = format!(
                     "Workspace scan failed for {}: {error}",
                     normalized_root.display()

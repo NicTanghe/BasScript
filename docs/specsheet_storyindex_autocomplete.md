@@ -57,7 +57,7 @@ Epic Q - Story Index Database
 
 Q1. Story index storage
 
-Status: todo
+Status: implemented v1
 
 Create one persistent local Story Index Database per workspace.
 

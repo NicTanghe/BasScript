@@ -2,6 +2,8 @@
 include!("core.rs");
 // Canvas document state, viewport helpers, and canvas panel components.
 include!("canvas.rs");
+// Story index database workspace wiring.
+include!("story_index.rs");
 // Status bar formatting and layout.
 include!("status_line.rs");
 // In-app command menu prompt and command dispatch.

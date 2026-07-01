@@ -66,6 +66,7 @@ impl EditorState {
         } else {
             String::new()
         };
+        let story_index_label = self.story_index_visible_label();
 
         if self.document_format == DocumentFormat::Canvas {
             let canvas_label = self.canvas_document.as_ref().map_or_else(
@@ -78,10 +79,11 @@ impl EditorState {
                 |canvas| format!("{} nodes, {} edges", canvas.nodes.len(), canvas.edges.len()),
             );
             return format!(
-                "{}{}{} | format: {} | {} | load: {} | save: {}",
+                "{}{}{}{} | format: {} | {} | load: {} | save: {}",
                 self.status_message,
                 vim_label,
                 command_label,
+                story_index_label,
                 document_format_label(self.document_format),
                 canvas_label,
                 status_path_label(&self.paths.load_path),
@@ -90,10 +92,11 @@ impl EditorState {
         }
 
         format!(
-            "{}{}{} | format: {} | line {}, col {} | load: {} | save: {}",
+            "{}{}{}{} | format: {} | line {}, col {} | load: {} | save: {}",
             self.status_message,
             vim_label,
             command_label,
+            story_index_label,
             document_format_label(self.document_format),
             self.cursor.position.line + 1,
             self.cursor.position.column + 1,
