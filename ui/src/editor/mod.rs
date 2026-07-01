@@ -4,6 +4,8 @@ include!("core.rs");
 include!("canvas.rs");
 // Story index database workspace wiring.
 include!("story_index.rs");
+// Story query sheet overlay and result formatting.
+include!("story_query_sheet.rs");
 // Status bar formatting and layout.
 include!("status_line.rs");
 // In-app command menu prompt and command dispatch.

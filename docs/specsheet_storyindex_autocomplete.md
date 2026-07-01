@@ -181,7 +181,7 @@ Acceptance
 
 Q5. Appearance records
 
-Status: todo
+Status: implemented v1
 
 Index where entities appear in scripts and canvases.
 
@@ -230,7 +230,7 @@ Acceptance
 
 Q6. Query API
 
-Status: todo
+Status: implemented v1
 
 Expose story queries through a core/index API without Bevy UI types.
 
@@ -260,6 +260,67 @@ Acceptance
 - The UI can ask for all scenes shared by Eoghan and another character and receive ordered scene results.
 - The UI can ask for places Eoghan has been and receive places grouped by scene.
 - Query code can be unit-tested without launching the Bevy app.
+
+Q6.5. Story query sheet GUI
+
+Status: implemented v1
+
+Provide a visible story-query workspace for building common Story Index searches and previewing structured results as printable A4-style sheets.
+
+Entry point
+
+- Add a Story Query Sheet option to the top bar shown by `Ctrl + B`.
+- The option opens a dedicated window or panel without replacing the active script editor.
+- Opening the window keeps the current editor context available, including current scene, selected entity, hovered link, and active workspace.
+- The window can be closed without changing the active document or query state.
+
+Layout
+
+- The main result preview is a central sheet area styled as A4 pages.
+- A visible menu/control area sits next to the sheet and remains available while viewing results.
+- The menu includes query type, entity selectors, scene selector, location selector where relevant, output format, and refresh/run controls.
+- The sheet view supports multi-page results when the output is longer than one A4 page.
+- Empty, stale, partial, and failed query states are shown on the sheet area in a clear structured way.
+
+Query builder
+
+- The first version should use explicit controls and autocomplete-backed selectors, not natural-language parsing.
+- Character, scene, location, prop, object, and entity selectors use the Story Index autocomplete candidate source.
+- Supported query templates include:
+  - all dialogue by one selected character
+  - all dialogue between two selected characters
+  - all dialogue between two selected characters at a selected location or scene
+  - all mentioned props or objects in the selected scene
+  - all props or objects in the current scene
+  - all appearances of one selected entity
+- The design should allow more query templates later without rebuilding the window.
+
+Dialogue output
+
+- Dialogue-related results are rendered as a Fountain-style script extract.
+- Dialogue extracts preserve speaker cues, parentheticals, dialogue lines, and enough scene heading context to make the extract readable.
+- Dialogue between two characters should include only the relevant dialogue exchange blocks, grouped by scene in script order.
+- Dialogue by one character should include that character's spoken lines with scene context.
+- Dialogue filtered by location should include only scenes matching the selected location or scene.
+- Each extract block keeps navigation metadata back to the source file and line.
+
+Non-dialogue output
+
+- Non-dialogue results are rendered as structured Markdown-style output.
+- Props and objects in a scene are grouped by entity, with occurrence lines and snippets where available.
+- Entity appearances include role, source path, scene, line number, and snippet where useful.
+- Results preserve story/script order where that order matters.
+
+Acceptance
+
+- Pressing `Ctrl + B` reveals the top bar, and the top bar contains a Story Query Sheet option.
+- Choosing Story Query Sheet opens the query window or panel.
+- The user can select Eoghan and generate a Fountain-style sheet of all Eoghan dialogue.
+- The user can select Eoghan plus another character and generate a Fountain-style sheet of their shared dialogue.
+- The user can further filter that dialogue by scene or location.
+- The user can choose a scene and generate a Markdown-style sheet of mentioned props or objects.
+- The sheet preview looks like centered A4 pages, with controls visible beside it.
+- Query results can navigate back to the original source lines.
 
 Q7. Index consistency and performance
 

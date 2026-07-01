@@ -23,7 +23,11 @@ fn handle_vim_input(
         return;
     }
 
-    if state.workspace_prompt.is_some() || state.command_menu.is_some() || state.workspace_focused {
+    if state.workspace_prompt.is_some()
+        || state.command_menu.is_some()
+        || state.story_query_sheet.open
+        || state.workspace_focused
+    {
         reset_vim_repeat(&mut repeat);
         return;
     }

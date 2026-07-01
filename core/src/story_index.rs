@@ -9,11 +9,16 @@ use std::{
 use crate::links::EntityDocument;
 use rusqlite::{Connection, OptionalExtension, params};
 
+mod appearance_records;
+mod query;
 mod scene_records;
+use appearance_records::build_appearance_index;
+pub use appearance_records::{StoryIndexAppearanceRecord, StoryIndexAppearanceRole};
+pub use query::{StoryIndexEntityRecord, StoryIndexPlaceVisit};
 pub use scene_records::StoryIndexSceneRecord;
 use scene_records::build_scene_index;
 
-pub const STORY_INDEX_SCHEMA_VERSION: i64 = 4;
+pub const STORY_INDEX_SCHEMA_VERSION: i64 = 5;
 pub const STORY_INDEX_DIR_NAME: &str = ".basscript";
 pub const STORY_INDEX_DATABASE_NAME: &str = "story-index.sqlite3";
 
@@ -83,6 +88,7 @@ pub struct StoryIndexScanReport {
     pub entity_error_count: usize,
     pub duplicate_entity_target_count: usize,
     pub scene_count: usize,
+    pub appearance_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -180,6 +186,7 @@ impl StoryIndexDatabase {
         let files = collect_indexable_workspace_files(&self.workspace_root)?;
         let entity_index = build_entity_index(&files)?;
         let scene_index = build_scene_index(&files)?;
+        let appearance_index = build_appearance_index(&files, &scene_index, &entity_index)?;
         let mut connection = Connection::open(&self.database_path)?;
         let previous = load_stored_indexed_files(&connection)?;
         let now = current_unix_seconds() as i64;
@@ -226,6 +233,7 @@ impl StoryIndexDatabase {
 
         replace_entity_index(&transaction, &entity_index, now)?;
         replace_scene_index(&transaction, &scene_index, now)?;
+        replace_appearance_index(&transaction, &appearance_index, now)?;
         transaction.execute(
             "INSERT OR REPLACE INTO story_index_meta (key, value) VALUES ('last_file_scan_at_unix_seconds', ?1);",
             params![now.to_string()],
@@ -236,6 +244,10 @@ impl StoryIndexDatabase {
         )?;
         transaction.execute(
             "INSERT OR REPLACE INTO story_index_meta (key, value) VALUES ('last_scene_scan_at_unix_seconds', ?1);",
+            params![now.to_string()],
+        )?;
+        transaction.execute(
+            "INSERT OR REPLACE INTO story_index_meta (key, value) VALUES ('last_appearance_scan_at_unix_seconds', ?1);",
             params![now.to_string()],
         )?;
         transaction.commit()?;
@@ -252,6 +264,7 @@ impl StoryIndexDatabase {
             entity_error_count: entity_index.errors.len(),
             duplicate_entity_target_count: entity_index.duplicate_target_count,
             scene_count: scene_index.len(),
+            appearance_count: appearance_index.len(),
         })
     }
 
@@ -419,7 +432,30 @@ fn initialize_database(workspace_root: &Path, database_path: &Path) -> Result<()
         CREATE INDEX IF NOT EXISTS story_index_scenes_normalized_heading_idx
             ON story_index_scenes (normalized_heading);
         CREATE INDEX IF NOT EXISTS story_index_scenes_script_order_idx
-            ON story_index_scenes (script_order);",
+            ON story_index_scenes (script_order);
+        CREATE TABLE IF NOT EXISTS story_index_appearances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target TEXT NOT NULL,
+            entity_type TEXT,
+            entity_name TEXT,
+            source_path TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            scene_key TEXT,
+            line INTEGER NOT NULL,
+            column INTEGER NOT NULL,
+            line_kind TEXT NOT NULL,
+            appearance_role TEXT NOT NULL,
+            raw_snippet TEXT NOT NULL,
+            indexed_at_unix_seconds INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS story_index_appearances_target_idx
+            ON story_index_appearances (target);
+        CREATE INDEX IF NOT EXISTS story_index_appearances_scene_key_idx
+            ON story_index_appearances (scene_key);
+        CREATE INDEX IF NOT EXISTS story_index_appearances_role_idx
+            ON story_index_appearances (appearance_role);
+        CREATE INDEX IF NOT EXISTS story_index_appearances_source_line_idx
+            ON story_index_appearances (source_path, line);",
     )?;
     transaction.execute(
         "INSERT OR IGNORE INTO story_index_meta (key, value) VALUES ('schema_version', ?1);",
@@ -499,7 +535,7 @@ fn build_entity_index(files: &[IndexedWorkspaceFile]) -> Result<EntityIndexBuild
             continue;
         }
 
-        match EntityDocument::from_markdown(&file.path, &markdown) {
+        match EntityDocument::from_markdown_for_index(&file.path, &markdown) {
             Ok(document) => parsed.push(IndexedEntityRecord {
                 document,
                 relative_path: file.relative_path.clone(),
@@ -767,6 +803,69 @@ fn scene_record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoryIndex
         script_order: row.get::<_, i64>(8)?.max(0) as usize,
         location_text: row.get(9)?,
         time_of_day_text: row.get(10)?,
+    })
+}
+
+fn replace_appearance_index(
+    connection: &Connection,
+    appearances: &[StoryIndexAppearanceRecord],
+    indexed_at_unix_seconds: i64,
+) -> Result<(), StoryIndexError> {
+    connection.execute("DELETE FROM story_index_appearances;", [])?;
+
+    for appearance in appearances {
+        connection.execute(
+            "INSERT INTO story_index_appearances (
+                target,
+                entity_type,
+                entity_name,
+                source_path,
+                relative_path,
+                scene_key,
+                line,
+                column,
+                line_kind,
+                appearance_role,
+                raw_snippet,
+                indexed_at_unix_seconds
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12);",
+            params![
+                appearance.target.as_str(),
+                appearance.entity_type.as_deref(),
+                appearance.entity_name.as_deref(),
+                appearance.source_path.to_string_lossy().to_string(),
+                appearance.relative_path.as_str(),
+                appearance.scene_key.as_deref(),
+                appearance.line as i64,
+                appearance.column as i64,
+                appearance.line_kind.as_str(),
+                appearance.role.as_database_value(),
+                appearance.raw_snippet.as_str(),
+                indexed_at_unix_seconds,
+            ],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn appearance_record_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<StoryIndexAppearanceRecord> {
+    let role_text: String = row.get(10)?;
+    Ok(StoryIndexAppearanceRecord {
+        target: row.get(0)?,
+        entity_type: row.get(1)?,
+        entity_name: row.get(2)?,
+        source_path: PathBuf::from(row.get::<_, String>(3)?),
+        relative_path: row.get(4)?,
+        scene_key: row.get(5)?,
+        line: row.get::<_, i64>(6)?.max(0) as usize,
+        column: row.get::<_, i64>(7)?.max(0) as usize,
+        line_kind: row.get(8)?,
+        role: StoryIndexAppearanceRole::from_database_value(&role_text)
+            .unwrap_or(StoryIndexAppearanceRole::ActionMention),
+        raw_snippet: row.get(9)?,
     })
 }
 
@@ -1249,6 +1348,29 @@ mod tests {
     }
 
     #[test]
+    fn indexes_entity_front_matter_without_id_aliases_or_matching_filename() {
+        let root = TestDir::new();
+        root.write(
+            "Characters/Eoghan Profile.md",
+            "---\ntarget: eoghan\ntype: Character\nname: Eoghan\n---\nNotes.\n",
+        );
+        let database = StoryIndexDatabase::open_workspace(root.path())
+            .expect("open story index")
+            .database;
+
+        let report = database.scan_workspace_files().expect("scan workspace");
+        let characters = database
+            .entities_of_type("character")
+            .expect("query character entities");
+
+        assert_eq!(report.entity_count, 1);
+        assert_eq!(report.entity_error_count, 0);
+        assert_eq!(characters.len(), 1);
+        assert_eq!(characters[0].target, "eoghan");
+        assert_eq!(characters[0].entity_type, "Character");
+    }
+
+    #[test]
     fn reports_invalid_and_duplicate_entities_without_indexing_them() {
         let root = TestDir::new();
         root.write("plain.md", "ordinary Markdown note");
@@ -1367,6 +1489,156 @@ mod tests {
         assert_ne!(first.scene_key, second.scene_key);
     }
 
+    #[test]
+    fn indexes_fountain_appearances_and_dialogue_speakers() {
+        let root = TestDir::new();
+        write_story_entities(&root);
+        root.write(
+            "episode.fountain",
+            "INT. KITCHEN - NIGHT\nThe room is [Kitchen](kitchen).\n[knife](knife) rests on the table.\n[EOGHAN](eoghan)\nHello [knife](knife).\n(holding [knife](knife))\n",
+        );
+        let database = StoryIndexDatabase::open_workspace(root.path())
+            .expect("open story index")
+            .database;
+
+        let report = database.scan_workspace_files().expect("scan workspace");
+        let eoghan = database
+            .appearances_of_entity("eoghan")
+            .expect("eoghan appearances");
+        let knife = database
+            .appearances_of_entity("knife")
+            .expect("knife appearances");
+
+        assert_eq!(report.appearance_count, 6);
+        assert!(eoghan.iter().any(|appearance| {
+            appearance.role == StoryIndexAppearanceRole::CharacterCue && appearance.line == 3
+        }));
+        assert!(eoghan.iter().any(|appearance| {
+            appearance.role == StoryIndexAppearanceRole::DialogueSpeaker && appearance.line == 4
+        }));
+        assert!(knife.iter().any(|appearance| {
+            appearance.role == StoryIndexAppearanceRole::ActionMention && appearance.line == 2
+        }));
+        assert!(knife.iter().any(|appearance| {
+            appearance.role == StoryIndexAppearanceRole::DialogueMention && appearance.line == 4
+        }));
+        assert!(knife.iter().any(|appearance| {
+            appearance.role == StoryIndexAppearanceRole::ParentheticalMention
+                && appearance.line == 5
+        }));
+    }
+
+    #[test]
+    fn indexes_canvas_appearances_from_text_file_and_link_nodes() {
+        let root = TestDir::new();
+        write_story_entities(&root);
+        root.write(
+            "board.canvas",
+            r#"{
+                "nodes": [
+                    {"id":"text","type":"text","text":"Plan [Eoghan](eoghan) with the [knife](knife).","x":0,"y":0},
+                    {"id":"file","type":"file","file":"characters/eoghan.md","x":0,"y":120},
+                    {"id":"link","type":"link","url":"props/knife","x":0,"y":240}
+                ],
+                "edges": []
+            }"#,
+        );
+        let database = StoryIndexDatabase::open_workspace(root.path())
+            .expect("open story index")
+            .database;
+
+        let report = database.scan_workspace_files().expect("scan workspace");
+        let eoghan = database
+            .appearances_of_entity("eoghan")
+            .expect("eoghan appearances");
+        let knife = database
+            .appearances_of_entity("knife")
+            .expect("knife appearances");
+
+        assert_eq!(report.appearance_count, 4);
+        assert!(eoghan.iter().any(|appearance| {
+            appearance.role == StoryIndexAppearanceRole::CanvasText
+                && appearance.raw_snippet.contains("[Eoghan](eoghan)")
+        }));
+        assert!(eoghan.iter().any(|appearance| {
+            appearance.role == StoryIndexAppearanceRole::CanvasFile
+                && appearance.raw_snippet == "characters/eoghan.md"
+        }));
+        assert!(knife.iter().any(|appearance| {
+            appearance.role == StoryIndexAppearanceRole::CanvasText
+                && appearance.raw_snippet.contains("[knife](knife)")
+        }));
+        assert!(knife.iter().any(|appearance| {
+            appearance.role == StoryIndexAppearanceRole::CanvasLink
+                && appearance.raw_snippet == "props/knife"
+        }));
+    }
+
+    #[test]
+    fn query_api_returns_entities_scenes_places_and_backlinks() {
+        let root = TestDir::new();
+        write_story_entities(&root);
+        root.write(
+            "episode.fountain",
+            "INT. KITCHEN - NIGHT\nThe room is [Kitchen](kitchen).\n[knife](knife) rests on the table.\n[EOGHAN](eoghan)\nHello [knife](knife).\nEXT. ROAD - DAY\n[ELIZAH](elizah)\n",
+        );
+        let database = StoryIndexDatabase::open_workspace(root.path())
+            .expect("open story index")
+            .database;
+        database.scan_workspace_files().expect("scan workspace");
+        let kitchen_scene = database
+            .scene_at_line("episode.fountain", 2)
+            .expect("scene lookup")
+            .expect("kitchen scene");
+
+        let suggestions = database
+            .entities_matching_text("eo", 10)
+            .expect("entity search");
+        let props = database
+            .props_in_scene(&kitchen_scene.scene_key)
+            .expect("props in scene");
+        let characters = database
+            .characters_in_current_scene("episode.fountain", 4)
+            .expect("characters in current scene");
+        let shared_scenes = database
+            .scenes_containing_all_entities(["eoghan", "knife"])
+            .expect("shared scenes");
+        let places = database
+            .places_for_character("eoghan")
+            .expect("places for character");
+        let knife_backlinks = database
+            .backlinks_to_entity("knife")
+            .expect("knife backlinks");
+
+        assert_eq!(suggestions[0].target, "eoghan");
+        assert_eq!(
+            props
+                .iter()
+                .map(|entity| entity.target.as_str())
+                .collect::<Vec<_>>(),
+            vec!["knife"]
+        );
+        assert_eq!(
+            characters
+                .iter()
+                .map(|entity| entity.target.as_str())
+                .collect::<Vec<_>>(),
+            vec!["eoghan"]
+        );
+        assert_eq!(shared_scenes.len(), 1);
+        assert_eq!(shared_scenes[0].heading_text, "INT. KITCHEN - NIGHT");
+        assert_eq!(places.len(), 1);
+        assert_eq!(
+            places[0]
+                .place
+                .as_ref()
+                .map(|entity| entity.target.as_str()),
+            Some("kitchen")
+        );
+        assert!(places[0].raw_location.is_none());
+        assert_eq!(knife_backlinks.len(), 2);
+    }
+
     fn entity_markdown(
         id: &str,
         target: &str,
@@ -1389,5 +1661,30 @@ mod tests {
         format!(
             "---\nid: {id}\ntarget: {target}\ntype: {entity_type}\nname: {name}\naliases: {aliases}\nstatus: draft\n---\n"
         )
+    }
+
+    fn write_story_entities(root: &TestDir) {
+        root.write(
+            "characters/eoghan.md",
+            entity_markdown(
+                "entity_eoghan_001",
+                "eoghan",
+                "character",
+                "Eoghan",
+                &["Eo"],
+            ),
+        );
+        root.write(
+            "characters/elizah.md",
+            entity_markdown("entity_elizah_001", "elizah", "character", "Elizah", &[]),
+        );
+        root.write(
+            "props/knife.md",
+            entity_markdown("entity_knife_001", "knife", "prop", "Knife", &[]),
+        );
+        root.write(
+            "places/kitchen.md",
+            entity_markdown("entity_kitchen_001", "kitchen", "place", "Kitchen", &[]),
+        );
     }
 }

@@ -29,6 +29,21 @@ impl EntityDocument {
             body,
         })
     }
+
+    pub fn from_markdown_for_index(
+        path: impl AsRef<Path>,
+        markdown: &str,
+    ) -> Result<Self, LinkError> {
+        let path = path.as_ref().to_path_buf();
+        let (front_matter, body) = split_front_matter(markdown, &path)?;
+        let metadata = parse_front_matter(&path, &front_matter)?;
+
+        Ok(Self {
+            metadata,
+            path,
+            body,
+        })
+    }
 }
 
 impl EntityCatalog {
@@ -345,7 +360,6 @@ fn parse_front_matter(path: &Path, lines: &[String]) -> Result<EntityFrontMatter
     let mut entity_type = None::<String>;
     let mut name = None::<String>;
     let mut aliases = Vec::<String>::new();
-    let mut aliases_seen = false;
     let mut status = None::<String>;
     let mut active_block = None::<(usize, FrontMatterBlock)>;
 
@@ -394,7 +408,6 @@ fn parse_front_matter(path: &Path, lines: &[String]) -> Result<EntityFrontMatter
             "type" => entity_type = Some(parse_yaml_scalar(value)),
             "name" => name = Some(parse_yaml_scalar(value)),
             "aliases" => {
-                aliases_seen = true;
                 if value.is_empty() {
                     active_block = Some((indent, FrontMatterBlock::Aliases));
                 } else {
@@ -410,16 +423,12 @@ fn parse_front_matter(path: &Path, lines: &[String]) -> Result<EntityFrontMatter
         }
     }
 
-    let id = required_field(path, "id", id)?;
     let target = required_field(path, "target", target)?;
     let entity_type = required_field(path, "type", entity_type)?;
     let name = required_field(path, "name", name)?;
-    if !aliases_seen {
-        return Err(LinkError::MissingField {
-            path: path.to_path_buf(),
-            field: "aliases",
-        });
-    }
+    let id = id
+        .filter(|id| !id.trim().is_empty())
+        .unwrap_or_else(|| format!("entity_{}_001", target.replace('-', "_")));
 
     if !is_valid_target_key(&target) {
         return Err(LinkError::InvalidTargetKey {

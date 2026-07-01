@@ -119,6 +119,11 @@ fn setup(
                                     ),
                                     toolbar_button(font.clone(), "Save", ToolbarAction::Save),
                                     toolbar_button(font.clone(), "Save As", ToolbarAction::SaveAs),
+                                    toolbar_button(
+                                        font.clone(),
+                                        "Story Sheet",
+                                        ToolbarAction::StoryQuerySheet,
+                                    ),
                                     toolbar_button(font.clone(), "Zoom -", ToolbarAction::ZoomOut),
                                     toolbar_button(font.clone(), "Zoom +", ToolbarAction::ZoomIn),
                                     toolbar_button(font.clone(), "Settings", ToolbarAction::Settings),
@@ -640,6 +645,7 @@ fn setup(
             ));
 
             root.spawn(workspace_prompt_bundle(font.clone()));
+            root.spawn(story_query_sheet_bundle(font.clone()));
             root.spawn(command_menu_bundle(font.clone()));
         });
 }
@@ -1632,6 +1638,7 @@ fn handle_toolbar_buttons(
             }
             ToolbarAction::Save => state.save_current(),
             ToolbarAction::SaveAs => open_save_dialog(&mut state, &mut dialogs, parent_handle),
+            ToolbarAction::StoryQuerySheet => state.open_story_query_sheet(),
             ToolbarAction::ZoomOut => {
                 let next_zoom = state.zoom - ZOOM_STEP;
                 set_zoom_preserving_processed_anchor(&mut state, processed_panel_size, next_zoom);
@@ -1659,6 +1666,7 @@ fn style_toolbar_buttons(
             Or<(
                 With<ToolbarAction>,
                 With<SettingsAction>,
+                With<StoryQuerySheetAction>,
                 With<KeybindRebindButton>,
                 With<ThemeColorPickerButton>,
             )>,

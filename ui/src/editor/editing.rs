@@ -7,6 +7,7 @@ fn handle_text_input(
     if state.workspace_focused
         || state.workspace_prompt.is_some()
         || state.command_menu.is_some()
+        || state.story_query_sheet.open
         || state.document_format == DocumentFormat::Canvas
         || (state.vim_enabled && state.vim_mode != VimMode::Insert)
     {
@@ -209,7 +210,7 @@ fn handle_navigation_input(
     mut navigation_repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
 ) {
-    if state.workspace_prompt.is_some() || state.command_menu.is_some() {
+    if state.workspace_prompt.is_some() || state.command_menu.is_some() || state.story_query_sheet.open {
         return;
     }
 
