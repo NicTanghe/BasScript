@@ -12,6 +12,7 @@ use basscript_core::{
     parse_document_with_format, update_canvas_node_position, update_canvas_text_node_content,
 };
 use bevy::{
+    app::AppExit,
     asset::{LoadState, RenderAssetUsages},
     image::{CompressedImageFormats, ImageSampler, ImageType},
     input::{

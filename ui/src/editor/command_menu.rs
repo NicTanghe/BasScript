@@ -40,7 +40,7 @@ fn command_menu_bundle(font: Handle<Font>) -> impl Bundle {
                     CommandMenuInputText,
                 ),
                 (
-                    Text::new("Enter runs. Esc cancels. First command: w"),
+                    Text::new("Enter runs. Esc cancels. Commands: w, q, wq"),
                     TextFont {
                         font,
                         font_size: 11.0,
@@ -76,7 +76,7 @@ fn sync_command_menu_ui(
         **input = format!(":{}_", command_menu.input);
     }
     if let Ok(mut hint) = text_queries.p1().single_mut() {
-        **hint = "Enter runs. Esc cancels. First command: w".to_string();
+        **hint = "Enter runs. Esc cancels. Commands: w, q, wq".to_string();
     }
 }
 
@@ -108,6 +108,7 @@ fn handle_command_menu_open_input(
 fn handle_command_menu_input(
     mut keyboard_inputs: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
+    mut app_exit: MessageWriter<AppExit>,
     mut state: ResMut<EditorState>,
 ) {
     let keybinds = state.keybinds.clone();
@@ -166,15 +167,52 @@ fn handle_command_menu_input(
 
     if let Some(CommandMenuAction::Run(input)) = action {
         state.command_menu = None;
-        run_command_menu_command(&mut state, input.trim());
+        run_command_menu_command(&mut state, &mut app_exit, input.trim());
     }
 }
 
-fn run_command_menu_command(state: &mut EditorState, command: &str) {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CommandMenuParsedCommand<'a> {
+    Write,
+    Quit,
+    WriteQuit,
+    Empty,
+    Unknown(&'a str),
+}
+
+fn parse_command_menu_command(command: &str) -> CommandMenuParsedCommand<'_> {
+    let command = command.trim();
+    let command = command.strip_prefix(':').unwrap_or(command).trim();
+
     match command {
-        "w" => state.save_current(),
-        "" => state.status_message = "No command entered.".to_string(),
-        other => state.status_message = format!("Unknown command: {other}"),
+        "w" | "write" => CommandMenuParsedCommand::Write,
+        "q" | "quit" => CommandMenuParsedCommand::Quit,
+        "wq" => CommandMenuParsedCommand::WriteQuit,
+        "" => CommandMenuParsedCommand::Empty,
+        other => CommandMenuParsedCommand::Unknown(other),
+    }
+}
+
+fn run_command_menu_command(
+    state: &mut EditorState,
+    app_exit: &mut MessageWriter<AppExit>,
+    command: &str,
+) {
+    match parse_command_menu_command(command) {
+        CommandMenuParsedCommand::Write => state.save_current(),
+        CommandMenuParsedCommand::Quit => {
+            state.status_message = "Quitting.".to_string();
+            app_exit.write(AppExit::Success);
+        }
+        CommandMenuParsedCommand::WriteQuit => {
+            state.save_current();
+            state.status_message = "Quitting.".to_string();
+            app_exit.write(AppExit::Success);
+        }
+        CommandMenuParsedCommand::Empty => state.status_message = "No command entered.".to_string(),
+        CommandMenuParsedCommand::Unknown(other) => {
+            state.status_message = format!("Unknown command: {other}")
+        }
     }
 }
 
@@ -189,5 +227,47 @@ impl EditorState {
         });
         self.vim_pending_operator = None;
         self.status_message = "Command menu.".to_string();
+    }
+}
+
+#[cfg(test)]
+mod command_menu_tests {
+    use super::*;
+
+    #[test]
+    fn parses_quit_aliases() {
+        assert_eq!(parse_command_menu_command("q"), CommandMenuParsedCommand::Quit);
+        assert_eq!(
+            parse_command_menu_command(":q"),
+            CommandMenuParsedCommand::Quit
+        );
+        assert_eq!(
+            parse_command_menu_command(" quit "),
+            CommandMenuParsedCommand::Quit
+        );
+    }
+
+    #[test]
+    fn parses_write_aliases() {
+        assert_eq!(
+            parse_command_menu_command("w"),
+            CommandMenuParsedCommand::Write
+        );
+        assert_eq!(
+            parse_command_menu_command(":write"),
+            CommandMenuParsedCommand::Write
+        );
+    }
+
+    #[test]
+    fn parses_write_quit_aliases() {
+        assert_eq!(
+            parse_command_menu_command("wq"),
+            CommandMenuParsedCommand::WriteQuit
+        );
+        assert_eq!(
+            parse_command_menu_command(":wq"),
+            CommandMenuParsedCommand::WriteQuit
+        );
     }
 }
