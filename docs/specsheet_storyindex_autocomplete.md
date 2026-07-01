@@ -83,7 +83,7 @@ Acceptance
 
 Q2. Workspace scan and invalidation
 
-Status: todo
+Status: partially implemented v1 file scan
 
 Index the files that can contribute story knowledge.
 
@@ -114,7 +114,7 @@ Acceptance
 
 Q3. Entity records
 
-Status: todo
+Status: implemented v1
 
 Store known story entities from Markdown front matter.
 

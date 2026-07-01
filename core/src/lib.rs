@@ -20,7 +20,7 @@ pub use links::{
 pub use model::{Cursor, DocumentFormat, DocumentPath, ImageEmbed, LineKind, ParsedLine, Position};
 pub use parser::{parse_document, parse_document_with_format};
 pub use story_index::{
-    STORY_INDEX_DATABASE_NAME, STORY_INDEX_DIR_NAME, STORY_INDEX_SCHEMA_VERSION,
+    IndexedFileKind, STORY_INDEX_DATABASE_NAME, STORY_INDEX_DIR_NAME, STORY_INDEX_SCHEMA_VERSION,
     StoryIndexDatabase, StoryIndexError, StoryIndexOpenReport, StoryIndexOpenStatus,
-    StoryIndexRecoveryReason, story_index_database_path,
+    StoryIndexRecoveryReason, StoryIndexScanReport, story_index_database_path,
 };

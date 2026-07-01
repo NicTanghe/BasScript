@@ -1,13 +1,15 @@
 use std::{
+    collections::{BTreeMap, BTreeSet},
     error::Error,
     fmt, fs, io,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::links::EntityDocument;
 use rusqlite::{Connection, params};
 
-pub const STORY_INDEX_SCHEMA_VERSION: i64 = 1;
+pub const STORY_INDEX_SCHEMA_VERSION: i64 = 3;
 pub const STORY_INDEX_DIR_NAME: &str = ".basscript";
 pub const STORY_INDEX_DATABASE_NAME: &str = "story-index.sqlite3";
 
@@ -43,6 +45,10 @@ pub enum StoryIndexRecoveryReason {
 pub enum StoryIndexError {
     Io(io::Error),
     Sqlite(rusqlite::Error),
+    PathOutsideWorkspace {
+        workspace_root: PathBuf,
+        path: PathBuf,
+    },
     IncompatibleSchemaVersion {
         found: i64,
         expected: i64,
@@ -51,6 +57,67 @@ pub enum StoryIndexError {
         original_error: String,
         recovery_error: io::Error,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IndexedFileKind {
+    Fountain,
+    Markdown,
+    Canvas,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoryIndexScanReport {
+    pub database_path: PathBuf,
+    pub workspace_root: PathBuf,
+    pub file_count: usize,
+    pub inserted_count: usize,
+    pub updated_count: usize,
+    pub removed_count: usize,
+    pub entity_count: usize,
+    pub entity_alias_count: usize,
+    pub entity_error_count: usize,
+    pub duplicate_entity_target_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct IndexedWorkspaceFile {
+    path: PathBuf,
+    relative_path: String,
+    kind: IndexedFileKind,
+    modified_unix_millis: Option<i64>,
+    byte_len: u64,
+    content_hash: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct StoredIndexedFile {
+    relative_path: String,
+    kind: IndexedFileKind,
+    modified_unix_millis: Option<i64>,
+    byte_len: u64,
+    content_hash: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct IndexedEntityRecord {
+    document: EntityDocument,
+    relative_path: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct EntityIndexErrorRecord {
+    path: PathBuf,
+    relative_path: String,
+    message: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct EntityIndexBuild {
+    entities: Vec<IndexedEntityRecord>,
+    errors: Vec<EntityIndexErrorRecord>,
+    alias_count: usize,
+    duplicate_target_count: usize,
 }
 
 impl StoryIndexDatabase {
@@ -102,6 +169,79 @@ impl StoryIndexDatabase {
     pub fn database_path(&self) -> &Path {
         &self.database_path
     }
+
+    pub fn scan_workspace_files(&self) -> Result<StoryIndexScanReport, StoryIndexError> {
+        initialize_database(&self.workspace_root, &self.database_path)?;
+        let files = collect_indexable_workspace_files(&self.workspace_root)?;
+        let entity_index = build_entity_index(&files)?;
+        let mut connection = Connection::open(&self.database_path)?;
+        let previous = load_stored_indexed_files(&connection)?;
+        let now = current_unix_seconds() as i64;
+        let mut seen_paths = BTreeSet::<String>::new();
+        let mut inserted_count = 0usize;
+        let mut updated_count = 0usize;
+
+        let transaction = connection.transaction()?;
+        for file in &files {
+            let path_key = file.path.to_string_lossy().to_string();
+            seen_paths.insert(path_key.clone());
+            let stored = StoredIndexedFile {
+                relative_path: file.relative_path.clone(),
+                kind: file.kind,
+                modified_unix_millis: file.modified_unix_millis,
+                byte_len: file.byte_len,
+                content_hash: file.content_hash.clone(),
+            };
+
+            match previous.get(&path_key) {
+                None => {
+                    inserted_count = inserted_count.saturating_add(1);
+                    upsert_indexed_file(&transaction, &path_key, &stored, now)?;
+                }
+                Some(existing) if existing != &stored => {
+                    updated_count = updated_count.saturating_add(1);
+                    upsert_indexed_file(&transaction, &path_key, &stored, now)?;
+                }
+                Some(_) => {}
+            }
+        }
+
+        let mut removed_count = 0usize;
+        for previous_path in previous.keys() {
+            if seen_paths.contains(previous_path) {
+                continue;
+            }
+            removed_count = removed_count.saturating_add(1);
+            transaction.execute(
+                "DELETE FROM story_index_files WHERE path = ?1;",
+                params![previous_path],
+            )?;
+        }
+
+        replace_entity_index(&transaction, &entity_index, now)?;
+        transaction.execute(
+            "INSERT OR REPLACE INTO story_index_meta (key, value) VALUES ('last_file_scan_at_unix_seconds', ?1);",
+            params![now.to_string()],
+        )?;
+        transaction.execute(
+            "INSERT OR REPLACE INTO story_index_meta (key, value) VALUES ('last_entity_scan_at_unix_seconds', ?1);",
+            params![now.to_string()],
+        )?;
+        transaction.commit()?;
+
+        Ok(StoryIndexScanReport {
+            database_path: self.database_path.clone(),
+            workspace_root: self.workspace_root.clone(),
+            file_count: files.len(),
+            inserted_count,
+            updated_count,
+            removed_count,
+            entity_count: entity_index.entities.len(),
+            entity_alias_count: entity_index.alias_count,
+            entity_error_count: entity_index.errors.len(),
+            duplicate_entity_target_count: entity_index.duplicate_target_count,
+        })
+    }
 }
 
 pub fn story_index_database_path(workspace_root: impl AsRef<Path>) -> PathBuf {
@@ -138,6 +278,54 @@ fn initialize_database(workspace_root: &Path, database_path: &Path) -> Result<()
         "CREATE TABLE IF NOT EXISTS story_index_meta (
             key TEXT PRIMARY KEY NOT NULL,
             value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS story_index_files (
+            path TEXT PRIMARY KEY NOT NULL,
+            relative_path TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            modified_unix_millis INTEGER,
+            byte_len INTEGER NOT NULL,
+            content_hash TEXT NOT NULL,
+            indexed_at_unix_seconds INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS story_index_files_kind_idx
+            ON story_index_files (kind);
+        CREATE INDEX IF NOT EXISTS story_index_files_relative_path_idx
+            ON story_index_files (relative_path);
+        CREATE TABLE IF NOT EXISTS story_index_entities (
+            target TEXT PRIMARY KEY NOT NULL,
+            id TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            status TEXT,
+            path TEXT NOT NULL UNIQUE,
+            relative_path TEXT NOT NULL,
+            source_file_path TEXT NOT NULL,
+            indexed_at_unix_seconds INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS story_index_entities_type_idx
+            ON story_index_entities (entity_type);
+        CREATE INDEX IF NOT EXISTS story_index_entities_name_idx
+            ON story_index_entities (name);
+        CREATE INDEX IF NOT EXISTS story_index_entities_relative_path_idx
+            ON story_index_entities (relative_path);
+        CREATE TABLE IF NOT EXISTS story_index_entity_aliases (
+            target TEXT NOT NULL,
+            alias TEXT NOT NULL,
+            normalized_alias TEXT NOT NULL,
+            alias_source TEXT NOT NULL,
+            indexed_at_unix_seconds INTEGER NOT NULL,
+            PRIMARY KEY (target, alias, alias_source)
+        );
+        CREATE INDEX IF NOT EXISTS story_index_entity_aliases_lookup_idx
+            ON story_index_entity_aliases (normalized_alias);
+        CREATE INDEX IF NOT EXISTS story_index_entity_aliases_target_idx
+            ON story_index_entity_aliases (target);
+        CREATE TABLE IF NOT EXISTS story_index_entity_errors (
+            path TEXT PRIMARY KEY NOT NULL,
+            relative_path TEXT NOT NULL,
+            message TEXT NOT NULL,
+            indexed_at_unix_seconds INTEGER NOT NULL
         );",
     )?;
     transaction.execute(
@@ -168,6 +356,361 @@ fn initialize_database(workspace_root: &Path, database_path: &Path) -> Result<()
     transaction.commit()?;
 
     Ok(())
+}
+
+fn collect_indexable_workspace_files(
+    workspace_root: &Path,
+) -> Result<Vec<IndexedWorkspaceFile>, StoryIndexError> {
+    let mut files = Vec::<IndexedWorkspaceFile>::new();
+    let mut stack = vec![workspace_root.to_path_buf()];
+
+    while let Some(directory) = stack.pop() {
+        for entry in fs::read_dir(&directory)? {
+            let entry = entry?;
+            let path = entry.path();
+            let file_type = entry.file_type()?;
+
+            if file_type.is_dir() {
+                if should_skip_story_index_dir(&path) {
+                    continue;
+                }
+                stack.push(path);
+                continue;
+            }
+
+            if !file_type.is_file() {
+                continue;
+            }
+
+            let Some(kind) = IndexedFileKind::from_path(&path) else {
+                continue;
+            };
+            files.push(index_workspace_file(workspace_root, path, kind)?);
+        }
+    }
+
+    files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    Ok(files)
+}
+
+fn build_entity_index(files: &[IndexedWorkspaceFile]) -> Result<EntityIndexBuild, StoryIndexError> {
+    let mut parsed = Vec::<IndexedEntityRecord>::new();
+    let mut errors = Vec::<EntityIndexErrorRecord>::new();
+
+    for file in files
+        .iter()
+        .filter(|file| file.kind == IndexedFileKind::Markdown)
+    {
+        let markdown = fs::read_to_string(&file.path)?;
+        if !looks_like_yaml_front_matter(&markdown) {
+            continue;
+        }
+
+        match EntityDocument::from_markdown(&file.path, &markdown) {
+            Ok(document) => parsed.push(IndexedEntityRecord {
+                document,
+                relative_path: file.relative_path.clone(),
+            }),
+            Err(error) => errors.push(EntityIndexErrorRecord {
+                path: file.path.clone(),
+                relative_path: file.relative_path.clone(),
+                message: error.to_string(),
+            }),
+        }
+    }
+
+    let mut by_target = BTreeMap::<String, Vec<IndexedEntityRecord>>::new();
+    for record in parsed {
+        by_target
+            .entry(record.document.metadata.target.clone())
+            .or_default()
+            .push(record);
+    }
+
+    let mut entities = Vec::<IndexedEntityRecord>::new();
+    let mut duplicate_target_count = 0usize;
+    for (target, mut records) in by_target {
+        records.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+        if records.len() == 1 {
+            entities.push(records.remove(0));
+            continue;
+        }
+
+        duplicate_target_count = duplicate_target_count.saturating_add(1);
+        let paths = records
+            .iter()
+            .map(|record| record.relative_path.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        for record in records {
+            errors.push(EntityIndexErrorRecord {
+                path: record.document.path.clone(),
+                relative_path: record.relative_path,
+                message: format!("Duplicate entity target `{target}` also declared by {paths}."),
+            });
+        }
+    }
+
+    let alias_count = entities
+        .iter()
+        .map(|entity| entity_alias_terms(entity).len())
+        .sum();
+    entities.sort_by(|left, right| {
+        left.document
+            .metadata
+            .target
+            .cmp(&right.document.metadata.target)
+    });
+    errors.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+
+    Ok(EntityIndexBuild {
+        entities,
+        errors,
+        alias_count,
+        duplicate_target_count,
+    })
+}
+
+fn looks_like_yaml_front_matter(markdown: &str) -> bool {
+    markdown
+        .lines()
+        .next()
+        .map(|line| line.trim_end_matches('\r') == "---")
+        .unwrap_or(false)
+}
+
+fn index_workspace_file(
+    workspace_root: &Path,
+    path: PathBuf,
+    kind: IndexedFileKind,
+) -> Result<IndexedWorkspaceFile, StoryIndexError> {
+    let metadata = fs::metadata(&path)?;
+    let bytes = fs::read(&path)?;
+    let relative_path = path
+        .strip_prefix(workspace_root)
+        .map_err(|_| StoryIndexError::PathOutsideWorkspace {
+            workspace_root: workspace_root.to_path_buf(),
+            path: path.clone(),
+        })?
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    Ok(IndexedWorkspaceFile {
+        path,
+        relative_path,
+        kind,
+        modified_unix_millis: metadata
+            .modified()
+            .ok()
+            .and_then(system_time_to_unix_millis),
+        byte_len: metadata.len(),
+        content_hash: stable_content_hash(&bytes),
+    })
+}
+
+fn load_stored_indexed_files(
+    connection: &Connection,
+) -> Result<BTreeMap<String, StoredIndexedFile>, StoryIndexError> {
+    let mut statement = connection.prepare(
+        "SELECT path, relative_path, kind, modified_unix_millis, byte_len, content_hash
+         FROM story_index_files;",
+    )?;
+    let rows = statement.query_map([], |row| {
+        let kind_text: String = row.get(2)?;
+        Ok((
+            row.get::<_, String>(0)?,
+            StoredIndexedFile {
+                relative_path: row.get(1)?,
+                kind: IndexedFileKind::from_database_value(&kind_text)
+                    .unwrap_or(IndexedFileKind::Fountain),
+                modified_unix_millis: row.get(3)?,
+                byte_len: row.get::<_, i64>(4)?.max(0) as u64,
+                content_hash: row.get(5)?,
+            },
+        ))
+    })?;
+
+    let mut files = BTreeMap::<String, StoredIndexedFile>::new();
+    for row in rows {
+        let (path, file) = row?;
+        files.insert(path, file);
+    }
+    Ok(files)
+}
+
+fn upsert_indexed_file(
+    connection: &Connection,
+    path: &str,
+    file: &StoredIndexedFile,
+    indexed_at_unix_seconds: i64,
+) -> Result<(), StoryIndexError> {
+    connection.execute(
+        "INSERT OR REPLACE INTO story_index_files (
+            path,
+            relative_path,
+            kind,
+            modified_unix_millis,
+            byte_len,
+            content_hash,
+            indexed_at_unix_seconds
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);",
+        params![
+            path,
+            file.relative_path,
+            file.kind.as_database_value(),
+            file.modified_unix_millis,
+            file.byte_len as i64,
+            file.content_hash,
+            indexed_at_unix_seconds,
+        ],
+    )?;
+    Ok(())
+}
+
+fn replace_entity_index(
+    connection: &Connection,
+    entity_index: &EntityIndexBuild,
+    indexed_at_unix_seconds: i64,
+) -> Result<(), StoryIndexError> {
+    connection.execute("DELETE FROM story_index_entity_aliases;", [])?;
+    connection.execute("DELETE FROM story_index_entities;", [])?;
+    connection.execute("DELETE FROM story_index_entity_errors;", [])?;
+
+    for entity in &entity_index.entities {
+        insert_entity_record(connection, entity, indexed_at_unix_seconds)?;
+        for alias in entity_alias_terms(entity) {
+            connection.execute(
+                "INSERT OR IGNORE INTO story_index_entity_aliases (
+                    target,
+                    alias,
+                    normalized_alias,
+                    alias_source,
+                    indexed_at_unix_seconds
+                ) VALUES (?1, ?2, ?3, ?4, ?5);",
+                params![
+                    entity.document.metadata.target.as_str(),
+                    alias.text.as_str(),
+                    normalize_lookup_text(&alias.text),
+                    alias.source,
+                    indexed_at_unix_seconds,
+                ],
+            )?;
+        }
+    }
+
+    for error in &entity_index.errors {
+        connection.execute(
+            "INSERT OR REPLACE INTO story_index_entity_errors (
+                path,
+                relative_path,
+                message,
+                indexed_at_unix_seconds
+        ) VALUES (?1, ?2, ?3, ?4);",
+            params![
+                error.path.to_string_lossy().to_string(),
+                error.relative_path.as_str(),
+                error.message.as_str(),
+                indexed_at_unix_seconds,
+            ],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn insert_entity_record(
+    connection: &Connection,
+    entity: &IndexedEntityRecord,
+    indexed_at_unix_seconds: i64,
+) -> Result<(), StoryIndexError> {
+    connection.execute(
+        "INSERT OR REPLACE INTO story_index_entities (
+            target,
+            id,
+            entity_type,
+            name,
+            status,
+            path,
+            relative_path,
+            source_file_path,
+            indexed_at_unix_seconds
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9);",
+        params![
+            entity.document.metadata.target.as_str(),
+            entity.document.metadata.id.as_str(),
+            entity.document.metadata.entity_type.as_str(),
+            entity.document.metadata.name.as_str(),
+            entity.document.metadata.status.as_deref(),
+            entity.document.path.to_string_lossy().to_string(),
+            entity.relative_path.as_str(),
+            entity.document.path.to_string_lossy().to_string(),
+            indexed_at_unix_seconds,
+        ],
+    )?;
+    Ok(())
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct EntityAliasTerm {
+    text: String,
+    source: &'static str,
+}
+
+fn entity_alias_terms(entity: &IndexedEntityRecord) -> Vec<EntityAliasTerm> {
+    let mut terms = BTreeSet::<EntityAliasTerm>::new();
+    terms.insert(EntityAliasTerm {
+        text: entity.document.metadata.target.clone(),
+        source: "target",
+    });
+    terms.insert(EntityAliasTerm {
+        text: entity.document.metadata.name.clone(),
+        source: "name",
+    });
+    for alias in &entity.document.metadata.aliases {
+        terms.insert(EntityAliasTerm {
+            text: alias.clone(),
+            source: "alias",
+        });
+    }
+    terms.into_iter().collect()
+}
+
+fn normalize_lookup_text(input: &str) -> String {
+    input
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn should_skip_story_index_dir(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+
+    name.starts_with('.') || matches!(name, "target" | "node_modules")
+}
+
+fn stable_content_hash(bytes: &[u8]) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn system_time_to_unix_millis(time: SystemTime) -> Option<i64> {
+    let duration = time.duration_since(UNIX_EPOCH).ok()?;
+    i64::try_from(duration.as_millis()).ok()
 }
 
 fn sqlite_user_version(connection: &Connection) -> Result<i64, StoryIndexError> {
@@ -245,6 +788,15 @@ impl fmt::Display for StoryIndexError {
         match self {
             Self::Io(error) => write!(f, "{error}"),
             Self::Sqlite(error) => write!(f, "{error}"),
+            Self::PathOutsideWorkspace {
+                workspace_root,
+                path,
+            } => write!(
+                f,
+                "{} is outside workspace {}",
+                path.display(),
+                workspace_root.display()
+            ),
             Self::IncompatibleSchemaVersion { found, expected } => {
                 write!(f, "story index schema version {found}, expected {expected}")
             }
@@ -265,7 +817,40 @@ impl Error for StoryIndexError {
             Self::Io(error) => Some(error),
             Self::Sqlite(error) => Some(error),
             Self::RecoveryFailed { recovery_error, .. } => Some(recovery_error),
-            Self::IncompatibleSchemaVersion { .. } => None,
+            Self::PathOutsideWorkspace { .. } | Self::IncompatibleSchemaVersion { .. } => None,
+        }
+    }
+}
+
+impl IndexedFileKind {
+    pub fn from_path(path: impl AsRef<Path>) -> Option<Self> {
+        let extension = path
+            .as_ref()
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| extension.to_ascii_lowercase());
+        match extension.as_deref() {
+            Some("fountain") => Some(Self::Fountain),
+            Some("md") | Some("markdown") => Some(Self::Markdown),
+            Some("canvas") => Some(Self::Canvas),
+            _ => None,
+        }
+    }
+
+    pub fn as_database_value(self) -> &'static str {
+        match self {
+            Self::Fountain => "fountain",
+            Self::Markdown => "markdown",
+            Self::Canvas => "canvas",
+        }
+    }
+
+    fn from_database_value(value: &str) -> Option<Self> {
+        match value {
+            "fountain" => Some(Self::Fountain),
+            "markdown" => Some(Self::Markdown),
+            "canvas" => Some(Self::Canvas),
+            _ => None,
         }
     }
 }
@@ -311,6 +896,18 @@ mod tests {
 
         fn path(&self) -> &Path {
             &self.path
+        }
+
+        fn write(&self, relative: &str, contents: impl AsRef<[u8]>) {
+            let path = self.path.join(relative);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("create parent dir");
+            }
+            fs::write(path, contents).expect("write file");
+        }
+
+        fn remove(&self, relative: &str) {
+            fs::remove_file(self.path.join(relative)).expect("remove file");
         }
     }
 
@@ -390,5 +987,189 @@ mod tests {
             }
             other => panic!("unexpected status: {other:?}"),
         }
+    }
+
+    #[test]
+    fn scans_supported_workspace_files_into_database() {
+        let root = TestDir::new();
+        root.write("script.fountain", "INT. KITCHEN - DAY\n");
+        root.write("notes.md", "---\ntarget: notes\n---\n");
+        root.write("board.canvas", "{}");
+        root.write("ignored.txt", "not indexed by story index");
+        root.write(
+            ".basscript/ignored.md",
+            "generated db dir should be ignored",
+        );
+        let database = StoryIndexDatabase::open_workspace(root.path())
+            .expect("open story index")
+            .database;
+
+        let report = database.scan_workspace_files().expect("scan workspace");
+
+        assert_eq!(report.file_count, 3);
+        assert_eq!(report.inserted_count, 3);
+        assert_eq!(report.updated_count, 0);
+        assert_eq!(report.removed_count, 0);
+
+        let connection = Connection::open(database.database_path()).expect("open database");
+        let count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM story_index_files;", [], |row| {
+                row.get(0)
+            })
+            .expect("count indexed files");
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn scan_reports_updated_and_removed_files() {
+        let root = TestDir::new();
+        root.write("script.fountain", "INT. KITCHEN - DAY\n");
+        root.write("notes.md", "old");
+        let database = StoryIndexDatabase::open_workspace(root.path())
+            .expect("open story index")
+            .database;
+
+        let first = database.scan_workspace_files().expect("first scan");
+        assert_eq!(first.inserted_count, 2);
+
+        root.write("notes.md", "new");
+        root.remove("script.fountain");
+        let second = database.scan_workspace_files().expect("second scan");
+
+        assert_eq!(second.file_count, 1);
+        assert_eq!(second.inserted_count, 0);
+        assert_eq!(second.updated_count, 1);
+        assert_eq!(second.removed_count, 1);
+    }
+
+    #[test]
+    fn indexes_entity_records_and_aliases_from_markdown_front_matter() {
+        let root = TestDir::new();
+        root.write(
+            "characters/eoghan.md",
+            entity_markdown(
+                "entity_eoghan_001",
+                "eoghan",
+                "character",
+                "Eoghan",
+                &["Eo", "EOG"],
+            ),
+        );
+        root.write(
+            "items/ember-sigil.md",
+            entity_markdown(
+                "entity_ember_sigil_001",
+                "ember-sigil",
+                "artifact",
+                "Ember Sigil",
+                &[],
+            ),
+        );
+        let database = StoryIndexDatabase::open_workspace(root.path())
+            .expect("open story index")
+            .database;
+
+        let report = database.scan_workspace_files().expect("scan workspace");
+
+        assert_eq!(report.entity_count, 2);
+        assert_eq!(report.entity_alias_count, 6);
+        assert_eq!(report.entity_error_count, 0);
+
+        let connection = Connection::open(database.database_path()).expect("open database");
+        let entity_type: String = connection
+            .query_row(
+                "SELECT entity_type FROM story_index_entities WHERE target = 'ember-sigil';",
+                [],
+                |row| row.get(0),
+            )
+            .expect("entity type");
+        assert_eq!(entity_type, "artifact");
+
+        let eo_alias_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM story_index_entity_aliases
+                 WHERE target = 'eoghan' AND normalized_alias IN ('eo', 'eog');",
+                [],
+                |row| row.get(0),
+            )
+            .expect("alias count");
+        assert_eq!(eo_alias_count, 2);
+    }
+
+    #[test]
+    fn reports_invalid_and_duplicate_entities_without_indexing_them() {
+        let root = TestDir::new();
+        root.write("plain.md", "ordinary Markdown note");
+        root.write("broken.md", "---\ntarget: broken\n---\n");
+        root.write(
+            "left/eoghan.md",
+            entity_markdown(
+                "entity_eoghan_left_001",
+                "eoghan",
+                "character",
+                "Eoghan",
+                &[],
+            ),
+        );
+        root.write(
+            "right/eoghan.md",
+            entity_markdown(
+                "entity_eoghan_right_001",
+                "eoghan",
+                "character",
+                "Eoghan Duplicate",
+                &[],
+            ),
+        );
+        let database = StoryIndexDatabase::open_workspace(root.path())
+            .expect("open story index")
+            .database;
+
+        let report = database.scan_workspace_files().expect("scan workspace");
+
+        assert_eq!(report.file_count, 4);
+        assert_eq!(report.entity_count, 0);
+        assert_eq!(report.duplicate_entity_target_count, 1);
+        assert_eq!(report.entity_error_count, 3);
+
+        let connection = Connection::open(database.database_path()).expect("open database");
+        let entity_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM story_index_entities;", [], |row| {
+                row.get(0)
+            })
+            .expect("entity count");
+        let error_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM story_index_entity_errors;",
+                [],
+                |row| row.get(0),
+            )
+            .expect("error count");
+        assert_eq!(entity_count, 0);
+        assert_eq!(error_count, 3);
+    }
+
+    fn entity_markdown(
+        id: &str,
+        target: &str,
+        entity_type: &str,
+        name: &str,
+        aliases: &[&str],
+    ) -> String {
+        let aliases = if aliases.is_empty() {
+            "[]".to_string()
+        } else {
+            format!(
+                "\n{}",
+                aliases
+                    .iter()
+                    .map(|alias| format!("  - {alias}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        };
+        format!(
+            "---\nid: {id}\ntarget: {target}\ntype: {entity_type}\nname: {name}\naliases: {aliases}\nstatus: draft\n---\n"
+        )
     }
 }

@@ -180,7 +180,11 @@ impl EditorState {
                 self.workspace_files = entries.files;
                 self.sync_workspace_active_file();
                 self.normalize_workspace_selected_row();
+                let story_index_status = self.refresh_story_index_for_workspace();
                 self.workspace_ui_dirty = true;
+                if let Some(story_index_status) = story_index_status {
+                    self.status_message = story_index_status;
+                }
             }
             Err(error) => {
                 self.status_message = format!("Workspace refresh failed for {}: {error}", root.display());
