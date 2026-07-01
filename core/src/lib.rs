@@ -22,5 +22,6 @@ pub use parser::{parse_document, parse_document_with_format};
 pub use story_index::{
     IndexedFileKind, STORY_INDEX_DATABASE_NAME, STORY_INDEX_DIR_NAME, STORY_INDEX_SCHEMA_VERSION,
     StoryIndexDatabase, StoryIndexError, StoryIndexOpenReport, StoryIndexOpenStatus,
-    StoryIndexRecoveryReason, StoryIndexScanReport, story_index_database_path,
+    StoryIndexRecoveryReason, StoryIndexScanReport, StoryIndexSceneRecord,
+    story_index_database_path,
 };

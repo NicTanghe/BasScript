@@ -150,7 +150,7 @@ Acceptance
 
 Q4. Scene records
 
-Status: todo
+Status: implemented v1
 
 Make Fountain scenes queryable even when the user has not created explicit scene entity files.
 

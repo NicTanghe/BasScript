@@ -7,9 +7,13 @@ use std::{
 };
 
 use crate::links::EntityDocument;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
-pub const STORY_INDEX_SCHEMA_VERSION: i64 = 3;
+mod scene_records;
+pub use scene_records::StoryIndexSceneRecord;
+use scene_records::build_scene_index;
+
+pub const STORY_INDEX_SCHEMA_VERSION: i64 = 4;
 pub const STORY_INDEX_DIR_NAME: &str = ".basscript";
 pub const STORY_INDEX_DATABASE_NAME: &str = "story-index.sqlite3";
 
@@ -78,6 +82,7 @@ pub struct StoryIndexScanReport {
     pub entity_alias_count: usize,
     pub entity_error_count: usize,
     pub duplicate_entity_target_count: usize,
+    pub scene_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -174,6 +179,7 @@ impl StoryIndexDatabase {
         initialize_database(&self.workspace_root, &self.database_path)?;
         let files = collect_indexable_workspace_files(&self.workspace_root)?;
         let entity_index = build_entity_index(&files)?;
+        let scene_index = build_scene_index(&files)?;
         let mut connection = Connection::open(&self.database_path)?;
         let previous = load_stored_indexed_files(&connection)?;
         let now = current_unix_seconds() as i64;
@@ -219,12 +225,17 @@ impl StoryIndexDatabase {
         }
 
         replace_entity_index(&transaction, &entity_index, now)?;
+        replace_scene_index(&transaction, &scene_index, now)?;
         transaction.execute(
             "INSERT OR REPLACE INTO story_index_meta (key, value) VALUES ('last_file_scan_at_unix_seconds', ?1);",
             params![now.to_string()],
         )?;
         transaction.execute(
             "INSERT OR REPLACE INTO story_index_meta (key, value) VALUES ('last_entity_scan_at_unix_seconds', ?1);",
+            params![now.to_string()],
+        )?;
+        transaction.execute(
+            "INSERT OR REPLACE INTO story_index_meta (key, value) VALUES ('last_scene_scan_at_unix_seconds', ?1);",
             params![now.to_string()],
         )?;
         transaction.commit()?;
@@ -240,7 +251,59 @@ impl StoryIndexDatabase {
             entity_alias_count: entity_index.alias_count,
             entity_error_count: entity_index.errors.len(),
             duplicate_entity_target_count: entity_index.duplicate_target_count,
+            scene_count: scene_index.len(),
         })
+    }
+
+    pub fn scenes_for_file(
+        &self,
+        source_path: impl AsRef<Path>,
+    ) -> Result<Vec<StoryIndexSceneRecord>, StoryIndexError> {
+        initialize_database(&self.workspace_root, &self.database_path)?;
+        let source_path = normalize_workspace_file_path(&self.workspace_root, source_path.as_ref());
+        let connection = Connection::open(&self.database_path)?;
+        let mut statement = connection.prepare(
+            "SELECT scene_key, source_path, relative_path, scene_ordinal, heading_text,
+                    normalized_heading, start_line, end_line, script_order, location_text,
+                    time_of_day_text
+             FROM story_index_scenes
+             WHERE source_path = ?1
+             ORDER BY scene_ordinal;",
+        )?;
+        let rows = statement
+            .query_map(params![source_path.to_string_lossy().to_string()], |row| {
+                scene_record_from_row(row)
+            })?;
+
+        let mut scenes = Vec::<StoryIndexSceneRecord>::new();
+        for row in rows {
+            scenes.push(row?);
+        }
+        Ok(scenes)
+    }
+
+    pub fn scene_at_line(
+        &self,
+        source_path: impl AsRef<Path>,
+        line: usize,
+    ) -> Result<Option<StoryIndexSceneRecord>, StoryIndexError> {
+        initialize_database(&self.workspace_root, &self.database_path)?;
+        let source_path = normalize_workspace_file_path(&self.workspace_root, source_path.as_ref());
+        let connection = Connection::open(&self.database_path)?;
+        connection
+            .query_row(
+                "SELECT scene_key, source_path, relative_path, scene_ordinal, heading_text,
+                        normalized_heading, start_line, end_line, script_order, location_text,
+                        time_of_day_text
+                 FROM story_index_scenes
+                 WHERE source_path = ?1 AND start_line <= ?2 AND end_line >= ?2
+                 ORDER BY scene_ordinal
+                 LIMIT 1;",
+                params![source_path.to_string_lossy().to_string(), line as i64],
+                scene_record_from_row,
+            )
+            .optional()
+            .map_err(StoryIndexError::Sqlite)
     }
 }
 
@@ -255,6 +318,15 @@ fn normalize_workspace_root(workspace_root: &Path) -> PathBuf {
     workspace_root
         .canonicalize()
         .unwrap_or_else(|_| workspace_root.to_path_buf())
+}
+
+fn normalize_workspace_file_path(workspace_root: &Path, path: &Path) -> PathBuf {
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        workspace_root.join(path)
+    };
+    path.canonicalize().unwrap_or(path)
 }
 
 fn initialize_database(workspace_root: &Path, database_path: &Path) -> Result<(), StoryIndexError> {
@@ -326,7 +398,28 @@ fn initialize_database(workspace_root: &Path, database_path: &Path) -> Result<()
             relative_path TEXT NOT NULL,
             message TEXT NOT NULL,
             indexed_at_unix_seconds INTEGER NOT NULL
-        );",
+        );
+        CREATE TABLE IF NOT EXISTS story_index_scenes (
+            scene_key TEXT PRIMARY KEY NOT NULL,
+            source_path TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            scene_ordinal INTEGER NOT NULL,
+            heading_text TEXT NOT NULL,
+            normalized_heading TEXT NOT NULL,
+            start_line INTEGER NOT NULL,
+            end_line INTEGER NOT NULL,
+            script_order INTEGER NOT NULL,
+            location_text TEXT,
+            time_of_day_text TEXT,
+            indexed_at_unix_seconds INTEGER NOT NULL,
+            UNIQUE(source_path, scene_ordinal)
+        );
+        CREATE INDEX IF NOT EXISTS story_index_scenes_source_path_idx
+            ON story_index_scenes (source_path);
+        CREATE INDEX IF NOT EXISTS story_index_scenes_normalized_heading_idx
+            ON story_index_scenes (normalized_heading);
+        CREATE INDEX IF NOT EXISTS story_index_scenes_script_order_idx
+            ON story_index_scenes (script_order);",
     )?;
     transaction.execute(
         "INSERT OR IGNORE INTO story_index_meta (key, value) VALUES ('schema_version', ?1);",
@@ -616,6 +709,65 @@ fn replace_entity_index(
     }
 
     Ok(())
+}
+
+fn replace_scene_index(
+    connection: &Connection,
+    scenes: &[StoryIndexSceneRecord],
+    indexed_at_unix_seconds: i64,
+) -> Result<(), StoryIndexError> {
+    connection.execute("DELETE FROM story_index_scenes;", [])?;
+
+    for scene in scenes {
+        connection.execute(
+            "INSERT OR REPLACE INTO story_index_scenes (
+                scene_key,
+                source_path,
+                relative_path,
+                scene_ordinal,
+                heading_text,
+                normalized_heading,
+                start_line,
+                end_line,
+                script_order,
+                location_text,
+                time_of_day_text,
+                indexed_at_unix_seconds
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12);",
+            params![
+                scene.scene_key.as_str(),
+                scene.source_path.to_string_lossy().to_string(),
+                scene.relative_path.as_str(),
+                scene.scene_ordinal as i64,
+                scene.heading_text.as_str(),
+                scene.normalized_heading.as_str(),
+                scene.start_line as i64,
+                scene.end_line as i64,
+                scene.script_order as i64,
+                scene.location_text.as_deref(),
+                scene.time_of_day_text.as_deref(),
+                indexed_at_unix_seconds,
+            ],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn scene_record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoryIndexSceneRecord> {
+    Ok(StoryIndexSceneRecord {
+        scene_key: row.get(0)?,
+        source_path: PathBuf::from(row.get::<_, String>(1)?),
+        relative_path: row.get(2)?,
+        scene_ordinal: row.get::<_, i64>(3)?.max(0) as usize,
+        heading_text: row.get(4)?,
+        normalized_heading: row.get(5)?,
+        start_line: row.get::<_, i64>(6)?.max(0) as usize,
+        end_line: row.get::<_, i64>(7)?.max(0) as usize,
+        script_order: row.get::<_, i64>(8)?.max(0) as usize,
+        location_text: row.get(9)?,
+        time_of_day_text: row.get(10)?,
+    })
 }
 
 fn insert_entity_record(
@@ -1147,6 +1299,72 @@ mod tests {
             .expect("error count");
         assert_eq!(entity_count, 0);
         assert_eq!(error_count, 3);
+    }
+
+    #[test]
+    fn indexes_fountain_scene_records() {
+        let root = TestDir::new();
+        root.write(
+            "pilot.fountain",
+            "Title Page\nINT. KITCHEN - NIGHT\nA kettle screams.\nEXT. FOREST ROAD - DAWN\nBirdsong.\n",
+        );
+        let database = StoryIndexDatabase::open_workspace(root.path())
+            .expect("open story index")
+            .database;
+
+        let report = database.scan_workspace_files().expect("scan workspace");
+        let scenes = database
+            .scenes_for_file(root.path().join("pilot.fountain"))
+            .expect("scenes for file");
+
+        assert_eq!(report.scene_count, 2);
+        assert_eq!(scenes.len(), 2);
+        assert_eq!(scenes[0].scene_ordinal, 1);
+        assert_eq!(scenes[0].heading_text, "INT. KITCHEN - NIGHT");
+        assert_eq!(scenes[0].normalized_heading, "int kitchen night");
+        assert_eq!(scenes[0].start_line, 1);
+        assert_eq!(scenes[0].end_line, 2);
+        assert_eq!(scenes[0].location_text.as_deref(), Some("KITCHEN"));
+        assert_eq!(scenes[0].time_of_day_text.as_deref(), Some("NIGHT"));
+        assert_eq!(scenes[1].script_order, 1);
+        assert_eq!(scenes[1].location_text.as_deref(), Some("FOREST ROAD"));
+        assert_eq!(scenes[1].time_of_day_text.as_deref(), Some("DAWN"));
+    }
+
+    #[test]
+    fn scene_at_line_maps_to_containing_scene() {
+        let root = TestDir::new();
+        root.write(
+            "episode.fountain",
+            "Cold open\nINT. HALLWAY - DAY\nStep.\nINT. HALLWAY - DAY\nAgain.\n",
+        );
+        let database = StoryIndexDatabase::open_workspace(root.path())
+            .expect("open story index")
+            .database;
+        database.scan_workspace_files().expect("scan workspace");
+        let path = root.path().join("episode.fountain");
+
+        assert_eq!(
+            database
+                .scene_at_line(&path, 0)
+                .expect("scene before first heading"),
+            None
+        );
+        let first = database
+            .scene_at_line(&path, 2)
+            .expect("scene at line")
+            .expect("first scene");
+        let second = database
+            .scene_at_line("episode.fountain", 4)
+            .expect("scene at relative line")
+            .expect("second scene");
+
+        assert_eq!(first.scene_ordinal, 1);
+        assert_eq!(first.start_line, 1);
+        assert_eq!(first.end_line, 2);
+        assert_eq!(second.scene_ordinal, 2);
+        assert_eq!(second.heading_text, "INT. HALLWAY - DAY");
+        assert_ne!(first.scene_key, second.scene_key);
     }
 
     fn entity_markdown(
