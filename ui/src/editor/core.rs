@@ -160,6 +160,7 @@ impl Plugin for UiPlugin {
                     setup,
                     setup_selection_rects.after(setup),
                     setup_processed_papers.after(setup),
+                    setup_story_query_sheet_result_spans.after(setup),
                 ),
             )
             .add_systems(
@@ -190,6 +191,7 @@ impl Plugin for UiPlugin {
                     handle_workspace_file_buttons,
                     handle_workspace_folder_buttons,
                     handle_story_query_sheet_buttons,
+                    handle_story_query_sheet_link_click,
                     handle_story_query_sheet_keyboard,
                 )
                     .run_if(in_state(UiScreenState::Editor)),

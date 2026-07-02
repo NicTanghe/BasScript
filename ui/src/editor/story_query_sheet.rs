@@ -3,10 +3,14 @@ use basscript_core::{
 };
 use serde::Deserialize;
 
-const STORY_QUERY_SHEET_WIDTH: f32 = 430.0;
-const STORY_QUERY_SHEET_HEIGHT: f32 = STORY_QUERY_SHEET_WIDTH * A4_HEIGHT_POINTS / A4_WIDTH_POINTS;
-const STORY_QUERY_MENU_WIDTH: f32 = 360.0;
-const STORY_QUERY_PAGE_LINE_LIMIT: usize = 34;
+const STORY_QUERY_RESULT_WIDTH_PERCENT: f32 = 61.803;
+const STORY_QUERY_MENU_WIDTH_PERCENT: f32 = 38.197;
+const STORY_QUERY_A4_SCALE: f32 = 0.86;
+const STORY_QUERY_A4_PAGE_WIDTH: f32 = A4_WIDTH_POINTS * STORY_QUERY_A4_SCALE;
+const STORY_QUERY_A4_PAGE_HEIGHT: f32 = A4_HEIGHT_POINTS * STORY_QUERY_A4_SCALE;
+const STORY_QUERY_RESULT_FONT_SIZE: f32 = FONT_SIZE * STORY_QUERY_A4_SCALE;
+const STORY_QUERY_RESULT_LINE_HEIGHT: f32 = LINE_HEIGHT * STORY_QUERY_A4_SCALE;
+const STORY_QUERY_PAGE_LINE_LIMIT: usize = 56;
 const STORY_QUERY_DROPDOWN_VISIBLE_OPTIONS: usize = 8;
 const DEFAULT_STORY_TAXONOMY_RON: &str = r#"(
 	categories: [
@@ -194,7 +198,7 @@ struct StoryQuerySheet {
     taxonomy_notice: Option<String>,
     open_dropdown: Option<StoryQueryDropdownKind>,
     page_index: usize,
-    pages: Vec<String>,
+    visual_pages: Vec<Vec<ProcessedVisualLine>>,
     result_title: String,
     result_status: String,
     result_format: StoryQueryOutputFormat,
@@ -226,7 +230,12 @@ impl Default for StoryQuerySheet {
             taxonomy_notice: None,
             open_dropdown: None,
             page_index: 0,
-            pages: vec!["No result yet.".to_string()],
+            visual_pages: story_query_visual_pages(
+                "No result yet.",
+                StoryQueryOutputFormat::Markdown,
+                false,
+                false,
+            ),
             result_title: "Story Query Sheet".to_string(),
             result_status: "Ready.".to_string(),
             result_format: StoryQueryOutputFormat::Fountain,
@@ -251,7 +260,6 @@ enum StoryQuerySheetTextSlot {
     CategoryA,
     CategoryB,
     Page,
-    Result,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -302,6 +310,15 @@ struct StoryQueryDropdownOptionText {
     slot_index: usize,
 }
 
+#[derive(Component)]
+struct StoryQueryRenderedText;
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct StoryQueryRenderedLineSpan {
+    line_offset: usize,
+    part_index: usize,
+}
+
 struct StoryQueryRunOutput {
     title: String,
     status: String,
@@ -321,12 +338,11 @@ fn story_query_sheet_bundle(font: Handle<Font>) -> impl Bundle {
             width: percent(100.0),
             height: percent(100.0),
             display: Display::None,
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            padding: UiRect::all(px(14.0)),
+            justify_content: JustifyContent::FlexStart,
+            align_items: AlignItems::Stretch,
             ..default()
         },
-        BackgroundColor(Color::srgba(0.12, 0.13, 0.15, 0.40)),
+        BackgroundColor(COLOR_PANEL_BG),
         ZIndex(92),
         GlobalZIndex(92),
         StoryQuerySheetRoot,
@@ -335,9 +351,8 @@ fn story_query_sheet_bundle(font: Handle<Font>) -> impl Bundle {
                 width: percent(100.0),
                 height: percent(100.0),
                 flex_direction: FlexDirection::Row,
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                column_gap: px(14.0),
+                justify_content: JustifyContent::FlexStart,
+                align_items: AlignItems::Stretch,
                 ..default()
             },
             children![
@@ -351,78 +366,114 @@ fn story_query_sheet_bundle(font: Handle<Font>) -> impl Bundle {
 fn story_query_sheet_page_bundle(font: Handle<Font>) -> impl Bundle {
     (
         Node {
-            width: px(STORY_QUERY_SHEET_WIDTH),
-            height: px(STORY_QUERY_SHEET_HEIGHT),
-            flex_direction: FlexDirection::Column,
-            row_gap: px(10.0),
-            padding: UiRect::new(px(30.0), px(28.0), px(24.0), px(24.0)),
+            width: percent(STORY_QUERY_RESULT_WIDTH_PERCENT),
+            height: percent(100.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            padding: UiRect::all(px(PAGE_OUTER_MARGIN)),
             overflow: Overflow::clip(),
-            border: UiRect::all(px(1.0)),
             ..default()
         },
-        BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.12)),
-        BackgroundColor(COLOR_PAPER),
-        BoxShadow::new(
-            Color::srgba(0.0, 0.0, 0.0, 0.22),
-            px(0.0),
-            px(12.0),
-            px(24.0),
-            px(0.0),
-        ),
-        children![
-            story_query_text(
-                font.clone(),
-                "",
-                14.0,
-                COLOR_TEXT_MAIN,
-                StoryQuerySheetTextSlot::Title,
+        BackgroundColor(COLOR_PANEL_BODY_PROCESSED),
+        children![(
+            Node {
+                width: px(STORY_QUERY_A4_PAGE_WIDTH),
+                height: px(STORY_QUERY_A4_PAGE_HEIGHT),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(8.0),
+                padding: UiRect::new(
+                    px(PAGE_TEXT_MARGIN_LEFT * STORY_QUERY_A4_SCALE),
+                    px(PAGE_TEXT_MARGIN_RIGHT * STORY_QUERY_A4_SCALE),
+                    px(PAGE_TEXT_MARGIN_TOP * STORY_QUERY_A4_SCALE),
+                    px(PAGE_TEXT_MARGIN_BOTTOM * STORY_QUERY_A4_SCALE),
+                ),
+                overflow: Overflow::clip(),
+                border: UiRect::all(px(1.0)),
+                ..default()
+            },
+            BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.12)),
+            BackgroundColor(COLOR_PAPER),
+            BoxShadow::new(
+                Color::srgba(0.0, 0.0, 0.0, 0.22),
+                px(0.0),
+                px(12.0),
+                px(24.0),
+                px(0.0),
             ),
-            (
-                Node {
-                    width: percent(100.0),
-                    height: px(STORY_QUERY_SHEET_HEIGHT - 92.0),
-                    overflow: Overflow::clip(),
-                    ..default()
-                },
-                children![story_query_text(
+            children![
+                story_query_text(
                     font.clone(),
                     "",
-                    12.0,
+                    15.0,
                     COLOR_TEXT_MAIN,
-                    StoryQuerySheetTextSlot::Result,
-                )],
-            ),
-            story_query_text(
-                font,
-                "",
-                10.0,
-                COLOR_TEXT_MUTED,
-                StoryQuerySheetTextSlot::Page,
-            ),
-        ],
+                    StoryQuerySheetTextSlot::Title,
+                ),
+                (
+                    Node {
+                        width: percent(100.0),
+                        flex_grow: 1.0,
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    children![(
+                        Text::new(""),
+                        TextLayout::new_with_no_wrap(),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: STORY_QUERY_RESULT_FONT_SIZE,
+                            ..default()
+                        },
+                        LineHeight::Px(STORY_QUERY_RESULT_LINE_HEIGHT),
+                        TextColor(COLOR_ACTION),
+                        Node {
+                            width: percent(100.0),
+                            height: percent(100.0),
+                            overflow: Overflow::visible(),
+                            ..default()
+                        },
+                        RelativeCursorPosition::default(),
+                        StoryQueryRenderedText,
+                    )],
+                ),
+                story_query_text(
+                    font,
+                    "",
+                    10.0,
+                    COLOR_TEXT_MUTED,
+                    StoryQuerySheetTextSlot::Page,
+                ),
+            ],
+        )],
     )
 }
 
 fn story_query_sheet_menu_bundle(font: Handle<Font>) -> impl Bundle {
     (
         Node {
-            width: px(STORY_QUERY_MENU_WIDTH),
-            height: px(STORY_QUERY_SHEET_HEIGHT),
+            width: percent(STORY_QUERY_MENU_WIDTH_PERCENT),
+            height: percent(100.0),
             flex_direction: FlexDirection::Column,
             row_gap: px(7.0),
-            padding: UiRect::all(px(12.0)),
+            padding: UiRect::all(px(14.0)),
             overflow: Overflow::clip(),
-            border_radius: BorderRadius::all(px(8.0)),
+            border: UiRect::left(px(1.0)),
             ..default()
         },
+        BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.10)),
         BackgroundColor(Color::srgb(0.88, 0.89, 0.91)),
         children![
-            story_query_text(
-                font.clone(),
-                "Story Query Sheet",
-                16.0,
-                COLOR_TEXT_MAIN,
-                StoryQuerySheetTextSlot::Status,
+            (
+                Node {
+                    padding: UiRect::bottom(px(3.0)),
+                    ..default()
+                },
+                children![story_query_text(
+                    font.clone(),
+                    "Story Query Sheet",
+                    16.0,
+                    COLOR_TEXT_MAIN,
+                    StoryQuerySheetTextSlot::Status,
+                )],
             ),
             story_query_dropdown_row(
                 font.clone(),
@@ -497,6 +548,35 @@ fn story_query_sheet_menu_bundle(font: Handle<Font>) -> impl Bundle {
             ),
         ],
     )
+}
+
+fn setup_story_query_sheet_result_spans(
+    mut commands: Commands,
+    text_query: Query<Entity, With<StoryQueryRenderedText>>,
+    fonts: Res<EditorFonts>,
+) {
+    for entity in text_query.iter() {
+        commands.entity(entity).with_children(|text_parent| {
+            for line_offset in 0..STORY_QUERY_PAGE_LINE_LIMIT {
+                for part_index in 0..PROCESSED_LINE_SPAN_PARTS {
+                    text_parent.spawn((
+                        TextSpan::new(""),
+                        TextFont {
+                            font: fonts.regular.clone(),
+                            font_size: STORY_QUERY_RESULT_FONT_SIZE,
+                            ..default()
+                        },
+                        LineHeight::Px(STORY_QUERY_RESULT_LINE_HEIGHT),
+                        TextColor(COLOR_ACTION),
+                        StoryQueryRenderedLineSpan {
+                            line_offset,
+                            part_index,
+                        },
+                    ));
+                }
+            }
+        });
+    }
 }
 
 fn story_query_dropdown_row(
@@ -662,6 +742,7 @@ fn story_query_text(
 
 fn sync_story_query_sheet_ui(
     state: Res<EditorState>,
+    fonts: Res<EditorFonts>,
     mut root_query: Query<
         &mut Node,
         (
@@ -702,6 +783,16 @@ fn sync_story_query_sheet_ui(
     mut option_text_query: Query<
         (&StoryQueryDropdownOptionText, &mut Text),
         Without<StoryQuerySheetTextSlot>,
+    >,
+    mut rendered_span_query: Query<
+        (
+            &StoryQueryRenderedLineSpan,
+            &mut TextSpan,
+            &mut TextFont,
+            &mut LineHeight,
+            &mut TextColor,
+        ),
+        Without<ProcessedPaperLineSpan>,
     >,
 ) {
     let sheet = &state.story_query_sheet;
@@ -812,7 +903,6 @@ fn sync_story_query_sheet_ui(
                 )
             }
             StoryQuerySheetTextSlot::Page => sheet.page_label(),
-            StoryQuerySheetTextSlot::Result => sheet.current_page_text(),
         };
     }
 
@@ -830,6 +920,87 @@ fn sync_story_query_sheet_ui(
                 }
             })
             .unwrap_or_default();
+    }
+
+    apply_story_query_rendered_page_styles(&mut rendered_span_query, sheet, &state, &fonts);
+}
+
+fn apply_story_query_rendered_page_styles(
+    rendered_span_query: &mut Query<
+        (
+            &StoryQueryRenderedLineSpan,
+            &mut TextSpan,
+            &mut TextFont,
+            &mut LineHeight,
+            &mut TextColor,
+        ),
+        Without<ProcessedPaperLineSpan>,
+    >,
+    sheet: &StoryQuerySheet,
+    state: &EditorState,
+    fonts: &EditorFonts,
+) {
+    let document_format = story_query_document_format(sheet.result_format);
+    let page = sheet
+        .visual_pages
+        .get(sheet.page_index)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+
+    for (span, mut text_span, mut text_font, mut text_line_height, mut text_color) in
+        rendered_span_query.iter_mut()
+    {
+        let Some(visual_line) = page.get(span.line_offset) else {
+            **text_span = String::new();
+            text_font.font = font_for_variant_with_format(fonts, FontVariant::Regular, document_format);
+            text_font.font_size = STORY_QUERY_RESULT_FONT_SIZE;
+            *text_line_height = LineHeight::Px(STORY_QUERY_RESULT_LINE_HEIGHT);
+            text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
+            continue;
+        };
+
+        let (style, allow_link_color) = if visual_line.is_spacer {
+            (transparent_line_render_style(), false)
+        } else if let Some(render_override) = visual_line.render_override.as_ref() {
+            (
+                processed_line_style_for_kind(
+                    &render_override.kind,
+                    render_override.markdown_heading_level,
+                ),
+                true,
+            )
+        } else {
+            (default_line_render_style(), true)
+        };
+
+        let used_fragment_count = processed_visual_fragment_count(visual_line);
+        let Some(mut fragment) = processed_visual_fragment_for_part(visual_line, span.part_index)
+        else {
+            **text_span = String::new();
+            text_font.font = font_for_variant_with_format(fonts, FontVariant::Regular, document_format);
+            text_font.font_size = STORY_QUERY_RESULT_FONT_SIZE;
+            *text_line_height = LineHeight::Px(STORY_QUERY_RESULT_LINE_HEIGHT);
+            text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
+            continue;
+        };
+
+        if span.part_index + 1 == used_fragment_count
+            && span.line_offset + 1 < STORY_QUERY_PAGE_LINE_LIMIT
+        {
+            fragment.text.push('\n');
+        }
+
+        let effective_variant =
+            font_variant_for_processed_fragment(style.font_variant, &fragment, document_format);
+        text_font.font = font_for_variant_with_format(fonts, effective_variant, document_format);
+        text_font.font_size = STORY_QUERY_RESULT_FONT_SIZE * style.font_scale;
+        *text_line_height = LineHeight::Px(STORY_QUERY_RESULT_LINE_HEIGHT * style.line_height_scale);
+        **text_span = fragment.text;
+        text_color.0 = if allow_link_color && fragment.is_link {
+            story_query_link_color_for_target(sheet, state, fragment.link_target.as_deref())
+        } else {
+            style.color
+        };
     }
 }
 
@@ -873,6 +1044,42 @@ fn handle_story_query_sheet_buttons(
             StoryQuerySheetAction::NextPage => state.story_query_sheet.next_page(),
             StoryQuerySheetAction::Close => state.story_query_sheet.open = false,
         }
+    }
+}
+
+fn handle_story_query_sheet_link_click(
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    rendered_text_query: Query<
+        (&RelativeCursorPosition, &ComputedNode, &TextLayoutInfo),
+        With<StoryQueryRenderedText>,
+    >,
+    mut state: ResMut<EditorState>,
+) {
+    if !state.story_query_sheet.open || !mouse_buttons.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    let target = rendered_text_query
+        .iter()
+        .find_map(|(relative_cursor, computed, layout)| {
+            if !relative_cursor.cursor_over() {
+                return None;
+            }
+            let normalized = relative_cursor.normalized?;
+            let size = computed.size() * computed.inverse_scale_factor();
+            let local_x = (normalized.x + 0.5) * size.x;
+            let local_y = (normalized.y + 0.5) * size.y;
+            story_query_link_target_at_position(
+                &state.story_query_sheet,
+                layout,
+                computed.inverse_scale_factor(),
+                local_x,
+                local_y,
+            )
+        });
+
+    if let Some(target) = target {
+        state.open_story_query_link_target(target);
     }
 }
 
@@ -931,8 +1138,7 @@ fn story_query_control_visible(sheet: &StoryQuerySheet, slot: StoryQuerySheetTex
     match slot {
         StoryQuerySheetTextSlot::Title
         | StoryQuerySheetTextSlot::Status
-        | StoryQuerySheetTextSlot::Page
-        | StoryQuerySheetTextSlot::Result => true,
+        | StoryQuerySheetTextSlot::Page => true,
         StoryQuerySheetTextSlot::QueryKind => true,
         StoryQuerySheetTextSlot::SceneScope => matches!(
             sheet.query_kind,
@@ -1136,13 +1342,6 @@ fn step_open_story_query_dropdown(state: &mut EditorState, direction: isize) {
 }
 
 impl StoryQuerySheet {
-    fn current_page_text(&self) -> String {
-        self.pages
-            .get(self.page_index)
-            .cloned()
-            .unwrap_or_else(|| "No result.".to_string())
-    }
-
     fn page_label(&self) -> String {
         let format = match self.result_format {
             StoryQueryOutputFormat::Fountain => "Fountain",
@@ -1152,7 +1351,7 @@ impl StoryQuerySheet {
             "{} page {} of {}",
             format,
             self.page_index.saturating_add(1),
-            self.pages.len().max(1)
+            self.visual_pages.len().max(1)
         )
     }
 
@@ -1161,16 +1360,26 @@ impl StoryQuerySheet {
     }
 
     fn next_page(&mut self) {
-        if self.page_index + 1 < self.pages.len() {
+        if self.page_index + 1 < self.visual_pages.len() {
             self.page_index += 1;
         }
     }
 
-    fn set_output(&mut self, output: StoryQueryRunOutput) {
+    fn set_output(
+        &mut self,
+        output: StoryQueryRunOutput,
+        dialogue_double_space_newline: bool,
+        non_dialogue_double_space_newline: bool,
+    ) {
         self.result_title = output.title;
         self.result_status = output.status;
         self.result_format = output.format;
-        self.pages = paginate_story_query_text(&output.text);
+        self.visual_pages = story_query_visual_pages(
+            &output.text,
+            self.result_format,
+            dialogue_double_space_newline,
+            non_dialogue_double_space_newline,
+        );
         self.source_targets = output.source_targets;
         self.page_index = 0;
     }
@@ -1182,7 +1391,7 @@ impl StoryQuerySheet {
             format: StoryQueryOutputFormat::Markdown,
             text: format!("# {title}\n\n{message}"),
             source_targets: Vec::new(),
-        });
+        }, false, false);
     }
 }
 
@@ -1473,7 +1682,11 @@ impl EditorState {
         match output {
             Ok(output) => {
                 self.status_message = output.status.clone();
-                self.story_query_sheet.set_output(output);
+                self.story_query_sheet.set_output(
+                    output,
+                    self.dialogue_double_space_newline,
+                    self.non_dialogue_double_space_newline,
+                );
             }
             Err(error) => self.story_query_sheet.set_error("Story Query Sheet", error),
         }
@@ -1493,6 +1706,27 @@ impl EditorState {
         self.processed_top_visual = self.top_line;
         self.story_query_sheet.open = false;
         self.status_message = format!("Opened story query source at line {}.", line + 1);
+    }
+
+    fn open_story_query_link_target(&mut self, target: String) {
+        match self.resolve_script_target_path(&target) {
+            Ok(path) => {
+                let metadata_warning = basscript_core::EntityDocument::load(&path).err();
+                self.load_from_path(path.clone());
+                self.story_query_sheet.open = false;
+                if let Some(error) = metadata_warning {
+                    self.status_message = format!(
+                        "Loaded {} with metadata warning: {error}",
+                        status_path_label(&path)
+                    );
+                } else {
+                    self.status_message = format!("Opened linked entity `{target}`.");
+                }
+            }
+            Err(message) => {
+                self.status_message = message;
+            }
+        }
     }
 
     fn selected_story_query_scene(
@@ -1632,8 +1866,7 @@ fn build_category_scenes_output(
         .collect::<Vec<_>>()
         .join(" + ");
     let mut text = String::new();
-    text.push_str("# Entities by Category\n\n");
-    text.push_str(&format!("Scope: {scope_label}\n\n"));
+    text.push_str(&format!("Scope: {scope_label}\n"));
     text.push_str(&format!("Categories: {selected_label}\n\n"));
     if scenes.is_empty() {
         text.push_str("No indexed scenes were found.\n");
@@ -1644,17 +1877,12 @@ fn build_category_scenes_output(
     let mut occurrence_count = 0usize;
     if !scene_first && scene_groups.len() == 1 {
         let (scene, grouped) = &scene_groups[0];
-        text.push_str(&format!("Scene: {}\n\n", scene.heading_text));
-        occurrence_count += write_category_group(&mut text, taxonomy, grouped, 2, 3);
+        write_category_scene_heading(&mut text, scene, false);
+        occurrence_count += write_category_group(&mut text, taxonomy, grouped);
     } else {
         for (scene, grouped) in &scene_groups {
-            text.push_str(&format!("## {}\n\n", scene.heading_text));
-            text.push_str(&format!(
-                "[[scene: {}:{}]]\n\n",
-                scene.relative_path,
-                scene.start_line + 1
-            ));
-            occurrence_count += write_category_group(&mut text, taxonomy, grouped, 3, 4);
+            write_category_scene_heading(&mut text, scene, true);
+            occurrence_count += write_category_group(&mut text, taxonomy, grouped);
         }
     }
 
@@ -1667,23 +1895,36 @@ fn build_category_scenes_output(
     })
 }
 
+fn write_category_scene_heading(
+    text: &mut String,
+    scene: &StoryIndexSceneRecord,
+    include_separator: bool,
+) {
+    if include_separator && !text.ends_with("\n\n") {
+        text.push('\n');
+    }
+    text.push_str(&scene.heading_text);
+    text.push('\n');
+    text.push_str(&format!(
+        "Source: {}:{}\n\n",
+        scene.relative_path,
+        scene.start_line + 1
+    ));
+}
+
 fn write_category_group(
     text: &mut String,
     taxonomy: &StoryTaxonomyConfig,
     grouped: &StoryQueryCategoryGroup,
-    category_heading_level: usize,
-    entity_heading_level: usize,
 ) -> usize {
     let mut occurrence_count = 0usize;
-    let category_heading = "#".repeat(category_heading_level);
-    let entity_heading = "#".repeat(entity_heading_level);
     for (category_index, entities) in grouped {
         let category_label = taxonomy
             .categories
             .get(*category_index)
             .map(|category| category.display_label())
             .unwrap_or("Category");
-        text.push_str(&format!("{category_heading} {category_label}\n\n"));
+        text.push_str(&format!("{category_label}\n"));
         for (target, appearances) in entities {
             let name = appearances
                 .first()
@@ -1693,21 +1934,25 @@ fn write_category_group(
                 .first()
                 .and_then(|appearance| appearance.entity_type.as_deref())
                 .unwrap_or("entity");
-            text.push_str(&format!("{entity_heading} {name} ({entity_type})\n\n"));
+            let linked_name = story_query_entity_link(name, target);
+            text.push_str(&format!("  {linked_name} ({entity_type})\n"));
             for appearance in appearances {
                 occurrence_count += 1;
                 text.push_str(&format!(
-                    "- {}:{} - {} - {}\n",
-                    appearance.relative_path,
+                    "    line {} - {} - {}\n",
                     appearance.line + 1,
-                    appearance.role.as_database_value(),
-                    trim_result_snippet(&appearance.raw_snippet)
+                    human_story_query_role(&appearance.role),
+                    trim_category_result_snippet(&appearance.raw_snippet)
                 ));
             }
             text.push('\n');
         }
     }
     occurrence_count
+}
+
+fn human_story_query_role(role: &basscript_core::StoryIndexAppearanceRole) -> String {
+    role.as_database_value().replace('_', " ")
 }
 
 fn build_appearances_output(
@@ -1718,7 +1963,10 @@ fn build_appearances_output(
         .appearances_of_entity(&entity.target)
         .map_err(|error| format!("Appearance query failed: {error}"))?;
     let mut text = String::new();
-    text.push_str(&format!("# Appearances: {}\n\n", entity.name));
+    text.push_str(&format!(
+        "# Appearances: {}\n\n",
+        story_query_entity_link(&entity.name, &entity.target)
+    ));
     text.push_str(&format!(
         "Target: `{}`\nType: `{}`\n\n",
         entity.target, entity.entity_type
@@ -1800,12 +2048,8 @@ fn fountain_dialogue_extract(
                 path: scene.source_path.clone(),
                 line,
             });
-            scene_text.push_str(&format!(
-                "[[source: {}:{}]]\n",
-                scene.relative_path,
-                line + 1
-            ));
-            scene_text.push_str(&visible_fountain_line(parsed_line));
+            scene_text.push_str(&format!("Source: {}:{}\n", scene.relative_path, line + 1));
+            scene_text.push_str(&raw_fountain_query_line(parsed_line));
             scene_text.push('\n');
             line += 1;
             while line <= scene.end_line && line < parsed.len() {
@@ -1813,7 +2057,7 @@ fn fountain_dialogue_extract(
                 if !matches!(next.kind, LineKind::Parenthetical | LineKind::Dialogue) {
                     break;
                 }
-                scene_text.push_str(&visible_fountain_line(next));
+                scene_text.push_str(&raw_fountain_query_line(next));
                 scene_text.push('\n');
                 line += 1;
             }
@@ -1824,7 +2068,11 @@ fn fountain_dialogue_extract(
         if !scene_text.is_empty() {
             text.push_str(&scene.heading_text);
             text.push('\n');
-            text.push_str(&format!("[[scene: {}:{}]]\n\n", scene.relative_path, scene.start_line + 1));
+            text.push_str(&format!(
+                "Source: {}:{}\n\n",
+                scene.relative_path,
+                scene.start_line + 1
+            ));
             text.push_str(&scene_text);
         }
     }
@@ -1849,12 +2097,8 @@ fn linked_character_target(parsed_line: &ParsedLine) -> Option<String> {
     Some(link.target.clone())
 }
 
-fn visible_fountain_line(parsed_line: &ParsedLine) -> String {
-    let visible = basscript_core::render_script_link_text(&parsed_line.raw).text;
-    match parsed_line.kind {
-        LineKind::Character => visible.to_ascii_uppercase(),
-        _ => visible,
-    }
+fn raw_fountain_query_line(parsed_line: &ParsedLine) -> String {
+    parsed_line.raw.clone()
 }
 
 fn load_story_taxonomy() -> StoryTaxonomyLoad {
@@ -2078,16 +2322,259 @@ fn trim_result_snippet(snippet: &str) -> String {
     out
 }
 
-fn paginate_story_query_text(text: &str) -> Vec<String> {
-    let lines = text.lines().collect::<Vec<_>>();
-    if lines.is_empty() {
-        return vec![String::new()];
+fn trim_category_result_snippet(snippet: &str) -> String {
+    let trimmed = snippet.trim();
+    if trimmed.chars().count() <= 72 {
+        return trimmed.to_string();
     }
 
-    lines
+    let mut out = trimmed.chars().take(69).collect::<String>();
+    out.push_str("...");
+    out
+}
+
+fn story_query_document_format(format: StoryQueryOutputFormat) -> DocumentFormat {
+    match format {
+        StoryQueryOutputFormat::Fountain => DocumentFormat::Fountain,
+        StoryQueryOutputFormat::Markdown => DocumentFormat::Markdown,
+    }
+}
+
+fn story_query_visual_pages(
+    text: &str,
+    output_format: StoryQueryOutputFormat,
+    dialogue_double_space_newline: bool,
+    non_dialogue_double_space_newline: bool,
+) -> Vec<Vec<ProcessedVisualLine>> {
+    let document_format = story_query_document_format(output_format);
+    let document = Document::from_text(text);
+    let parsed = parse_document_with_format(&document, document_format);
+    let wrap_columns = story_query_wrap_columns(document_format);
+    let mut visual_lines = Vec::<ProcessedVisualLine>::new();
+
+    for (source_line, parsed_line) in parsed.iter().enumerate() {
+        let visual_override = if document_format == DocumentFormat::Markdown {
+            markdown_render_override_for_raw(&parsed_line.raw)
+        } else {
+            None
+        };
+        let effective_kind = visual_override
+            .as_ref()
+            .map(|override_style| &override_style.kind)
+            .unwrap_or(&parsed_line.kind);
+        let markdown_heading_level = visual_override
+            .as_ref()
+            .and_then(|override_style| override_style.markdown_heading_level)
+            .or(parsed_line.markdown_heading_level);
+        let indent_width = parsed_line.indent_width();
+        let uppercase = matches!(
+            effective_kind,
+            LineKind::SceneHeading | LineKind::Transition | LineKind::Character
+        );
+        let (prepared_text, checklist_state) =
+            prepare_processed_line_text(parsed_line, false, visual_override.as_ref());
+        let mut wrapped = Vec::<ProcessedVisualLine>::new();
+
+        if story_query_should_split_on_double_space(
+            effective_kind,
+            dialogue_double_space_newline,
+            non_dialogue_double_space_newline,
+        ) {
+            for (segment_start, segment_end) in double_space_segments(&prepared_text.text) {
+                push_wrapped_visual_lines(
+                    &mut wrapped,
+                    source_line,
+                    indent_width,
+                    uppercase,
+                    &prepared_text,
+                    segment_start,
+                    segment_end,
+                    wrap_columns,
+                );
+            }
+        } else {
+            push_wrapped_visual_lines(
+                &mut wrapped,
+                source_line,
+                indent_width,
+                uppercase,
+                &prepared_text,
+                0,
+                prepared_text.text.chars().count(),
+                wrap_columns,
+            );
+        }
+
+        if let Some(checked) = checklist_state {
+            if let Some(first_wrapped) = wrapped.first_mut() {
+                first_wrapped.markdown_checklist_checked = Some(checked);
+            }
+        }
+
+        let style_override = ProcessedLineRenderOverride {
+            kind: effective_kind.clone(),
+            markdown_heading_level,
+        };
+        for visual_line in &mut wrapped {
+            visual_line.render_override = Some(style_override.clone());
+        }
+
+        visual_lines.extend(wrapped);
+    }
+
+    if visual_lines.is_empty() {
+        visual_lines.push(story_query_blank_visual_line());
+    }
+
+    visual_lines
         .chunks(STORY_QUERY_PAGE_LINE_LIMIT)
-        .map(|chunk| chunk.join("\n"))
+        .map(|chunk| chunk.to_vec())
         .collect()
+}
+
+fn story_query_wrap_columns(document_format: DocumentFormat) -> usize {
+    let text_width = (STORY_QUERY_A4_PAGE_WIDTH
+        - (PAGE_TEXT_MARGIN_LEFT + PAGE_TEXT_MARGIN_RIGHT) * STORY_QUERY_A4_SCALE)
+        .max(1.0);
+    let char_width = (default_char_width_for_format(document_format) * STORY_QUERY_A4_SCALE)
+        .max(0.1);
+    ((text_width / char_width) + 1e-4).floor().max(1.0) as usize
+}
+
+fn story_query_should_split_on_double_space(
+    kind: &LineKind,
+    dialogue_double_space_newline: bool,
+    non_dialogue_double_space_newline: bool,
+) -> bool {
+    if matches!(
+        kind,
+        LineKind::MarkdownHeading
+            | LineKind::MarkdownListItem
+            | LineKind::MarkdownQuote
+            | LineKind::MarkdownCodeFence
+            | LineKind::MarkdownCode
+            | LineKind::MarkdownRule
+            | LineKind::MarkdownParagraph
+    ) {
+        return false;
+    }
+
+    match kind {
+        LineKind::Dialogue => dialogue_double_space_newline,
+        _ => non_dialogue_double_space_newline,
+    }
+}
+
+fn story_query_blank_visual_line() -> ProcessedVisualLine {
+    ProcessedVisualLine {
+        source_line: 0,
+        text: " ".to_string(),
+        fragments: vec![ProcessedVisualFragment {
+            text: " ".to_string(),
+            is_link: false,
+            link_target: None,
+        }],
+        display_to_raw: vec![0, 0],
+        raw_start_column: 0,
+        raw_end_column: 0,
+        markdown_checklist_checked: None,
+        image_block: None,
+        render_override: Some(ProcessedLineRenderOverride {
+            kind: LineKind::Action,
+            markdown_heading_level: None,
+        }),
+        is_spacer: false,
+    }
+}
+
+fn story_query_link_color_for_target(
+    sheet: &StoryQuerySheet,
+    state: &EditorState,
+    target: Option<&str>,
+) -> Color {
+    let Some(target) = target else {
+        return state.processed_link_color_for_target(None);
+    };
+    if let Some(entity_type) = state.script_link_target_types.get(target) {
+        return color_from_rgba(state.link_rgba_for_type(entity_type));
+    }
+
+    sheet
+        .entities
+        .iter()
+        .chain(sheet.characters.iter())
+        .find(|entity| entity.target == target)
+        .map(|entity| color_from_rgba(state.link_rgba_for_type(&entity.entity_type)))
+        .unwrap_or_else(|| state.processed_link_color_for_target(Some(target)))
+}
+
+fn story_query_link_target_at_position(
+    sheet: &StoryQuerySheet,
+    layout: &TextLayoutInfo,
+    inverse_scale: f32,
+    local_x: f32,
+    local_y: f32,
+) -> Option<String> {
+    let page = sheet.visual_pages.get(sheet.page_index)?;
+    let document_format = story_query_document_format(sheet.result_format);
+    let fallback_char_width =
+        (default_char_width_for_format(document_format) * STORY_QUERY_A4_SCALE).max(1.0);
+    let fallback_line = ((local_y / STORY_QUERY_RESULT_LINE_HEIGHT)
+        .floor()
+        .max(0.0) as usize)
+        .min(STORY_QUERY_PAGE_LINE_LIMIT.saturating_sub(1));
+    let line_offset = line_index_from_layout_y(
+        layout,
+        local_y,
+        STORY_QUERY_PAGE_LINE_LIMIT,
+        inverse_scale,
+    )
+    .unwrap_or(fallback_line)
+    .min(STORY_QUERY_PAGE_LINE_LIMIT.saturating_sub(1));
+    let visual_line = page.get(line_offset)?;
+    let fallback_column = (local_x / fallback_char_width).round().max(0.0) as usize;
+    let display_column = column_from_layout_x(
+        layout,
+        line_offset,
+        local_x,
+        &visual_line.text,
+        inverse_scale,
+        fallback_char_width,
+    )
+    .unwrap_or(fallback_column);
+
+    story_query_link_target_at_column(visual_line, display_column)
+}
+
+fn story_query_link_target_at_column(
+    visual_line: &ProcessedVisualLine,
+    display_column: usize,
+) -> Option<String> {
+    let mut cursor = 0usize;
+    for fragment in &visual_line.fragments {
+        let next = cursor.saturating_add(fragment.text.chars().count());
+        if display_column >= cursor && display_column < next {
+            return fragment.link_target.clone();
+        }
+        cursor = next;
+    }
+
+    visual_line
+        .fragments
+        .last()
+        .filter(|_| display_column == cursor)
+        .and_then(|fragment| fragment.link_target.clone())
+}
+
+fn story_query_entity_link(label: &str, target: &str) -> String {
+    if !basscript_core::is_valid_target_key(target) {
+        return label.to_string();
+    }
+    let label = label
+        .replace('[', "(")
+        .replace(']', ")")
+        .replace('\n', " ");
+    format!("[{label}]({target})")
 }
 
 fn clamp_story_query_index(index: &mut usize, len: usize) {

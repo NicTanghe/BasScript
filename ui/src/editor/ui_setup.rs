@@ -180,7 +180,8 @@ fn setup(
                                         children![panel_bundle(font.clone(), PanelKind::Processed)],
                                     ),
                                 ],
-                            )
+                            ),
+                            story_query_sheet_bundle(font.clone()),
                         ],
                     ),
                     status_line_bundle(font.clone(), state.app_bg_color)
@@ -645,7 +646,6 @@ fn setup(
             ));
 
             root.spawn(workspace_prompt_bundle(font.clone()));
-            root.spawn(story_query_sheet_bundle(font.clone()));
             root.spawn(command_menu_bundle(font.clone()));
         });
 }

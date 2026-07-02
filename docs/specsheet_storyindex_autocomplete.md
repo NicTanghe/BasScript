@@ -448,6 +448,8 @@ Menu behavior
 - Dropdown rows must be stable in size and must not overflow the side menu.
 - Long option labels are truncated visually but retain their full value in tooltips or status text where practical.
 - Opening one dropdown closes any other open dropdown in the sheet.
+- Opening the sheet fills the workspace instead of floating above selected pages.
+- The workspace is split on the golden ratio: the A4 result view takes the larger side and the controls take the smaller side.
 
 Contextual controls
 
@@ -495,6 +497,10 @@ Implementation notes
 - Dropdowns are available for query type, scene scope, selected scene, characters, entity, and taxonomy categories.
 - Controls are hidden or shown from the selected query type and selected scene scope.
 - `All scenes` is implemented for `Entities by category` readouts and groups by scene, category, then entity.
+- Category sheet previews use human-readable report text instead of raw Markdown heading markers or debug-style `[[scene: ...]]` source markers.
+- Story Query Sheet now uses a full-workspace golden-ratio split with a scaled A4 result page that reuses the normal A4 page proportions and text margins.
+- Story Query Sheet pagination keeps A4-style page splitting with previous/next page controls.
+- Story Query Sheet result pages render through the same processed visual-line/span formatting path as normal rendered pages, including wrapping, Fountain/Markdown line styles, script-link coloring, and clickable entity links.
 
 Q8. Index consistency and performance
 
