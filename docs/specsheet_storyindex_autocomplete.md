@@ -424,10 +424,79 @@ Acceptance
 Implementation notes
 
 - The Story Query Sheet v1 exposes two category selectors, `Cat A` and optional `Cat B`.
-- The `Categories in scene` query uses selected taxonomy categories instead of hardcoded `prop` and `object` checks.
+- The `Entities by category` query uses selected taxonomy categories instead of hardcoded `prop` and `object` checks.
 - Results are grouped by taxonomy category, then entity, then source occurrence.
 
-Q7. Index consistency and performance
+Q7. Contextual query sheet controls
+
+Status: implemented v1
+
+Replace the current flimsy cycle-button query controls with proper dropdown-driven controls that change according to the selected query type.
+
+Purpose
+
+- Make the Story Query Sheet feel like a query builder rather than a fixed list of always-visible selectors.
+- Show only the controls that matter for the selected query type.
+- Let scene-based queries target the current scene, one selected scene, or all scenes.
+- Rename awkward query labels such as `Categories in scene` into clearer readout names.
+
+Menu behavior
+
+- Query type is selected through a dropdown.
+- Entity, character, category, scene, location, output format, grouping mode, and scope controls use dropdowns where the value comes from a known option list.
+- Dropdowns should support keyboard and pointer selection.
+- Dropdown rows must be stable in size and must not overflow the side menu.
+- Long option labels are truncated visually but retain their full value in tooltips or status text where practical.
+- Opening one dropdown closes any other open dropdown in the sheet.
+
+Contextual controls
+
+- The visible control set changes when the selected query type changes.
+- Dialogue-by-character shows one character selector and optional scene/location scope.
+- Dialogue-between-characters shows two character selectors and optional scene/location scope.
+- Entity-appearance queries show one entity selector and optional scene/workspace scope.
+- Category readout queries show category selectors, scene/workspace scope, and grouping/output options.
+- Controls that do not apply to the selected query type are hidden, not merely disabled.
+- Invalid selections are clamped or cleared when switching query types.
+
+Scene and workspace scope
+
+- Scene scope is a dropdown with at least:
+  - `Current scene`
+  - `Selected scene`
+  - `All scenes`
+- `Selected scene` reveals a scene dropdown.
+- `All scenes` runs the query across every indexed scene in script order.
+- If there is no current scene, current-scene scope shows a clear unavailable state and suggests `Selected scene` or `All scenes`.
+- All-scenes results should group by scene first unless the selected output mode explicitly asks for another grouping.
+
+Category readout naming
+
+- Replace the query label `Categories in scene` with a clearer label such as `Entities by category`.
+- The output title should include the selected scope, for example:
+  - `Entities by category: Current scene`
+  - `Entities by category: All scenes`
+  - `Entities by category: EXT. VILLAGE MARKET - DAWN`
+- The sheet should describe selected categories as `Props + Environment`, `Fauna + Flora`, or the selected taxonomy labels.
+
+Acceptance
+
+- The query type selector is a dropdown rather than a cycle button.
+- Selecting a dialogue query hides category controls.
+- Selecting a category readout hides dialogue-only character controls.
+- The user can select `All scenes` and run a category readout across every indexed scene.
+- All-scenes category readouts group by scene, then category, then entity by default.
+- Query labels and result titles no longer use awkward wording such as `Category entry in scene(s)`.
+- Switching query types does not leave stale hidden selections that break the query.
+
+Implementation notes
+
+- The first implementation uses bounded dropdown option windows rather than scrollable native dropdowns.
+- Dropdowns are available for query type, scene scope, selected scene, characters, entity, and taxonomy categories.
+- Controls are hidden or shown from the selected query type and selected scene scope.
+- `All scenes` is implemented for `Entities by category` readouts and groups by scene, category, then entity.
+
+Q8. Index consistency and performance
 
 Status: todo
 
