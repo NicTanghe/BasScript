@@ -604,7 +604,7 @@ fn looks_like_yaml_front_matter(markdown: &str) -> bool {
     markdown
         .lines()
         .next()
-        .map(|line| line.trim_end_matches('\r') == "---")
+        .map(|line| line.trim_start_matches('\u{feff}').trim_end_matches('\r') == "---")
         .unwrap_or(false)
 }
 
@@ -1368,6 +1368,29 @@ mod tests {
         assert_eq!(characters.len(), 1);
         assert_eq!(characters[0].target, "eoghan");
         assert_eq!(characters[0].entity_type, "Character");
+    }
+
+    #[test]
+    fn indexes_entity_front_matter_with_utf8_bom() {
+        let root = TestDir::new();
+        root.write(
+            "props/the-whispering-quill.md",
+            "\u{feff}---\nid: entity_the_whispering_quill_001\ntarget: the-whispering-quill\ntype: artifact\nname: 'The Whispering Quill'\naliases: []\nstatus: draft\n---\nNotes.\n",
+        );
+        let database = StoryIndexDatabase::open_workspace(root.path())
+            .expect("open story index")
+            .database;
+
+        let report = database.scan_workspace_files().expect("scan workspace");
+        let artifacts = database
+            .entities_of_type("artifact")
+            .expect("query artifact entities");
+
+        assert_eq!(report.entity_count, 1);
+        assert_eq!(report.entity_error_count, 0);
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0].target, "the-whispering-quill");
+        assert_eq!(artifacts[0].name, "The Whispering Quill");
     }
 
     #[test]

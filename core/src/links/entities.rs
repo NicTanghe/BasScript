@@ -318,7 +318,15 @@ fn collect_markdown_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<(), Lin
 fn split_front_matter(markdown: &str, path: &Path) -> Result<(Vec<String>, String), LinkError> {
     let lines = markdown
         .split('\n')
-        .map(|line| line.trim_end_matches('\r').to_owned())
+        .enumerate()
+        .map(|(index, line)| {
+            let line = line.trim_end_matches('\r');
+            if index == 0 {
+                line.trim_start_matches('\u{feff}').to_owned()
+            } else {
+                line.to_owned()
+            }
+        })
         .collect::<Vec<_>>();
 
     if lines.first().map(String::as_str) != Some("---") {

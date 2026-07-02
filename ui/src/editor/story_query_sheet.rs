@@ -1,18 +1,48 @@
 use basscript_core::{
     StoryIndexAppearanceRecord, StoryIndexEntityRecord, StoryIndexSceneRecord,
 };
+use serde::Deserialize;
 
 const STORY_QUERY_SHEET_WIDTH: f32 = 430.0;
 const STORY_QUERY_SHEET_HEIGHT: f32 = STORY_QUERY_SHEET_WIDTH * A4_HEIGHT_POINTS / A4_WIDTH_POINTS;
 const STORY_QUERY_MENU_WIDTH: f32 = 360.0;
 const STORY_QUERY_PAGE_LINE_LIMIT: usize = 34;
+const DEFAULT_STORY_TAXONOMY_RON: &str = r#"(
+	categories: [
+		(
+			id: "props",
+			label: "Props",
+			types: ["prop", "object", "artifact", "tool", "weapon", "document", "clothing"],
+		),
+		(
+			id: "environment",
+			label: "Environment",
+			types: ["place", "location", "set", "set-piece", "set_dressing", "furniture", "building", "vehicle", "weather"],
+		),
+		(
+			id: "characters",
+			label: "Characters",
+			types: ["character"],
+		),
+		(
+			id: "fauna",
+			label: "Fauna",
+			types: ["animal", "creature", "monster", "mount"],
+		),
+		(
+			id: "flora",
+			label: "Flora",
+			types: ["plant", "tree", "flower", "fungus"],
+		),
+	],
+)"#;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StoryQueryKind {
     DialogueByCharacter,
     DialogueBetweenCharacters,
     DialogueBetweenAtScene,
-    PropsObjectsInScene,
+    CategoriesInScene,
     AppearancesOfEntity,
 }
 
@@ -22,7 +52,7 @@ impl StoryQueryKind {
             Self::DialogueByCharacter => "All dialogue by character",
             Self::DialogueBetweenCharacters => "Dialogue between characters",
             Self::DialogueBetweenAtScene => "Dialogue at scene/location",
-            Self::PropsObjectsInScene => "Props or objects in scene",
+            Self::CategoriesInScene => "Categories in scene",
             Self::AppearancesOfEntity => "Appearances of entity",
         }
     }
@@ -31,9 +61,75 @@ impl StoryQueryKind {
         match self {
             Self::DialogueByCharacter => Self::DialogueBetweenCharacters,
             Self::DialogueBetweenCharacters => Self::DialogueBetweenAtScene,
-            Self::DialogueBetweenAtScene => Self::PropsObjectsInScene,
-            Self::PropsObjectsInScene => Self::AppearancesOfEntity,
+            Self::DialogueBetweenAtScene => Self::CategoriesInScene,
+            Self::CategoriesInScene => Self::AppearancesOfEntity,
             Self::AppearancesOfEntity => Self::DialogueByCharacter,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct StoryTaxonomyConfig {
+    #[serde(default)]
+    categories: Vec<StoryTaxonomyCategory>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct StoryTaxonomyCategory {
+    id: String,
+    #[serde(default)]
+    label: String,
+    #[serde(default)]
+    types: Vec<String>,
+}
+
+struct StoryTaxonomyLoad {
+    taxonomy: StoryTaxonomyConfig,
+    notice: Option<String>,
+}
+
+impl Default for StoryTaxonomyConfig {
+    fn default() -> Self {
+        Self::from_ron(DEFAULT_STORY_TAXONOMY_RON)
+            .expect("DEFAULT_STORY_TAXONOMY_RON must be valid")
+    }
+}
+
+impl StoryTaxonomyConfig {
+    fn from_ron(contents: &str) -> Result<Self, String> {
+        let mut taxonomy = ron::from_str::<Self>(contents)
+            .map_err(|error| format!("Could not parse taxonomy RON: {error}"))?;
+        taxonomy.normalize();
+        if taxonomy.categories.is_empty() {
+            return Err("Taxonomy must define at least one non-empty category.".to_string());
+        }
+        Ok(taxonomy)
+    }
+
+    fn normalize(&mut self) {
+        for category in &mut self.categories {
+            category.id = category.id.trim().to_ascii_lowercase();
+            category.label = category.label.trim().to_string();
+            category.types = category
+                .types
+                .iter()
+                .map(|entity_type| normalize_story_taxonomy_key(entity_type))
+                .filter(|entity_type| !entity_type.is_empty())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+        }
+        self.categories
+            .retain(|category| !category.id.is_empty() && !category.types.is_empty());
+    }
+}
+
+impl StoryTaxonomyCategory {
+    fn display_label(&self) -> &str {
+        if self.label.is_empty() {
+            &self.id
+        } else {
+            &self.label
         }
     }
 }
@@ -55,6 +151,10 @@ struct StoryQuerySheet {
     character_b_index: usize,
     entity_index: usize,
     scene_index: usize,
+    category_a_index: usize,
+    category_b_index: usize,
+    taxonomy: StoryTaxonomyConfig,
+    taxonomy_notice: Option<String>,
     page_index: usize,
     pages: Vec<String>,
     result_title: String,
@@ -81,6 +181,10 @@ impl Default for StoryQuerySheet {
             character_b_index: 1,
             entity_index: 0,
             scene_index: 0,
+            category_a_index: 0,
+            category_b_index: 0,
+            taxonomy: StoryTaxonomyConfig::default(),
+            taxonomy_notice: None,
             page_index: 0,
             pages: vec!["No result yet.".to_string()],
             result_title: "Story Query Sheet".to_string(),
@@ -105,6 +209,10 @@ enum StoryQuerySheetAction {
     NextEntity,
     PreviousScene,
     NextScene,
+    PreviousCategoryA,
+    NextCategoryA,
+    PreviousCategoryB,
+    NextCategoryB,
     Run,
     OpenFirstSource,
     PreviousPage,
@@ -121,6 +229,8 @@ enum StoryQuerySheetTextSlot {
     SecondaryCharacter,
     Entity,
     Scene,
+    CategoryA,
+    CategoryB,
     Page,
     Result,
 }
@@ -249,6 +359,18 @@ fn story_query_sheet_menu_bundle(font: Handle<Font>) -> impl Bundle {
                 font.clone(),
                 StoryQuerySheetTextSlot::QueryKind,
                 StoryQuerySheetAction::CycleQuery,
+            ),
+            story_query_selector_row(
+                font.clone(),
+                StoryQuerySheetTextSlot::CategoryA,
+                StoryQuerySheetAction::PreviousCategoryA,
+                StoryQuerySheetAction::NextCategoryA,
+            ),
+            story_query_selector_row(
+                font.clone(),
+                StoryQuerySheetTextSlot::CategoryB,
+                StoryQuerySheetAction::PreviousCategoryB,
+                StoryQuerySheetAction::NextCategoryB,
             ),
             story_query_selector_row(
                 font.clone(),
@@ -430,6 +552,24 @@ fn sync_story_query_sheet_ui(
             StoryQuerySheetTextSlot::Title => sheet.result_title.clone(),
             StoryQuerySheetTextSlot::Status => sheet.result_status.clone(),
             StoryQuerySheetTextSlot::QueryKind => format!("Query: {}", sheet.query_kind.label()),
+            StoryQuerySheetTextSlot::CategoryA => {
+                format!(
+                    "Cat A: {}",
+                    compact_story_query_label(&selected_category_label(
+                        sheet,
+                        sheet.category_a_index
+                    ))
+                )
+            }
+            StoryQuerySheetTextSlot::CategoryB => {
+                format!(
+                    "Cat B: {}",
+                    compact_story_query_label(&selected_optional_category_label(
+                        sheet,
+                        sheet.category_b_index
+                    ))
+                )
+            }
             StoryQuerySheetTextSlot::PrimaryCharacter => {
                 format!(
                     "A: {}",
@@ -548,6 +688,30 @@ fn handle_story_query_sheet_buttons(
                     1,
                 );
             }
+            StoryQuerySheetAction::PreviousCategoryA => {
+                let len = state.story_query_sheet.taxonomy.categories.len();
+                cycle_story_query_index(
+                    &mut state.story_query_sheet.category_a_index,
+                    len,
+                    -1,
+                );
+                avoid_duplicate_story_query_categories(&mut state.story_query_sheet);
+            }
+            StoryQuerySheetAction::NextCategoryA => {
+                let len = state.story_query_sheet.taxonomy.categories.len();
+                cycle_story_query_index(
+                    &mut state.story_query_sheet.category_a_index,
+                    len,
+                    1,
+                );
+                avoid_duplicate_story_query_categories(&mut state.story_query_sheet);
+            }
+            StoryQuerySheetAction::PreviousCategoryB => {
+                cycle_secondary_story_query_category(&mut state.story_query_sheet, -1);
+            }
+            StoryQuerySheetAction::NextCategoryB => {
+                cycle_secondary_story_query_category(&mut state.story_query_sheet, 1);
+            }
             StoryQuerySheetAction::Run => state.run_story_query_sheet(),
             StoryQuerySheetAction::OpenFirstSource => state.open_first_story_query_source(),
             StoryQuerySheetAction::PreviousPage => state.story_query_sheet.previous_page(),
@@ -640,12 +804,23 @@ impl EditorState {
                     .as_ref()
                     .map(|index| index.entity_error_count)
                     .unwrap_or(0);
+                let taxonomy_status = self
+                    .story_query_sheet
+                    .taxonomy_notice
+                    .clone()
+                    .unwrap_or_else(|| {
+                        format!(
+                            "{} taxonomy categories loaded.",
+                            self.story_query_sheet.taxonomy.categories.len()
+                        )
+                    });
                 self.story_query_sheet.result_status = format!(
-                    "{} characters, {} entities, {} entity errors, {} scenes indexed.",
+                    "{} characters, {} entities, {} entity errors, {} scenes indexed. {}",
                     self.story_query_sheet.characters.len(),
                     self.story_query_sheet.entities.len(),
                     entity_error_count,
-                    self.story_query_sheet.scenes.len()
+                    self.story_query_sheet.scenes.len(),
+                    taxonomy_status
                 );
                 self.status_message = "Opened story query sheet.".to_string();
             }
@@ -661,6 +836,10 @@ impl EditorState {
         let Some(workspace_root) = self.workspace_root.clone() else {
             return Err("Open a workspace before using the story query sheet.".to_string());
         };
+
+        let taxonomy_load = load_story_taxonomy();
+        self.story_query_sheet.taxonomy = taxonomy_load.taxonomy;
+        self.story_query_sheet.taxonomy_notice = taxonomy_load.notice;
 
         if let Some(message) = self.refresh_story_index_for_workspace() {
             self.status_message = message;
@@ -714,6 +893,19 @@ impl EditorState {
             &mut self.story_query_sheet.scene_index,
             self.story_query_sheet.scenes.len().saturating_add(1),
         );
+        clamp_story_query_index(
+            &mut self.story_query_sheet.category_a_index,
+            self.story_query_sheet.taxonomy.categories.len(),
+        );
+        clamp_story_query_index(
+            &mut self.story_query_sheet.category_b_index,
+            self.story_query_sheet
+                .taxonomy
+                .categories
+                .len()
+                .saturating_add(1),
+        );
+        avoid_duplicate_story_query_categories(&mut self.story_query_sheet);
     }
 
     fn run_story_query_sheet(&mut self) {
@@ -800,22 +992,35 @@ impl EditorState {
                 };
                 build_dialogue_between_output(&database, character_a, character_b, scene_filter)
             }
-            StoryQueryKind::PropsObjectsInScene => {
+            StoryQueryKind::CategoriesInScene => {
                 let scene = match self.selected_story_query_scene(&database) {
                     Ok(Some(scene)) => scene,
                     Ok(None) => {
                         self.story_query_sheet.set_error(
-                            "Props and Objects",
+                            "Categories",
                             "No current or selected scene is available.".to_string(),
                         );
                         return;
                     }
                     Err(error) => {
-                        self.story_query_sheet.set_error("Props and Objects", error);
+                        self.story_query_sheet.set_error("Categories", error);
                         return;
                     }
                 };
-                build_props_objects_output(&database, &scene)
+                let selected_category_indices = selected_category_indices(&self.story_query_sheet);
+                if selected_category_indices.is_empty() {
+                    self.story_query_sheet.set_error(
+                        "Categories",
+                        "No taxonomy categories are available.".to_string(),
+                    );
+                    return;
+                }
+                build_category_scene_output(
+                    &database,
+                    &self.story_query_sheet.taxonomy,
+                    &selected_category_indices,
+                    &scene,
+                )
             }
             StoryQueryKind::AppearancesOfEntity => {
                 let Some(entity) =
@@ -942,60 +1147,93 @@ fn build_dialogue_between_output(
     })
 }
 
-fn build_props_objects_output(
+fn build_category_scene_output(
     database: &basscript_core::StoryIndexDatabase,
+    taxonomy: &StoryTaxonomyConfig,
+    selected_category_indices: &[usize],
     scene: &StoryIndexSceneRecord,
 ) -> Result<StoryQueryRunOutput, String> {
     let appearances = database
         .appearances_in_scene(&scene.scene_key)
         .map_err(|error| format!("Scene appearance query failed: {error}"))?
-        .into_iter()
-        .filter(is_prop_or_object_appearance)
-        .collect::<Vec<_>>();
+        .into_iter();
     let mut source_targets = Vec::<StoryQuerySourceTarget>::new();
-    let mut grouped = BTreeMap::<String, Vec<StoryIndexAppearanceRecord>>::new();
+    let mut grouped =
+        BTreeMap::<usize, BTreeMap<String, Vec<StoryIndexAppearanceRecord>>>::new();
     for appearance in appearances {
+        let Some(category_index) = appearance
+            .entity_type
+            .as_deref()
+            .and_then(|entity_type| {
+                story_taxonomy_category_for_type(
+                    taxonomy,
+                    selected_category_indices,
+                    entity_type,
+                )
+            })
+        else {
+            continue;
+        };
         source_targets.push(StoryQuerySourceTarget {
             path: appearance.source_path.clone(),
             line: appearance.line,
         });
         grouped
+            .entry(category_index)
+            .or_default()
             .entry(appearance.target.clone())
             .or_default()
             .push(appearance);
     }
 
+    let selected_label = selected_category_indices
+        .iter()
+        .filter_map(|index| taxonomy.categories.get(*index))
+        .map(|category| category.display_label())
+        .collect::<Vec<_>>()
+        .join(" + ");
     let mut text = String::new();
-    text.push_str(&format!("# Props and Objects\n\n"));
+    text.push_str(&format!("# Categories in Scene\n\n"));
     text.push_str(&format!("Scene: {}\n\n", scene.heading_text));
+    text.push_str(&format!("Categories: {selected_label}\n\n"));
     if grouped.is_empty() {
-        text.push_str("No linked props or objects were found in this scene.\n");
+        text.push_str("No linked entities matched the selected categories in this scene.\n");
     }
-    for (target, appearances) in grouped {
-        let name = appearances
-            .first()
-            .and_then(|appearance| appearance.entity_name.as_deref())
-            .unwrap_or(&target);
-        let entity_type = appearances
-            .first()
-            .and_then(|appearance| appearance.entity_type.as_deref())
-            .unwrap_or("entity");
-        text.push_str(&format!("## {name} ({entity_type})\n\n"));
-        for appearance in appearances {
-            text.push_str(&format!(
-                "- {}:{} - {} - {}\n",
-                appearance.relative_path,
-                appearance.line + 1,
-                appearance.role.as_database_value(),
-                trim_result_snippet(&appearance.raw_snippet)
-            ));
+    let mut occurrence_count = 0usize;
+    for (category_index, entities) in grouped {
+        let category_label = taxonomy
+            .categories
+            .get(category_index)
+            .map(|category| category.display_label())
+            .unwrap_or("Category");
+        text.push_str(&format!("## {category_label}\n\n"));
+        for (target, appearances) in entities {
+            let name = appearances
+                .first()
+                .and_then(|appearance| appearance.entity_name.as_deref())
+                .unwrap_or(&target);
+            let entity_type = appearances
+                .first()
+                .and_then(|appearance| appearance.entity_type.as_deref())
+                .unwrap_or("entity");
+            text.push_str(&format!("### {name} ({entity_type})\n\n"));
+            for appearance in appearances {
+                occurrence_count += 1;
+                text.push_str(&format!(
+                    "- {}:{} - {} - {}\n",
+                    appearance.relative_path,
+                    appearance.line + 1,
+                    appearance.role.as_database_value(),
+                    trim_result_snippet(&appearance.raw_snippet)
+                ));
+            }
+            text.push('\n');
         }
-        text.push('\n');
     }
 
     Ok(StoryQueryRunOutput {
-        title: format!("Props and Objects: {}", scene.heading_text),
-        status: "Props and objects query complete.".to_string(),
+        title: format!("Categories: {}", scene.heading_text),
+        status: format!("{occurrence_count} categorized appearances matched."),
         format: StoryQueryOutputFormat::Markdown,
         text,
         source_targets,
@@ -1149,14 +1387,131 @@ fn visible_fountain_line(parsed_line: &ParsedLine) -> String {
     }
 }
 
-fn is_prop_or_object_appearance(appearance: &StoryIndexAppearanceRecord) -> bool {
-    appearance
-        .entity_type
-        .as_deref()
-        .map(|entity_type| {
-            entity_type.eq_ignore_ascii_case("prop") || entity_type.eq_ignore_ascii_case("object")
-        })
-        .unwrap_or(false)
+fn load_story_taxonomy() -> StoryTaxonomyLoad {
+    let path = PathBuf::from(STORY_TAXONOMY_SETTINGS_PATH);
+    match fs::read_to_string(&path) {
+        Ok(contents) => match StoryTaxonomyConfig::from_ron(&contents) {
+            Ok(taxonomy) => StoryTaxonomyLoad {
+                taxonomy,
+                notice: None,
+            },
+            Err(error) => {
+                warn!(
+                    "[story_taxonomy] Failed parsing {}: {}; using defaults",
+                    path.display(),
+                    error
+                );
+                StoryTaxonomyLoad {
+                    taxonomy: StoryTaxonomyConfig::default(),
+                    notice: Some(format!("Taxonomy invalid; using defaults. {error}")),
+                }
+            }
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let mut notice = None;
+            if let Some(parent) = path.parent() {
+                if let Err(create_error) = fs::create_dir_all(parent) {
+                    warn!(
+                        "[story_taxonomy] Failed creating {}: {}; using defaults",
+                        parent.display(),
+                        create_error
+                    );
+                    notice = Some(format!(
+                        "Taxonomy defaults active; could not create {}.",
+                        path.display()
+                    ));
+                }
+            }
+            if notice.is_none() {
+                match fs::write(&path, DEFAULT_STORY_TAXONOMY_RON) {
+                    Ok(()) => {
+                        info!(
+                            "[story_taxonomy] Created default taxonomy at {}",
+                            path.display()
+                        );
+                        notice = Some(format!("Created default taxonomy at {}.", path.display()));
+                    }
+                    Err(write_error) => {
+                        warn!(
+                            "[story_taxonomy] Failed writing {}: {}; using defaults",
+                            path.display(),
+                            write_error
+                        );
+                        notice = Some(format!(
+                            "Taxonomy defaults active; could not write {}.",
+                            path.display()
+                        ));
+                    }
+                }
+            }
+            StoryTaxonomyLoad {
+                taxonomy: StoryTaxonomyConfig::default(),
+                notice,
+            }
+        }
+        Err(error) => {
+            warn!(
+                "[story_taxonomy] Failed reading {}: {}; using defaults",
+                path.display(),
+                error
+            );
+            StoryTaxonomyLoad {
+                taxonomy: StoryTaxonomyConfig::default(),
+                notice: Some(format!("Taxonomy unreadable; using defaults. {error}")),
+            }
+        }
+    }
+}
+
+fn normalize_story_taxonomy_key(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
+fn story_taxonomy_category_for_type(
+    taxonomy: &StoryTaxonomyConfig,
+    selected_category_indices: &[usize],
+    entity_type: &str,
+) -> Option<usize> {
+    let entity_type = normalize_story_taxonomy_key(entity_type);
+    selected_category_indices.iter().copied().find(|index| {
+        taxonomy
+            .categories
+            .get(*index)
+            .map(|category| category.types.iter().any(|candidate| candidate == &entity_type))
+            .unwrap_or(false)
+    })
+}
+
+fn selected_category_indices(sheet: &StoryQuerySheet) -> Vec<usize> {
+    let mut selected = Vec::<usize>::new();
+    if !sheet.taxonomy.categories.is_empty() {
+        selected.push(sheet.category_a_index.min(sheet.taxonomy.categories.len() - 1));
+    }
+    if sheet.category_b_index > 0 {
+        let category_index = sheet.category_b_index - 1;
+        if category_index < sheet.taxonomy.categories.len() && !selected.contains(&category_index)
+        {
+            selected.push(category_index);
+        }
+    }
+    selected
+}
+
+fn selected_category_label(sheet: &StoryQuerySheet, index: usize) -> String {
+    sheet
+        .taxonomy
+        .categories
+        .get(index)
+        .map(|category| category.display_label().to_string())
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn selected_optional_category_label(sheet: &StoryQuerySheet, index: usize) -> String {
+    if index == 0 {
+        return "none".to_string();
+    }
+
+    selected_category_label(sheet, index - 1)
 }
 
 fn selected_character(
@@ -1280,4 +1635,26 @@ fn cycle_story_query_index(index: &mut usize, len: usize, direction: isize) {
     let len = len as isize;
     let next = (*index as isize + direction).rem_euclid(len);
     *index = next as usize;
+}
+
+fn cycle_secondary_story_query_category(sheet: &mut StoryQuerySheet, direction: isize) {
+    let len = sheet.taxonomy.categories.len().saturating_add(1);
+    if len == 0 {
+        sheet.category_b_index = 0;
+        return;
+    }
+
+    for _ in 0..len {
+        cycle_story_query_index(&mut sheet.category_b_index, len, direction);
+        if sheet.category_b_index == 0 || sheet.category_b_index - 1 != sheet.category_a_index {
+            return;
+        }
+    }
+    sheet.category_b_index = 0;
+}
+
+fn avoid_duplicate_story_query_categories(sheet: &mut StoryQuerySheet) {
+    if sheet.category_b_index > 0 && sheet.category_b_index - 1 == sheet.category_a_index {
+        sheet.category_b_index = 0;
+    }
 }

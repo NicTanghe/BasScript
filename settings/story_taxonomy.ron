@@ -1,0 +1,29 @@
+(
+	categories: [
+		(
+			id: "props",
+			label: "Props",
+			types: ["prop", "object", "artifact", "tool", "weapon", "document", "clothing"],
+		),
+		(
+			id: "environment",
+			label: "Environment",
+			types: ["place", "location", "set", "set-piece", "set_dressing", "furniture", "building", "vehicle", "weather"],
+		),
+		(
+			id: "characters",
+			label: "Characters",
+			types: ["character"],
+		),
+		(
+			id: "fauna",
+			label: "Fauna",
+			types: ["animal", "creature", "monster", "mount"],
+		),
+		(
+			id: "flora",
+			label: "Flora",
+			types: ["plant", "tree", "flower", "fungus"],
+		),
+	],
+)

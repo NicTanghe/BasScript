@@ -41,6 +41,7 @@ const EDITOR_SETTINGS_PATH: &str = "settings/editor_settings.ron";
 const KEYBINDS_SETTINGS_PATH: &str = "settings/keybinds.ron";
 const UI_STATE_PATH: &str = "settings/state.ron";
 const THEME_SETTINGS_PATH: &str = "settings/theme.ron";
+const STORY_TAXONOMY_SETTINGS_PATH: &str = "settings/story_taxonomy.ron";
 const LEGACY_EDITOR_SETTINGS_PATH: &str = "scripts/editor_settings.ron";
 const LEGACY_KEYBINDS_SETTINGS_PATH: &str = "scripts/keybinds.ron";
 const LEGACY_SETTINGS_PATH: &str = "scripts/settings.toml";

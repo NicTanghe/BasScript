@@ -290,8 +290,8 @@ Query builder
   - all dialogue by one selected character
   - all dialogue between two selected characters
   - all dialogue between two selected characters at a selected location or scene
-  - all mentioned props or objects in the selected scene
-  - all props or objects in the current scene
+  - all mentioned entities from selected taxonomy categories in the selected scene
+  - all entities from selected taxonomy categories in the current scene
   - all appearances of one selected entity
 - The design should allow more query templates later without rebuilding the window.
 
@@ -307,7 +307,7 @@ Dialogue output
 Non-dialogue output
 
 - Non-dialogue results are rendered as structured Markdown-style output.
-- Props and objects in a scene are grouped by entity, with occurrence lines and snippets where available.
+- Category readouts in a scene are grouped by taxonomy category, then entity, with occurrence lines and snippets where available.
 - Entity appearances include role, source path, scene, line number, and snippet where useful.
 - Results preserve story/script order where that order matters.
 
@@ -318,13 +318,13 @@ Acceptance
 - The user can select Eoghan and generate a Fountain-style sheet of all Eoghan dialogue.
 - The user can select Eoghan plus another character and generate a Fountain-style sheet of their shared dialogue.
 - The user can further filter that dialogue by scene or location.
-- The user can choose a scene and generate a Markdown-style sheet of mentioned props or objects.
+- The user can choose a scene and generate a Markdown-style sheet of selected taxonomy categories.
 - The sheet preview looks like centered A4 pages, with controls visible beside it.
 - Query results can navigate back to the original source lines.
 
 Q6.6. Story taxonomy categories
 
-Status: proposed
+Status: implemented v1
 
 Define story-query categories through app-managed RON configuration instead of hardcoded entity-type checks.
 
@@ -339,6 +339,7 @@ Category source
 
 - Basscript ships with a default app-side RON taxonomy file.
 - The default taxonomy defines common broad categories and the entity types that belong to them.
+- v1 reads the app-side file at `settings/story_taxonomy.ron`.
 - A workspace may later provide a project override RON file to add, rename, hide, or extend categories without changing the app defaults.
 - The taxonomy is app/query metadata. It must not replace entity front matter as the source of truth for individual entities.
 - Missing or invalid taxonomy config falls back to the shipped defaults and reports a useful status message.
@@ -419,6 +420,12 @@ Acceptance
 - The same entity type mapping is used by query filters and display grouping.
 - Invalid RON taxonomy does not crash the app and falls back to default categories.
 - Unknown entity types remain indexable even when no category currently includes them.
+
+Implementation notes
+
+- The Story Query Sheet v1 exposes two category selectors, `Cat A` and optional `Cat B`.
+- The `Categories in scene` query uses selected taxonomy categories instead of hardcoded `prop` and `object` checks.
+- Results are grouped by taxonomy category, then entity, then source occurrence.
 
 Q7. Index consistency and performance
 
