@@ -322,6 +322,104 @@ Acceptance
 - The sheet preview looks like centered A4 pages, with controls visible beside it.
 - Query results can navigate back to the original source lines.
 
+Q6.6. Story taxonomy categories
+
+Status: proposed
+
+Define story-query categories through app-managed RON configuration instead of hardcoded entity-type checks.
+
+Purpose
+
+- Let project entities keep precise front matter types such as `artifact`, `furniture`, `tree`, `creature`, or `building`.
+- Let Basscript decide which precise types belong to broader story-query categories such as props, environment, characters, fauna, and flora.
+- Let the Story Query Sheet combine broad categories for readouts, for example `props + environment` or `fauna + flora`.
+- Avoid changing entity files only to make them appear in a specific query.
+
+Category source
+
+- Basscript ships with a default app-side RON taxonomy file.
+- The default taxonomy defines common broad categories and the entity types that belong to them.
+- A workspace may later provide a project override RON file to add, rename, hide, or extend categories without changing the app defaults.
+- The taxonomy is app/query metadata. It must not replace entity front matter as the source of truth for individual entities.
+- Missing or invalid taxonomy config falls back to the shipped defaults and reports a useful status message.
+
+Initial broad categories
+
+- `props`
+- `environment`
+- `characters`
+- `fauna`
+- `flora`
+
+Suggested default type mapping
+
+- `props`: `prop`, `object`, `artifact`, `tool`, `weapon`, `document`, `clothing`
+- `environment`: `place`, `location`, `set`, `set-piece`, `set_dressing`, `furniture`, `building`, `vehicle`, `weather`
+- `characters`: `character`
+- `fauna`: `animal`, `creature`, `monster`, `mount`
+- `flora`: `plant`, `tree`, `flower`, `fungus`
+
+Example RON shape
+
+```ron
+(
+  categories: [
+    (
+      id: "props",
+      label: "Props",
+      types: ["prop", "object", "artifact", "tool", "weapon", "document", "clothing"],
+    ),
+    (
+      id: "environment",
+      label: "Environment",
+      types: ["place", "location", "set", "set-piece", "set_dressing", "furniture", "building", "vehicle", "weather"],
+    ),
+    (
+      id: "characters",
+      label: "Characters",
+      types: ["character"],
+    ),
+    (
+      id: "fauna",
+      label: "Fauna",
+      types: ["animal", "creature", "monster", "mount"],
+    ),
+    (
+      id: "flora",
+      label: "Flora",
+      types: ["plant", "tree", "flower", "fungus"],
+    ),
+  ],
+)
+```
+
+Query behavior
+
+- The Story Query Sheet category selector supports selecting one or more broad categories.
+- Multiple selected categories are combined as `OR`; filters such as scene, location, character, and source file narrow results as `AND`.
+- Selecting `props + environment` returns entities whose type belongs to either selected category.
+- Selecting `fauna + flora` returns animal/creature and plant-like entities together.
+- Category queries can be scoped to the current scene, selected scene, selected location, selected script, or whole workspace where supported.
+- Category queries use the existing confirmed appearance records; weak or inferred mentions must be clearly marked if shown.
+- Dialogue query templates remain separate from category readouts because dialogue output is Fountain-style.
+- Non-dialogue category readouts render as Markdown-style structured sheets.
+
+Output grouping
+
+- Category readouts can group by scene, category, entity, or source file depending on the selected output mode.
+- Scene-scoped readouts should default to grouping by category, then entity, then occurrence.
+- Workspace-wide readouts should default to grouping by category, then entity, with scene/source occurrence details.
+- Each occurrence keeps navigation metadata back to the source path and line where available.
+
+Acceptance
+
+- An entity with `type: artifact` can appear in the `props` category without changing the entity type to `prop`.
+- The user can select `props + environment` in the Story Query Sheet and generate one combined Markdown-style sheet.
+- The user can select `fauna + flora` and generate one combined Markdown-style sheet.
+- The same entity type mapping is used by query filters and display grouping.
+- Invalid RON taxonomy does not crash the app and falls back to default categories.
+- Unknown entity types remain indexable even when no category currently includes them.
+
 Q7. Index consistency and performance
 
 Status: todo
