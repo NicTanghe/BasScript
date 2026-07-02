@@ -12,6 +12,7 @@ const STORY_QUERY_RESULT_FONT_SIZE: f32 = FONT_SIZE * STORY_QUERY_A4_SCALE;
 const STORY_QUERY_RESULT_LINE_HEIGHT: f32 = LINE_HEIGHT * STORY_QUERY_A4_SCALE;
 const STORY_QUERY_PAGE_LINE_LIMIT: usize = 56;
 const STORY_QUERY_DROPDOWN_VISIBLE_OPTIONS: usize = 8;
+const STORY_QUERY_MAX_CATEGORY_ROWS: usize = 8;
 const DEFAULT_STORY_TAXONOMY_RON: &str = r#"(
 	categories: [
 		(
@@ -192,8 +193,7 @@ struct StoryQuerySheet {
     entity_index: usize,
     scene_index: usize,
     scene_scope: StoryQuerySceneScope,
-    category_a_index: usize,
-    category_b_index: usize,
+    category_indices: Vec<usize>,
     taxonomy: StoryTaxonomyConfig,
     taxonomy_notice: Option<String>,
     open_dropdown: Option<StoryQueryDropdownKind>,
@@ -224,8 +224,7 @@ impl Default for StoryQuerySheet {
             entity_index: 0,
             scene_index: 0,
             scene_scope: StoryQuerySceneScope::Current,
-            category_a_index: 0,
-            category_b_index: 0,
+            category_indices: vec![0],
             taxonomy: StoryTaxonomyConfig::default(),
             taxonomy_notice: None,
             open_dropdown: None,
@@ -257,8 +256,8 @@ enum StoryQuerySheetTextSlot {
     SecondaryCharacter,
     Entity,
     Scene,
-    CategoryA,
-    CategoryB,
+    Category(usize),
+    AddCategory,
     Page,
 }
 
@@ -270,8 +269,7 @@ enum StoryQueryDropdownKind {
     SecondaryCharacter,
     Entity,
     Scene,
-    CategoryA,
-    CategoryB,
+    Category(usize),
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
@@ -285,6 +283,7 @@ enum StoryQuerySheetAction {
     OpenFirstSource,
     PreviousPage,
     NextPage,
+    AddCategory,
     Close,
 }
 
@@ -487,14 +486,45 @@ fn story_query_sheet_menu_bundle(font: Handle<Font>) -> impl Bundle {
             ),
             story_query_dropdown_row(
                 font.clone(),
-                StoryQuerySheetTextSlot::CategoryA,
-                StoryQueryDropdownKind::CategoryA,
+                StoryQuerySheetTextSlot::Category(0),
+                StoryQueryDropdownKind::Category(0),
             ),
             story_query_dropdown_row(
                 font.clone(),
-                StoryQuerySheetTextSlot::CategoryB,
-                StoryQueryDropdownKind::CategoryB,
+                StoryQuerySheetTextSlot::Category(1),
+                StoryQueryDropdownKind::Category(1),
             ),
+            story_query_dropdown_row(
+                font.clone(),
+                StoryQuerySheetTextSlot::Category(2),
+                StoryQueryDropdownKind::Category(2),
+            ),
+            story_query_dropdown_row(
+                font.clone(),
+                StoryQuerySheetTextSlot::Category(3),
+                StoryQueryDropdownKind::Category(3),
+            ),
+            story_query_dropdown_row(
+                font.clone(),
+                StoryQuerySheetTextSlot::Category(4),
+                StoryQueryDropdownKind::Category(4),
+            ),
+            story_query_dropdown_row(
+                font.clone(),
+                StoryQuerySheetTextSlot::Category(5),
+                StoryQueryDropdownKind::Category(5),
+            ),
+            story_query_dropdown_row(
+                font.clone(),
+                StoryQuerySheetTextSlot::Category(6),
+                StoryQueryDropdownKind::Category(6),
+            ),
+            story_query_dropdown_row(
+                font.clone(),
+                StoryQuerySheetTextSlot::Category(7),
+                StoryQueryDropdownKind::Category(7),
+            ),
+            story_query_add_category_button_row(font.clone()),
             story_query_dropdown_row(
                 font.clone(),
                 StoryQuerySheetTextSlot::PrimaryCharacter,
@@ -600,6 +630,24 @@ fn story_query_dropdown_row(
             ),
             story_query_dropdown_options_bundle(font, kind),
         ],
+    )
+}
+
+fn story_query_add_category_button_row(font: Handle<Font>) -> impl Bundle {
+    (
+        Node {
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::Stretch,
+            ..default()
+        },
+        StoryQueryControlRow {
+            slot: StoryQuerySheetTextSlot::AddCategory,
+        },
+        children![story_query_control_button(
+            font,
+            StoryQuerySheetTextSlot::AddCategory,
+            StoryQuerySheetAction::AddCategory,
+        )],
     )
 }
 
@@ -854,24 +902,19 @@ fn sync_story_query_sheet_ui(
             StoryQuerySheetTextSlot::SceneScope => {
                 format!("Scope: {}", sheet.scene_scope.label())
             }
-            StoryQuerySheetTextSlot::CategoryA => {
+            StoryQuerySheetTextSlot::Category(slot_index) => {
+                let label = sheet
+                    .category_indices
+                    .get(*slot_index)
+                    .map(|category_index| selected_category_label(sheet, *category_index))
+                    .unwrap_or_else(|| "none".to_string());
                 format!(
-                    "Category: {}",
-                    compact_story_query_label(&selected_category_label(
-                        sheet,
-                        sheet.category_a_index
-                    ))
+                    "Category {}: {}",
+                    slot_index + 1,
+                    compact_story_query_label(&label)
                 )
             }
-            StoryQuerySheetTextSlot::CategoryB => {
-                format!(
-                    "Add category: {}",
-                    compact_story_query_label(&selected_optional_category_label(
-                        sheet,
-                        sheet.category_b_index
-                    ))
-                )
-            }
+            StoryQuerySheetTextSlot::AddCategory => "Add category".to_string(),
             StoryQuerySheetTextSlot::PrimaryCharacter => {
                 format!(
                     "Character A: {}",
@@ -1042,6 +1085,12 @@ fn handle_story_query_sheet_buttons(
             StoryQuerySheetAction::OpenFirstSource => state.open_first_story_query_source(),
             StoryQuerySheetAction::PreviousPage => state.story_query_sheet.previous_page(),
             StoryQuerySheetAction::NextPage => state.story_query_sheet.next_page(),
+            StoryQuerySheetAction::AddCategory => {
+                add_story_query_category(&mut state.story_query_sheet);
+                state.story_query_sheet.open_dropdown = None;
+                state.story_query_sheet.page_index = 0;
+                state.story_query_sheet.result_status = "Category field added.".to_string();
+            }
             StoryQuerySheetAction::Close => state.story_query_sheet.open = false,
         }
     }
@@ -1129,8 +1178,9 @@ fn story_query_dropdown_slot(kind: StoryQueryDropdownKind) -> StoryQuerySheetTex
         StoryQueryDropdownKind::SecondaryCharacter => StoryQuerySheetTextSlot::SecondaryCharacter,
         StoryQueryDropdownKind::Entity => StoryQuerySheetTextSlot::Entity,
         StoryQueryDropdownKind::Scene => StoryQuerySheetTextSlot::Scene,
-        StoryQueryDropdownKind::CategoryA => StoryQuerySheetTextSlot::CategoryA,
-        StoryQueryDropdownKind::CategoryB => StoryQuerySheetTextSlot::CategoryB,
+        StoryQueryDropdownKind::Category(slot_index) => {
+            StoryQuerySheetTextSlot::Category(slot_index)
+        }
     }
 }
 
@@ -1161,9 +1211,11 @@ fn story_query_control_visible(sheet: &StoryQuerySheet, slot: StoryQuerySheetTex
         StoryQuerySheetTextSlot::Entity => {
             sheet.query_kind == StoryQueryKind::AppearancesOfEntity
         }
-        StoryQuerySheetTextSlot::CategoryA | StoryQuerySheetTextSlot::CategoryB => {
+        StoryQuerySheetTextSlot::Category(slot_index) => {
             sheet.query_kind == StoryQueryKind::CategoriesInScene
+                && slot_index < sheet.category_indices.len()
         }
+        StoryQuerySheetTextSlot::AddCategory => story_query_can_add_category(sheet),
     }
 }
 
@@ -1225,35 +1277,22 @@ fn story_query_dropdown_choices(
                 label: scene_label(scene),
             })
             .collect(),
-        StoryQueryDropdownKind::CategoryA => sheet
+        StoryQueryDropdownKind::Category(slot_index) => sheet
             .taxonomy
             .categories
             .iter()
             .enumerate()
+            .filter(|(index, _)| {
+                sheet.category_indices
+                    .iter()
+                    .enumerate()
+                    .all(|(other_slot, selected)| other_slot == slot_index || selected != index)
+            })
             .map(|(index, category)| StoryQueryDropdownChoice {
                 value: index,
                 label: category.display_label().to_string(),
             })
             .collect(),
-        StoryQueryDropdownKind::CategoryB => {
-            let mut choices = vec![StoryQueryDropdownChoice {
-                value: 0,
-                label: "none".to_string(),
-            }];
-            choices.extend(
-                sheet
-                    .taxonomy
-                    .categories
-                    .iter()
-                    .enumerate()
-                    .filter(|(index, _)| *index != sheet.category_a_index)
-                    .map(|(index, category)| StoryQueryDropdownChoice {
-                        value: index + 1,
-                        label: category.display_label().to_string(),
-                    }),
-            );
-            choices
-        }
     }
 }
 
@@ -1268,8 +1307,11 @@ fn story_query_dropdown_current_value(
         StoryQueryDropdownKind::SecondaryCharacter => sheet.character_b_index,
         StoryQueryDropdownKind::Entity => sheet.entity_index,
         StoryQueryDropdownKind::Scene => sheet.scene_index,
-        StoryQueryDropdownKind::CategoryA => sheet.category_a_index,
-        StoryQueryDropdownKind::CategoryB => sheet.category_b_index,
+        StoryQueryDropdownKind::Category(slot_index) => sheet
+            .category_indices
+            .get(slot_index)
+            .copied()
+            .unwrap_or(0),
     }
 }
 
@@ -1312,8 +1354,11 @@ fn apply_story_query_dropdown_choice(
         StoryQueryDropdownKind::SecondaryCharacter => sheet.character_b_index = value,
         StoryQueryDropdownKind::Entity => sheet.entity_index = value,
         StoryQueryDropdownKind::Scene => sheet.scene_index = value,
-        StoryQueryDropdownKind::CategoryA => sheet.category_a_index = value,
-        StoryQueryDropdownKind::CategoryB => sheet.category_b_index = value,
+        StoryQueryDropdownKind::Category(slot_index) => {
+            if let Some(category_index) = sheet.category_indices.get_mut(slot_index) {
+                *category_index = value;
+            }
+        }
     }
     clamp_story_query_dependencies(sheet);
 }
@@ -1491,18 +1536,6 @@ impl EditorState {
         clamp_story_query_index(
             &mut self.story_query_sheet.entity_index,
             self.story_query_sheet.entities.len(),
-        );
-        clamp_story_query_index(
-            &mut self.story_query_sheet.category_a_index,
-            self.story_query_sheet.taxonomy.categories.len(),
-        );
-        clamp_story_query_index(
-            &mut self.story_query_sheet.category_b_index,
-            self.story_query_sheet
-                .taxonomy
-                .categories
-                .len()
-                .saturating_add(1),
         );
         clamp_story_query_dependencies(&mut self.story_query_sheet);
     }
@@ -2198,14 +2231,11 @@ fn story_taxonomy_category_for_type(
 
 fn selected_category_indices(sheet: &StoryQuerySheet) -> Vec<usize> {
     let mut selected = Vec::<usize>::new();
-    if !sheet.taxonomy.categories.is_empty() {
-        selected.push(sheet.category_a_index.min(sheet.taxonomy.categories.len() - 1));
-    }
-    if sheet.category_b_index > 0 {
-        let category_index = sheet.category_b_index - 1;
-        if category_index < sheet.taxonomy.categories.len() && !selected.contains(&category_index)
+    for category_index in &sheet.category_indices {
+        if *category_index < sheet.taxonomy.categories.len()
+            && !selected.contains(category_index)
         {
-            selected.push(category_index);
+            selected.push(*category_index);
         }
     }
     selected
@@ -2218,14 +2248,6 @@ fn selected_category_label(sheet: &StoryQuerySheet, index: usize) -> String {
         .get(index)
         .map(|category| category.display_label().to_string())
         .unwrap_or_else(|| "none".to_string())
-}
-
-fn selected_optional_category_label(sheet: &StoryQuerySheet, index: usize) -> String {
-    if index == 0 {
-        return "none".to_string();
-    }
-
-    selected_category_label(sheet, index - 1)
 }
 
 fn selected_character(
@@ -2585,6 +2607,66 @@ fn clamp_story_query_index(index: &mut usize, len: usize) {
     }
 }
 
+fn story_query_can_add_category(sheet: &StoryQuerySheet) -> bool {
+    if sheet.query_kind != StoryQueryKind::CategoriesInScene {
+        return false;
+    }
+    let category_count = sheet.taxonomy.categories.len();
+    let max_rows = STORY_QUERY_MAX_CATEGORY_ROWS.min(category_count);
+    sheet.category_indices.len() < max_rows
+}
+
+fn add_story_query_category(sheet: &mut StoryQuerySheet) {
+    if !story_query_can_add_category(sheet) {
+        return;
+    }
+
+    let selected = sheet
+        .category_indices
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let next = (0..sheet.taxonomy.categories.len())
+        .find(|index| !selected.contains(index))
+        .unwrap_or(0);
+    sheet.category_indices.push(next);
+    clamp_story_query_dependencies(sheet);
+}
+
+fn clamp_story_query_categories(sheet: &mut StoryQuerySheet) {
+    let category_count = sheet.taxonomy.categories.len();
+    if category_count == 0 {
+        sheet.category_indices.clear();
+        return;
+    }
+
+    let max_rows = STORY_QUERY_MAX_CATEGORY_ROWS.min(category_count);
+    if sheet.category_indices.is_empty() {
+        sheet.category_indices.push(0);
+    }
+    sheet.category_indices.truncate(max_rows);
+
+    let mut used = BTreeSet::<usize>::new();
+    let mut normalized = Vec::<usize>::new();
+    for selected in &sheet.category_indices {
+        let mut category_index = (*selected).min(category_count - 1);
+        if used.contains(&category_index) {
+            if let Some(replacement) = (0..category_count).find(|index| !used.contains(index)) {
+                category_index = replacement;
+            } else {
+                continue;
+            }
+        }
+        used.insert(category_index);
+        normalized.push(category_index);
+    }
+
+    if normalized.is_empty() {
+        normalized.push(0);
+    }
+    sheet.category_indices = normalized;
+}
+
 fn clamp_story_query_dependencies(sheet: &mut StoryQuerySheet) {
     if sheet.scene_index > sheet.scenes.len() {
         sheet.scene_index = sheet.scenes.len();
@@ -2595,9 +2677,7 @@ fn clamp_story_query_dependencies(sheet: &mut StoryQuerySheet) {
     {
         sheet.scene_index = 1;
     }
-    if sheet.category_b_index > 0 && sheet.category_b_index - 1 == sheet.category_a_index {
-        sheet.category_b_index = 0;
-    }
+    clamp_story_query_categories(sheet);
     if sheet
         .open_dropdown
         .map(|kind| !story_query_control_visible(sheet, story_query_dropdown_slot(kind)))

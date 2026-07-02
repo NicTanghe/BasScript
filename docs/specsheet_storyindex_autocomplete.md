@@ -423,7 +423,7 @@ Acceptance
 
 Implementation notes
 
-- The Story Query Sheet v1 exposes two category selectors, `Cat A` and optional `Cat B`.
+- The Story Query Sheet v1 starts with one category selector and exposes an Add category button that reveals additional category selector rows.
 - The `Entities by category` query uses selected taxonomy categories instead of hardcoded `prop` and `object` checks.
 - Results are grouped by taxonomy category, then entity, then source occurrence.
 
@@ -501,6 +501,7 @@ Implementation notes
 - Story Query Sheet now uses a full-workspace golden-ratio split with a scaled A4 result page that reuses the normal A4 page proportions and text margins.
 - Story Query Sheet pagination keeps A4-style page splitting with previous/next page controls.
 - Story Query Sheet result pages render through the same processed visual-line/span formatting path as normal rendered pages, including wrapping, Fountain/Markdown line styles, script-link coloring, and clickable entity links.
+- Category readouts use an Add category button to create more category selector rows instead of limiting the query to one optional extra category.
 
 Q8. Index consistency and performance
 
