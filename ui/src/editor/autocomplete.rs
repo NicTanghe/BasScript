@@ -80,6 +80,114 @@ struct LinkAutocompleteTargetText {
     index: usize,
 }
 
+#[derive(Resource, Default, Clone, Copy, Debug)]
+struct LinkAutocompleteInputCapture {
+    handled_key: Option<KeyCode>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LinkAutocompleteAcceptResult {
+    source: LinkAutocompleteSource,
+}
+
+impl LinkAutocompleteInputCapture {
+    fn clear(&mut self) {
+        self.handled_key = None;
+    }
+
+    fn capture(&mut self, key: KeyCode) {
+        self.handled_key = Some(key);
+    }
+
+    fn is_captured(&self) -> bool {
+        self.handled_key.is_some()
+    }
+}
+
+fn handle_link_autocomplete_keyboard_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    body_query: Query<(&PanelBody, &ComputedNode)>,
+    mut navigation_repeat: ResMut<NavigationRepeatState>,
+    mut capture: ResMut<LinkAutocompleteInputCapture>,
+    mut state: ResMut<EditorState>,
+) {
+    capture.clear();
+
+    if !state.link_autocomplete_has_visible_suggestions() {
+        return;
+    }
+
+    if keys.just_pressed(KeyCode::Escape) {
+        state.close_link_autocomplete();
+        reset_link_autocomplete_repeat(&mut navigation_repeat);
+        capture.capture(KeyCode::Escape);
+        return;
+    }
+
+    if keys.just_pressed(KeyCode::Enter) {
+        let accepted = state.accept_link_autocomplete_selection();
+        if accepted.is_some_and(|result| result.source == LinkAutocompleteSource::Document) {
+            let visible_lines = viewport_lines(
+                &body_query,
+                state.display_mode,
+                state.measured_line_step,
+                scaled_text_padding_y(&state),
+            );
+            let processed_panel_size = body_query
+                .iter()
+                .find(|(panel, _)| panel.kind == PanelKind::Processed)
+                .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
+            apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
+        }
+        reset_link_autocomplete_repeat(&mut navigation_repeat);
+        capture.capture(KeyCode::Enter);
+        return;
+    }
+
+    let pressed_selection_key = link_autocomplete_pressed_selection_key(&keys);
+    if pressed_selection_key.is_none() {
+        return;
+    }
+
+    repeat_key_input(
+        &keys,
+        &time,
+        &mut navigation_repeat,
+        just_pressed_link_autocomplete_selection_key,
+        held_link_autocomplete_selection_key,
+        |keys, key| keys.pressed(key),
+        |key| match key {
+            KeyCode::ArrowDown => state.select_next_link_autocomplete_suggestion(),
+            KeyCode::ArrowUp => state.select_previous_link_autocomplete_suggestion(),
+            _ => false,
+        },
+    );
+
+    capture.capture(pressed_selection_key.expect("selection key"));
+}
+
+fn link_autocomplete_pressed_selection_key(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
+    [KeyCode::ArrowDown, KeyCode::ArrowUp]
+        .into_iter()
+        .find(|key| keys.pressed(*key))
+}
+
+fn just_pressed_link_autocomplete_selection_key(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
+    [KeyCode::ArrowDown, KeyCode::ArrowUp]
+        .into_iter()
+        .find(|key| keys.just_pressed(*key))
+}
+
+fn held_link_autocomplete_selection_key(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
+    link_autocomplete_pressed_selection_key(keys)
+}
+
+fn reset_link_autocomplete_repeat(repeat: &mut NavigationRepeatState) {
+    repeat.active_arrow = None;
+    repeat.repeat_cooldown_secs = 0.0;
+}
+
 fn sync_link_autocomplete_context(
     mut state: ResMut<EditorState>,
     dialogs: Res<DialogState>,
@@ -226,9 +334,11 @@ fn sync_link_autocomplete_ui(
         return;
     };
 
+    let visible_start = link_autocomplete_visible_start(active);
     let visible_count = active
         .suggestions
         .len()
+        .saturating_sub(visible_start)
         .min(LINK_AUTOCOMPLETE_VISIBLE_ROWS);
     if visible_count == 0 {
         root.display = Display::None;
@@ -245,17 +355,19 @@ fn sync_link_autocomplete_ui(
     );
 
     for (row, mut node, mut background) in row_query.iter_mut() {
-        let Some(suggestion) = active.suggestions.get(row.index) else {
-            node.display = Display::None;
-            continue;
-        };
         if row.index >= visible_count {
             node.display = Display::None;
             continue;
         }
 
+        let suggestion_index = visible_start + row.index;
+        let Some(suggestion) = active.suggestions.get(suggestion_index) else {
+            node.display = Display::None;
+            continue;
+        };
+
         node.display = Display::Flex;
-        background.0 = if row.index == active.selected_index {
+        background.0 = if suggestion_index == active.selected_index {
             Color::srgba(0.12, 0.34, 0.62, 0.18)
         } else {
             Color::NONE
@@ -263,6 +375,19 @@ fn sync_link_autocomplete_ui(
 
         sync_link_autocomplete_row_text(&mut text_queries, row.index, suggestion, &state);
     }
+}
+
+fn link_autocomplete_visible_start(active: &LinkAutocomplete) -> usize {
+    let suggestion_count = active.suggestions.len();
+    if suggestion_count <= LINK_AUTOCOMPLETE_VISIBLE_ROWS {
+        return 0;
+    }
+
+    let selected = active.selected_index.min(suggestion_count.saturating_sub(1));
+    selected
+        .saturating_add(1)
+        .saturating_sub(LINK_AUTOCOMPLETE_VISIBLE_ROWS)
+        .min(suggestion_count - LINK_AUTOCOMPLETE_VISIBLE_ROWS)
 }
 
 fn sync_link_autocomplete_row_text(
@@ -355,6 +480,73 @@ fn val_to_px(value: Val) -> Option<f32> {
 impl EditorState {
     fn close_link_autocomplete(&mut self) {
         self.link_autocomplete = None;
+    }
+
+    fn link_autocomplete_has_visible_suggestions(&self) -> bool {
+        self.link_autocomplete
+            .as_ref()
+            .is_some_and(|active| !active.suggestions.is_empty())
+    }
+
+    fn select_next_link_autocomplete_suggestion(&mut self) -> bool {
+        let Some(active) = self.link_autocomplete.as_mut() else {
+            return false;
+        };
+        active.select_next()
+    }
+
+    fn select_previous_link_autocomplete_suggestion(&mut self) -> bool {
+        let Some(active) = self.link_autocomplete.as_mut() else {
+            return false;
+        };
+        active.select_previous()
+    }
+
+    fn accept_link_autocomplete_selection(&mut self) -> Option<LinkAutocompleteAcceptResult> {
+        let active = self.link_autocomplete.clone()?;
+        let suggestion = active.selected_suggestion()?.clone();
+        let context = self.link_autocomplete_line_context(&active);
+        let replacement = link_autocomplete_replacement_text(&suggestion, context);
+
+        match active.source {
+            LinkAutocompleteSource::Document => {
+                let snapshot = self.history_snapshot();
+                let insert_at = self
+                    .document
+                    .delete_range(active.range.start, active.range.end);
+                let next = self.document.insert_text(insert_at, &replacement);
+                self.set_cursor(next, true);
+                self.selection_anchor = None;
+                self.push_undo_snapshot(snapshot);
+                self.reparse_with_dirty_hint(active.range.start.line);
+                self.close_link_autocomplete();
+                self.status_message = format!("Linked {}.", suggestion.display_name);
+                Some(LinkAutocompleteAcceptResult {
+                    source: LinkAutocompleteSource::Document,
+                })
+            }
+            LinkAutocompleteSource::CanvasText => {
+                let node_id = self.canvas_editing_node_id.clone()?;
+                let mut document = self.active_canvas_text_document()?;
+                let snapshot = self.history_snapshot();
+                let insert_at = document.delete_range(active.range.start, active.range.end);
+                let next = document.insert_text(insert_at, &replacement);
+                self.canvas_text_cursor.set_position(next);
+                self.canvas_text_selection_anchor = None;
+                if self.set_canvas_text_node_content(&node_id, document.to_text()) {
+                    let snapshot = self.canvas_text_edit_undo_snapshot.take().unwrap_or(snapshot);
+                    self.push_undo_snapshot(snapshot);
+                    self.close_link_autocomplete();
+                    self.status_message = format!("Linked {}.", suggestion.display_name);
+                    Some(LinkAutocompleteAcceptResult {
+                        source: LinkAutocompleteSource::CanvasText,
+                    })
+                } else {
+                    self.close_link_autocomplete();
+                    None
+                }
+            }
+        }
     }
 
     fn refresh_link_autocomplete_for_document_cursor(&mut self) {
@@ -608,6 +800,35 @@ impl LinkAutocomplete {
             && self.trigger == previous.trigger
             && self.range.start == previous.range.start
     }
+
+    fn selected_suggestion(&self) -> Option<&LinkAutocompleteSuggestion> {
+        let selected = self.selected_index.min(self.suggestions.len().checked_sub(1)?);
+        self.suggestions.get(selected)
+    }
+
+    fn select_next(&mut self) -> bool {
+        let Some(last_index) = self.suggestions.len().checked_sub(1) else {
+            self.selected_index = 0;
+            return false;
+        };
+
+        let current = self.selected_index.min(last_index);
+        let next = current.saturating_add(1).min(last_index);
+        self.selected_index = next;
+        next != current
+    }
+
+    fn select_previous(&mut self) -> bool {
+        if self.suggestions.is_empty() {
+            self.selected_index = 0;
+            return false;
+        }
+
+        let current = self.selected_index.min(self.suggestions.len() - 1);
+        let next = current.saturating_sub(1);
+        self.selected_index = next;
+        next != current
+    }
 }
 
 impl LinkAutocompleteSuggestion {
@@ -618,6 +839,61 @@ impl LinkAutocompleteSuggestion {
             LinkAutocompleteSuggestionKind::Scene => &self.target,
         }
     }
+}
+
+fn link_autocomplete_replacement_text(
+    suggestion: &LinkAutocompleteSuggestion,
+    context: LinkAutocompleteLineContext,
+) -> String {
+    let display = link_autocomplete_display_text(suggestion, context);
+    if context != LinkAutocompleteLineContext::CharacterCue
+        && link_autocomplete_target_only_is_safe(&display, &suggestion.target)
+    {
+        format!("[{display}]")
+    } else {
+        format!("[{display}]({})", suggestion.target)
+    }
+}
+
+fn link_autocomplete_display_text(
+    suggestion: &LinkAutocompleteSuggestion,
+    context: LinkAutocompleteLineContext,
+) -> String {
+    if context == LinkAutocompleteLineContext::CharacterCue
+        && suggestion.kind == LinkAutocompleteSuggestionKind::Entity
+        && normalized_link_autocomplete_query(&suggestion.entity_type) == "character"
+    {
+        return suggestion.display_name.to_uppercase();
+    }
+
+    suggestion.display_name.clone()
+}
+
+fn link_autocomplete_target_only_is_safe(display: &str, target: &str) -> bool {
+    !display.is_empty() && (display == target || link_autocomplete_display_slug(display) == target)
+}
+
+fn link_autocomplete_display_slug(display: &str) -> String {
+    let mut out = String::new();
+    let mut previous_was_separator = true;
+    for ch in display.chars() {
+        if ch.is_alphanumeric() {
+            if !out.is_empty() && previous_was_separator {
+                out.push('-');
+            }
+            for lower in ch.to_lowercase() {
+                out.push(lower);
+            }
+            previous_was_separator = false;
+        } else {
+            previous_was_separator = true;
+        }
+    }
+
+    while out.ends_with('-') {
+        out.pop();
+    }
+    out
 }
 
 fn link_autocomplete_at_cursor(
@@ -907,6 +1183,66 @@ mod link_autocomplete_tests {
     }
 
     #[test]
+    fn selection_keys_clamp_to_available_suggestions() {
+        let mut active = test_autocomplete_with_suggestions(3);
+
+        assert_eq!(active.selected_index, 0);
+        assert!(active.select_next());
+        assert_eq!(active.selected_index, 1);
+        assert!(active.select_next());
+        assert_eq!(active.selected_index, 2);
+        assert!(!active.select_next());
+        assert_eq!(active.selected_index, 2);
+
+        assert!(active.select_previous());
+        assert_eq!(active.selected_index, 1);
+        assert!(active.select_previous());
+        assert_eq!(active.selected_index, 0);
+        assert!(!active.select_previous());
+        assert_eq!(active.selected_index, 0);
+    }
+
+    #[test]
+    fn visible_window_tracks_selected_suggestion() {
+        let mut active = test_autocomplete_with_suggestions(10);
+
+        active.selected_index = 0;
+        assert_eq!(link_autocomplete_visible_start(&active), 0);
+
+        active.selected_index = LINK_AUTOCOMPLETE_VISIBLE_ROWS - 1;
+        assert_eq!(link_autocomplete_visible_start(&active), 0);
+
+        active.selected_index = LINK_AUTOCOMPLETE_VISIBLE_ROWS;
+        assert_eq!(link_autocomplete_visible_start(&active), 1);
+
+        active.selected_index = 9;
+        assert_eq!(link_autocomplete_visible_start(&active), 4);
+    }
+
+    #[test]
+    fn replacement_uses_safe_target_only_links_outside_character_cues() {
+        let suggestion = test_suggestion("character", "Eoghan", "eoghan");
+
+        assert_eq!(
+            link_autocomplete_replacement_text(&suggestion, LinkAutocompleteLineContext::General),
+            "[Eoghan]"
+        );
+    }
+
+    #[test]
+    fn replacement_uses_explicit_uppercase_links_for_character_cues() {
+        let suggestion = test_suggestion("character", "Eoghan", "eoghan");
+
+        assert_eq!(
+            link_autocomplete_replacement_text(
+                &suggestion,
+                LinkAutocompleteLineContext::CharacterCue
+            ),
+            "[EOGHAN](eoghan)"
+        );
+    }
+
+    #[test]
     fn autocomplete_ui_system_queries_are_disjoint() {
         let mut world = World::new();
         let mut system = IntoSystem::into_system(sync_link_autocomplete_ui);
@@ -982,6 +1318,37 @@ mod link_autocomplete_tests {
             status: None,
             path: PathBuf::from(format!("{target}.md")),
             relative_path: format!("{target}.md"),
+        }
+    }
+
+    fn test_autocomplete_with_suggestions(count: usize) -> LinkAutocomplete {
+        LinkAutocomplete {
+            source: LinkAutocompleteSource::Document,
+            trigger: LinkAutocompleteTrigger::InlinePrefix,
+            range: LinkAutocompleteRange {
+                start: Position { line: 0, column: 0 },
+                end: Position { line: 0, column: 3 },
+            },
+            prefix: "eog".to_string(),
+            suggestions: (0..count)
+                .map(|index| test_suggestion("character", &format!("Name {index}"), "name"))
+                .collect(),
+            selected_index: 0,
+        }
+    }
+
+    fn test_suggestion(
+        entity_type: &str,
+        display_name: &str,
+        target: &str,
+    ) -> LinkAutocompleteSuggestion {
+        LinkAutocompleteSuggestion {
+            kind: LinkAutocompleteSuggestionKind::Entity,
+            display_name: display_name.to_string(),
+            entity_type: entity_type.to_string(),
+            target: target.to_string(),
+            detail: format!("{target}.md"),
+            score: 1,
         }
     }
 }

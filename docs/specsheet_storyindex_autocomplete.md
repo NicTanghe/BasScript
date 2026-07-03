@@ -620,7 +620,7 @@ Acceptance
 
 R4. Keyboard selection
 
-Status: todo
+Status: implemented v1
 
 Use simple editor-style autocomplete controls.
 
@@ -640,6 +640,12 @@ Acceptance
 - The user can type `eog`, press `Down` if needed, and press `Enter` to insert the link.
 - Pressing `Esc` closes suggestions and leaves the typed text unchanged.
 - Arrow navigation returns to normal after the menu closes.
+
+Implementation notes
+
+- `Up` and `Down` select within the active suggestion menu and are captured while the menu is open.
+- `Esc` closes the menu before Vim insert mode or canvas text editing handles the key.
+- `Enter` performs the initial accepted-link replacement; R5 still owns the full insertion-format policy.
 
 R5. Inserting accepted links
 

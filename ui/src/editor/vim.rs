@@ -4,10 +4,17 @@ fn handle_vim_input(
     time: Res<Time>,
     body_query: Query<(&PanelBody, &ComputedNode)>,
     text_layout_query: Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+    capture: Res<LinkAutocompleteInputCapture>,
     mut repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
 ) {
     if !state.vim_enabled {
+        return;
+    }
+
+    if capture.is_captured() {
+        for _ in keyboard_inputs.read() {}
+        reset_vim_repeat(&mut repeat);
         return;
     }
 

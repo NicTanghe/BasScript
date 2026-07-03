@@ -1,9 +1,17 @@
 fn handle_text_input(
     mut keyboard_inputs: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
+    capture: Res<LinkAutocompleteInputCapture>,
     body_query: Query<(&PanelBody, &ComputedNode)>,
     mut state: ResMut<EditorState>,
 ) {
+    if capture.is_captured() {
+        for _ in keyboard_inputs.read() {}
+        state.pending_space_insert = false;
+        state.pending_space_combo_canceled = false;
+        return;
+    }
+
     if state.workspace_focused
         || state.workspace_prompt.is_some()
         || state.command_menu.is_some()
@@ -210,10 +218,15 @@ fn handle_text_input(
 fn handle_navigation_input(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    capture: Res<LinkAutocompleteInputCapture>,
     body_query: Query<(&PanelBody, &ComputedNode)>,
     mut navigation_repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
 ) {
+    if capture.is_captured() {
+        return;
+    }
+
     if state.workspace_prompt.is_some()
         || state.command_menu.is_some()
         || state.story_query_sheet.open

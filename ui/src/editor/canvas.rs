@@ -761,11 +761,17 @@ fn handle_canvas_text_edit_input(
     mut keyboard_inputs: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    capture: Res<LinkAutocompleteInputCapture>,
     text_layout_query: Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
     mut navigation_repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
 ) {
     if state.document_format != DocumentFormat::Canvas {
+        return;
+    }
+
+    if capture.is_captured() {
+        for _ in keyboard_inputs.read() {}
         return;
     }
 

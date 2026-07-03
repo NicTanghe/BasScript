@@ -146,6 +146,7 @@ impl Plugin for UiPlugin {
             .init_resource::<DialogState>()
             .init_resource::<MiddleAutoscrollState>()
             .init_resource::<NavigationRepeatState>()
+            .init_resource::<LinkAutocompleteInputCapture>()
             .init_resource::<WorkspaceSelectionRepeatState>()
             .init_resource::<MouseSelectionState>()
             .init_resource::<CanvasDragState>()
@@ -252,6 +253,15 @@ impl Plugin for UiPlugin {
             Update,
             handle_workspace_mouse_scroll
                 .before(handle_mouse_scroll)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
+            handle_link_autocomplete_keyboard_input
+                .before(handle_vim_input)
+                .before(handle_text_input)
+                .before(handle_navigation_input)
+                .before(handle_canvas_text_edit_input)
                 .run_if(in_state(UiScreenState::Editor)),
         );
         app.add_systems(
