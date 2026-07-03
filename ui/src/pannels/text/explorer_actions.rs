@@ -459,6 +459,7 @@ fn begin_workspace_create_prompt(state: &mut EditorState) {
     };
 
     state.workspace_focused = true;
+    state.close_link_autocomplete();
     state.workspace_prompt = Some(WorkspacePrompt::Create {
         input: path_with_trailing_separator(&folder),
     });
@@ -480,6 +481,7 @@ fn begin_workspace_delete_prompt(state: &mut EditorState) {
     }
 
     state.workspace_focused = true;
+    state.close_link_autocomplete();
     state.workspace_prompt = Some(WorkspacePrompt::Delete { target });
 }
 

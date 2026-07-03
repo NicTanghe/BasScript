@@ -188,6 +188,8 @@ fn setup(
                 ],
             ));
 
+            spawn_link_autocomplete_menu(root, font.clone());
+
             root.spawn((
                 Node {
                     width: percent(100.0),
@@ -1634,10 +1636,14 @@ fn handle_toolbar_buttons(
 
         match action {
             ToolbarAction::OpenWorkspace => {
+                state.close_link_autocomplete();
                 open_workspace_dialog(&mut state, &mut dialogs, parent_handle)
             }
             ToolbarAction::Save => state.save_current(),
-            ToolbarAction::SaveAs => open_save_dialog(&mut state, &mut dialogs, parent_handle),
+            ToolbarAction::SaveAs => {
+                state.close_link_autocomplete();
+                open_save_dialog(&mut state, &mut dialogs, parent_handle)
+            }
             ToolbarAction::StoryQuerySheet => state.open_story_query_sheet(),
             ToolbarAction::ZoomOut => {
                 let next_zoom = state.zoom - ZOOM_STEP;
@@ -1650,6 +1656,7 @@ fn handle_toolbar_buttons(
                 state.status_message = format!("Zoom: {}%", state.zoom_percent());
             }
             ToolbarAction::Settings => {
+                state.close_link_autocomplete();
                 next_screen_state.set(UiScreenState::Settings);
                 state.status_message = "Opened settings.".to_string();
             }
@@ -1743,6 +1750,7 @@ fn handle_settings_buttons(
                 );
             }
             SettingsAction::ToggleVimMode => {
+                state.close_link_autocomplete();
                 state.vim_enabled = !state.vim_enabled;
                 state.vim_mode = VimMode::Normal;
                 state.vim_pending_operator = None;
@@ -1838,18 +1846,21 @@ fn handle_settings_buttons(
                 );
             }
             SettingsAction::OpenTheme => {
+                state.close_link_autocomplete();
                 state.theme_color_target = ThemeColorTarget::AppBackground;
                 state.theme_color_picker_open = false;
                 next_screen_state.set(UiScreenState::Theme);
                 state.status_message = "Opened theme.".to_string();
             }
             SettingsAction::OpenLinkColors => {
+                state.close_link_autocomplete();
                 state.theme_color_target = ThemeColorTarget::LinkFallback;
                 state.theme_color_picker_open = false;
                 next_screen_state.set(UiScreenState::Theme);
                 state.status_message = "Opened link colors.".to_string();
             }
             SettingsAction::OpenKeybinds => {
+                state.close_link_autocomplete();
                 state.pending_keybind_capture = None;
                 next_screen_state.set(UiScreenState::Keybinds);
                 state.status_message = "Opened keybinds.".to_string();

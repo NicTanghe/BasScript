@@ -769,11 +769,16 @@ fn handle_canvas_text_edit_input(
         return;
     }
 
-    if state.workspace_prompt.is_some() || state.command_menu.is_some() || state.story_query_sheet.open {
+    if state.workspace_prompt.is_some()
+        || state.command_menu.is_some()
+        || state.story_query_sheet.open
+    {
+        state.close_link_autocomplete();
         return;
     }
 
     let Some(node_id) = state.canvas_editing_node_id.clone() else {
+        state.close_link_autocomplete();
         return;
     };
 
@@ -785,16 +790,19 @@ fn handle_canvas_text_edit_input(
         }
 
         if keys.just_pressed(KeyCode::Escape) || state.vim_mode != VimMode::Insert {
+            state.close_link_autocomplete();
             return;
         }
     } else if keys.just_pressed(KeyCode::Escape) {
         state.clear_canvas_text_edit();
+        state.close_link_autocomplete();
         state.status_message = "Canvas text edit exited.".to_string();
         return;
     }
 
     let Some(mut document) = state.active_canvas_text_document() else {
         state.clear_canvas_text_edit();
+        state.close_link_autocomplete();
         return;
     };
 
@@ -810,6 +818,7 @@ fn handle_canvas_text_edit_input(
                 state.push_undo_snapshot(snapshot);
             }
             if state.set_canvas_text_node_content(&node_id, document.to_text()) {
+                state.refresh_link_autocomplete_for_canvas_text_cursor(&document);
                 state.status_message = "Cut canvas text.".to_string();
             }
         }
@@ -828,6 +837,7 @@ fn handle_canvas_text_edit_input(
                 state.push_undo_snapshot(snapshot);
             }
             if state.set_canvas_text_node_content(&node_id, document.to_text()) {
+                state.refresh_link_autocomplete_for_canvas_text_cursor(&document);
                 state.status_message = "Pasted clipboard.".to_string();
             }
         } else {
@@ -842,6 +852,7 @@ fn handle_canvas_text_edit_input(
         state.canvas_text_cursor.set_position(end);
         state.canvas_text_selection_anchor = Some(Position::default());
         state.canvas_version = state.canvas_version.saturating_add(1);
+        state.close_link_autocomplete();
         state.status_message = "Canvas text selected.".to_string();
         return;
     }
@@ -933,6 +944,7 @@ fn handle_canvas_text_edit_input(
 
     if !text_changed {
         if view_changed {
+            state.validate_link_autocomplete_context();
             state.reset_blink();
         }
         return;
@@ -942,5 +954,6 @@ fn handle_canvas_text_edit_input(
         state.push_undo_snapshot(snapshot);
     }
     state.set_canvas_text_node_content(&node_id, document.to_text());
+    state.refresh_link_autocomplete_for_canvas_text_cursor(&document);
     state.reset_blink();
 }

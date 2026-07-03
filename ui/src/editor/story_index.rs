@@ -5,6 +5,7 @@ use basscript_core::{
 
 #[derive(Clone, Debug)]
 struct EditorStoryIndex {
+    database: Option<StoryIndexDatabase>,
     workspace_root: PathBuf,
     database_path: PathBuf,
     status: EditorStoryIndexStatus,
@@ -67,6 +68,7 @@ impl EditorState {
                 let scan = report.database.scan_workspace_files();
                 let message = story_index_status_message(&report, scan.as_ref().ok());
                 self.story_index = Some(EditorStoryIndex {
+                    database: scan.is_ok().then(|| report.database.clone()),
                     workspace_root: report.database.workspace_root().to_path_buf(),
                     database_path: report.database.database_path().to_path_buf(),
                     status: if scan.is_ok() {
@@ -93,6 +95,7 @@ impl EditorState {
                 let database_path = story_index_database_path(workspace_root);
                 let message = format!("Story index failed at {}: {error}", database_path.display());
                 self.story_index = Some(EditorStoryIndex {
+                    database: None,
                     workspace_root: workspace_root.to_path_buf(),
                     database_path,
                     status: EditorStoryIndexStatus::Failed,

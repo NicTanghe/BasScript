@@ -1442,6 +1442,7 @@ impl StoryQuerySheet {
 
 impl EditorState {
     fn open_story_query_sheet(&mut self) {
+        self.close_link_autocomplete();
         self.story_query_sheet.open = true;
         self.command_menu = None;
         self.workspace_focused = false;

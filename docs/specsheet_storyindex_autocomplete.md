@@ -529,7 +529,7 @@ Epic R - Link Autocomplete
 
 R1. Autocomplete trigger contexts
 
-Status: todo
+Status: implemented v1
 
 Show link suggestions where they make sense while writing.
 
@@ -561,7 +561,7 @@ Acceptance
 
 R2. Candidate matching
 
-Status: todo
+Status: implemented v1
 
 Build suggestions from the Story Index Database.
 
@@ -592,7 +592,7 @@ Acceptance
 
 R3. Suggestion dropdown UI
 
-Status: todo
+Status: implemented v1
 
 Render a small keyboard-driven menu near the caret.
 

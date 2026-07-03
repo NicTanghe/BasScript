@@ -263,6 +263,23 @@ impl Plugin for UiPlugin {
         );
         app.add_systems(
             Update,
+            sync_link_autocomplete_context
+                .after(handle_text_input)
+                .after(handle_navigation_input)
+                .after(handle_vim_input)
+                .after(handle_canvas_text_edit_input)
+                .after(resolve_dialog_results)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
+            sync_link_autocomplete_ui
+                .after(sync_link_autocomplete_context)
+                .after(render_editor)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
             (
                 render_processed_images.after(render_editor),
                 sync_canvas_board.after(render_editor),
@@ -1139,6 +1156,7 @@ struct EditorState {
     vim_visual_anchor: Option<Position>,
     vim_visual_head: Option<Position>,
     command_menu: Option<CommandMenu>,
+    link_autocomplete: Option<LinkAutocomplete>,
     story_query_sheet: StoryQuerySheet,
     workspace_sidebar_visible: bool,
     top_menu_collapsed: bool,
@@ -1705,6 +1723,7 @@ impl FromWorld for EditorState {
             vim_visual_anchor: None,
             vim_visual_head: None,
             command_menu: None,
+            link_autocomplete: None,
             story_query_sheet: StoryQuerySheet::default(),
             workspace_sidebar_visible: ui_state.workspace_sidebar_visible,
             top_menu_collapsed: ui_state.top_menu_collapsed,
@@ -2057,6 +2076,7 @@ impl EditorState {
                 self.vim_visual_anchor = None;
                 self.vim_visual_head = None;
                 self.command_menu = None;
+                self.link_autocomplete = None;
                 self.canvas_editing_node_id = None;
                 self.canvas_text_cursor = Cursor::default();
                 self.canvas_text_selection_anchor = None;

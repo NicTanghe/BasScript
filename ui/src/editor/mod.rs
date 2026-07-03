@@ -10,6 +10,8 @@ include!("story_query_sheet.rs");
 include!("status_line.rs");
 // In-app command menu prompt and command dispatch.
 include!("command_menu.rs");
+// Link autocomplete trigger context state.
+include!("autocomplete.rs");
 // Processed pane pagination/cache/styling and text layout helpers.
 include!("processed.rs");
 // Caret component, blink timer, and caret placement logic.

@@ -223,6 +223,7 @@ fn keyboard_input_text_is(input: &KeyboardInput, expected: &str) -> bool {
 
 impl EditorState {
     fn open_command_menu(&mut self) {
+        self.close_link_autocomplete();
         self.command_menu = Some(CommandMenu {
             input: String::new(),
         });

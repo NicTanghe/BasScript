@@ -188,6 +188,7 @@ fn handle_window_shortcuts(
 
     let explorer_binding = state.keybinds.binding(ShortcutAction::ToggleExplorer);
     if shortcut_just_pressed(&keys, explorer_binding) {
+        state.close_link_autocomplete();
         state.workspace_sidebar_visible = !state.workspace_sidebar_visible;
         state.workspace_focused = state.workspace_sidebar_visible;
         if state.workspace_sidebar_visible {
@@ -441,6 +442,7 @@ fn handle_file_shortcuts(
             parent_handle.is_some(),
             dialogs.pending.is_some()
         );
+        state.close_link_autocomplete();
         open_workspace_dialog(&mut state, &mut dialogs, parent_handle);
     }
 
@@ -455,6 +457,7 @@ fn handle_file_shortcuts(
             parent_handle.is_some(),
             dialogs.pending.is_some()
         );
+        state.close_link_autocomplete();
         open_save_dialog(&mut state, &mut dialogs, parent_handle);
     }
 }
@@ -464,6 +467,7 @@ fn open_workspace_dialog(
     dialogs: &mut DialogState,
     _parent_handle: Option<&RawHandleWrapper>,
 ) {
+    state.close_link_autocomplete();
     if dialogs.pending.is_some() {
         let pending_kind = dialogs
             .pending
@@ -520,6 +524,7 @@ fn open_save_dialog(
     dialogs: &mut DialogState,
     _parent_handle: Option<&RawHandleWrapper>,
 ) {
+    state.close_link_autocomplete();
     if dialogs.pending.is_some() {
         let pending_kind = dialogs
             .pending

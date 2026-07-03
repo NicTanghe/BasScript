@@ -11,6 +11,7 @@ fn handle_text_input(
         || state.document_format == DocumentFormat::Canvas
         || (state.vim_enabled && state.vim_mode != VimMode::Insert)
     {
+        state.close_link_autocomplete();
         state.pending_space_insert = false;
         state.pending_space_combo_canceled = false;
         return;
@@ -34,6 +35,7 @@ fn handle_text_input(
         visible_lines,
     ) {
         for _ in keyboard_inputs.read() {}
+        state.close_link_autocomplete();
         return;
     }
 
@@ -78,6 +80,7 @@ fn handle_text_input(
             processed_panel_size,
             visible_lines,
         ) {
+            state.close_link_autocomplete();
             return;
         }
 
@@ -196,9 +199,10 @@ fn handle_text_input(
 
     if edited {
         if let Some(snapshot) = undo_snapshot {
-            state.push_undo_snapshot(snapshot);
+        state.push_undo_snapshot(snapshot);
         }
         state.reparse_with_dirty_hint(dirty_from_line.unwrap_or(0));
+        state.refresh_link_autocomplete_for_document_cursor();
         apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
     }
 }
@@ -210,7 +214,11 @@ fn handle_navigation_input(
     mut navigation_repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
 ) {
-    if state.workspace_prompt.is_some() || state.command_menu.is_some() || state.story_query_sheet.open {
+    if state.workspace_prompt.is_some()
+        || state.command_menu.is_some()
+        || state.story_query_sheet.open
+    {
+        state.close_link_autocomplete();
         return;
     }
 
@@ -314,10 +322,12 @@ fn handle_navigation_input(
     }
 
     if state.vim_enabled && state.vim_mode != VimMode::Insert {
+        state.close_link_autocomplete();
         return;
     }
 
     if state.workspace_focused {
+        state.close_link_autocomplete();
         return;
     }
 
@@ -387,6 +397,7 @@ fn handle_navigation_input(
     }
 
     if moved {
+        state.validate_link_autocomplete_context();
         apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
     }
 }

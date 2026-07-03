@@ -223,6 +223,7 @@ fn handle_canvas_vim_input(
 }
 
 fn canvas_vim_enter_normal_mode(state: &mut EditorState, clear_selection: bool) {
+    state.close_link_autocomplete();
     state.vim_mode = VimMode::Normal;
     state.vim_pending_operator = None;
     state.vim_visual_anchor = None;
@@ -245,6 +246,7 @@ fn canvas_vim_enter_insert_mode(state: &mut EditorState) {
 }
 
 fn canvas_vim_enter_visual_char_mode(state: &mut EditorState) {
+    state.close_link_autocomplete();
     let cursor = state.canvas_text_cursor.position;
     state.vim_mode = VimMode::VisualChar;
     state.vim_pending_operator = None;
@@ -256,6 +258,7 @@ fn canvas_vim_enter_visual_char_mode(state: &mut EditorState) {
 }
 
 fn canvas_vim_enter_visual_line_mode(state: &mut EditorState, document: &Document) {
+    state.close_link_autocomplete();
     let line = state
         .canvas_text_cursor
         .position
@@ -624,6 +627,7 @@ fn handle_vim_visual_command(
 }
 
 fn vim_enter_normal_mode(state: &mut EditorState, clear_selection: bool) {
+    state.close_link_autocomplete();
     let visual_line_head = (state.vim_mode == VimMode::VisualLine)
         .then_some(state.vim_visual_head)
         .flatten();
@@ -653,6 +657,7 @@ fn vim_enter_insert_mode(state: &mut EditorState) {
 }
 
 fn vim_enter_visual_char_mode(state: &mut EditorState) {
+    state.close_link_autocomplete();
     let cursor = state.cursor.position;
     state.vim_mode = VimMode::VisualChar;
     state.vim_pending_operator = None;
@@ -663,6 +668,7 @@ fn vim_enter_visual_char_mode(state: &mut EditorState) {
 }
 
 fn vim_enter_visual_line_mode(state: &mut EditorState) {
+    state.close_link_autocomplete();
     let cursor = state.cursor.position;
     state.vim_mode = VimMode::VisualLine;
     state.vim_pending_operator = None;
