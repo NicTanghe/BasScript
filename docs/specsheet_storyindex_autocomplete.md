@@ -647,9 +647,10 @@ Implementation notes
 - `Esc` closes the menu before Vim insert mode or canvas text editing handles the key.
 - `Enter` performs the initial accepted-link replacement; R5 still owns the full insertion-format policy.
 
+
 R5. Inserting accepted links
 
-Status: todo
+Status: deemed unnececairy
 
 Accepting a suggestion replaces the active trigger text with valid script-link syntax.
 
@@ -676,7 +677,7 @@ Acceptance
 
 R6. Autocomplete boundaries and false positives
 
-Status: todo
+Status: unececairy until proven otherwise
 
 Avoid intrusive suggestions while still helping normal writing.
 
@@ -698,7 +699,7 @@ Acceptance
 
 R7. Autocomplete settings
 
-Status: todo
+Status: deemed settings bloat
 
 Expose enough configuration to tune interruption level.
 
