@@ -816,6 +816,8 @@ fn setup_processed_papers(
         let regular_font = regular_font.clone();
         let unchecked_icon = unchecked_icon.clone();
         commands.entity(entity).with_children(|parent| {
+            spawn_markdown_metadata_controls(parent, regular_font.clone());
+
             for slot in 1..PROCESSED_PAPER_CAPACITY {
                 let slot_font = regular_font.clone();
                 let slot_unchecked_icon = unchecked_icon.clone();

@@ -39,6 +39,7 @@ fn handle_mouse_selection(
     mut splitter_drag: ResMut<PanelSplitterDragState>,
     mut mouse_selection: ResMut<MouseSelectionState>,
     panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
+    metadata_query: Query<&RelativeCursorPosition, With<MarkdownMetadataPanelRoot>>,
     text_layout_query: Query<(&PanelText, &TextLayoutInfo)>,
     processed_text_layout_query: Query<
         (&ProcessedPaperText, &TextLayoutInfo, &ComputedNode),
@@ -51,6 +52,10 @@ fn handle_mouse_selection(
     }
 
     if state.workspace_prompt.is_some() {
+        mouse_selection.active = false;
+        return;
+    }
+    if markdown_metadata_hovered(&metadata_query) {
         mouse_selection.active = false;
         return;
     }
@@ -95,6 +100,9 @@ fn handle_mouse_selection(
     let is_drag_update = mouse_selection.active && mouse_buttons.pressed(MouseButton::Left);
     if !is_start && !is_drag_update {
         return;
+    }
+    if is_start && state.markdown_metadata_input_active() {
+        state.clear_markdown_metadata_focus();
     }
 
     let visible_lines = viewport_lines_from_panels(

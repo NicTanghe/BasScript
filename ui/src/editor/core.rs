@@ -191,6 +191,7 @@ impl Plugin for UiPlugin {
                     handle_toolbar_buttons,
                     handle_workspace_file_buttons,
                     handle_workspace_folder_buttons,
+                    handle_markdown_metadata_buttons,
                     handle_story_query_sheet_buttons,
                     handle_story_query_sheet_link_click,
                     handle_story_query_sheet_keyboard,
@@ -249,6 +250,22 @@ impl Plugin for UiPlugin {
                 )
                     .run_if(in_state(UiScreenState::Editor)),
             );
+        app.add_systems(
+            Update,
+            handle_markdown_metadata_input
+                .before(handle_workspace_prompt_input)
+                .before(handle_command_menu_input)
+                .before(handle_vim_input)
+                .before(handle_text_input)
+                .before(handle_navigation_input)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
+            sync_markdown_metadata_controls_ui
+                .after(render_editor)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
         app.add_systems(
             Update,
             handle_workspace_mouse_scroll
@@ -1166,6 +1183,9 @@ struct EditorState {
     vim_visual_anchor: Option<Position>,
     vim_visual_head: Option<Position>,
     command_menu: Option<CommandMenu>,
+    markdown_metadata_focus: Option<MarkdownMetadataField>,
+    markdown_metadata_dropdown: Option<MarkdownMetadataField>,
+    markdown_metadata_dropdown_highlight: usize,
     link_autocomplete: Option<LinkAutocomplete>,
     story_query_sheet: StoryQuerySheet,
     workspace_sidebar_visible: bool,
@@ -1733,6 +1753,9 @@ impl FromWorld for EditorState {
             vim_visual_anchor: None,
             vim_visual_head: None,
             command_menu: None,
+            markdown_metadata_focus: None,
+            markdown_metadata_dropdown: None,
+            markdown_metadata_dropdown_highlight: 0,
             link_autocomplete: None,
             story_query_sheet: StoryQuerySheet::default(),
             workspace_sidebar_visible: ui_state.workspace_sidebar_visible,
@@ -2086,6 +2109,7 @@ impl EditorState {
                 self.vim_visual_anchor = None;
                 self.vim_visual_head = None;
                 self.command_menu = None;
+                self.clear_markdown_metadata_focus();
                 self.link_autocomplete = None;
                 self.canvas_editing_node_id = None;
                 self.canvas_text_cursor = Cursor::default();

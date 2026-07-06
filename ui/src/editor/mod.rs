@@ -14,6 +14,8 @@ include!("command_menu.rs");
 include!("autocomplete.rs");
 // Processed pane pagination/cache/styling and text layout helpers.
 include!("processed.rs");
+// Rendered Markdown frontmatter controls and write-back.
+include!("metadata_controls.rs");
 // Caret component, blink timer, and caret placement logic.
 include!("caret.rs");
 // UI hierarchy and toolbar/settings widgets.

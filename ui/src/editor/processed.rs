@@ -16,7 +16,7 @@ fn processed_page_geometry(panel_size: Vec2, state: &EditorState) -> ProcessedPa
     } else {
         PAGE_OUTER_MARGIN
     };
-    let paper_top = PAGE_OUTER_MARGIN;
+    let paper_top = PAGE_OUTER_MARGIN + markdown_metadata_header_offset(state);
 
     let margin_left = state.page_margin_left * zoom;
     let margin_right = state.page_margin_right * zoom;
@@ -204,16 +204,6 @@ struct PreparedProcessedText {
     link_targets: Vec<Option<String>>,
 }
 
-fn prepared_plain_processed_text(text: impl Into<String>) -> PreparedProcessedText {
-    let text = text.into();
-    let char_count = text.chars().count();
-    PreparedProcessedText {
-        text,
-        display_to_raw: vec![0; char_count.saturating_add(1)],
-        link_targets: vec![None; char_count],
-    }
-}
-
 fn identity_link_display_text(input: &str) -> LinkDisplayText {
     let char_count = input.chars().count();
     LinkDisplayText {
@@ -357,10 +347,7 @@ fn build_processed_segment_lines(
     let lines_per_page = lines_per_page.max(1);
     let mut paged_lines = Vec::<ProcessedVisualLine>::new();
     let mut lines_in_page = 0usize;
-    let markdown_front_matter =
-        (!matches!(state.display_mode, DisplayMode::ProcessedRawCurrentLine))
-            .then(|| markdown_front_matter_display(&state.document))
-            .flatten();
+    let markdown_front_matter = markdown_front_matter_display(&state.document);
 
     for source_line in start_line..end_line_exclusive {
         let Some(parsed_line) = state.parsed.get(source_line) else {
@@ -368,26 +355,17 @@ fn build_processed_segment_lines(
         };
 
         let raw_override_active = raw_override_line == Some(source_line);
-        if !raw_override_active
-            && markdown_front_matter.as_ref().is_some_and(|front_matter| {
-                source_line > 0 && source_line <= front_matter.closing_line_index
-            })
+        if markdown_front_matter
+            .as_ref()
+            .is_some_and(|front_matter| source_line <= front_matter.closing_line_index)
         {
             continue;
         }
 
-        let front_matter_render_override = (!raw_override_active)
-            .then(|| markdown_front_matter.as_ref())
-            .flatten()
-            .filter(|_| source_line == 0)
-            .map(|_| ProcessedLineRenderOverride {
-                kind: LineKind::MarkdownHeading,
-                markdown_heading_level: Some(1),
-            });
         let markdown_render_override = (!raw_override_active)
             .then(|| markdown_render_override_for_raw(&parsed_line.raw))
             .flatten();
-        let render_override = front_matter_render_override.or(markdown_render_override);
+        let render_override = markdown_render_override;
         let effective_kind = render_override
             .as_ref()
             .map(|override_style| &override_style.kind)
@@ -405,18 +383,8 @@ fn build_processed_segment_lines(
                 LineKind::SceneHeading | LineKind::Transition | LineKind::Character
             )
         };
-        let (prepared_text, checklist_state) = if let Some(front_matter) = markdown_front_matter
-            .as_ref()
-            .filter(|_| source_line == 0)
-            .filter(|_| !raw_override_active)
-        {
-            (
-                prepared_plain_processed_text(front_matter.rendered_title.clone()),
-                None,
-            )
-        } else {
-            prepare_processed_line_text(parsed_line, raw_override_active, render_override.as_ref())
-        };
+        let (prepared_text, checklist_state) =
+            prepare_processed_line_text(parsed_line, raw_override_active, render_override.as_ref());
         let mut wrapped = Vec::<ProcessedVisualLine>::new();
 
         let image_embed_line = !raw_override_active && !parsed_line.image_embeds.is_empty();

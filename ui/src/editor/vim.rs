@@ -32,6 +32,7 @@ fn handle_vim_input(
 
     if state.workspace_prompt.is_some()
         || state.command_menu.is_some()
+        || state.markdown_metadata_input_active()
         || state.story_query_sheet.open
         || state.workspace_focused
     {

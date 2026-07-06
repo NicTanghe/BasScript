@@ -15,6 +15,7 @@ fn handle_text_input(
     if state.workspace_focused
         || state.workspace_prompt.is_some()
         || state.command_menu.is_some()
+        || state.markdown_metadata_input_active()
         || state.story_query_sheet.open
         || state.document_format == DocumentFormat::Canvas
         || (state.vim_enabled && state.vim_mode != VimMode::Insert)
@@ -229,6 +230,7 @@ fn handle_navigation_input(
 
     if state.workspace_prompt.is_some()
         || state.command_menu.is_some()
+        || state.markdown_metadata_input_active()
         || state.story_query_sheet.open
     {
         state.close_link_autocomplete();
