@@ -25,6 +25,7 @@ use bevy::{
     ui::{RelativeCursorPosition, UiTransform, Val2},
     window::{PrimaryWindow, RawHandleWrapper},
 };
+#[cfg(not(target_os = "linux"))]
 use rfd::FileDialog;
 
 const FONT_PATH: &str = "fonts/Courier Prime/Courier Prime.ttf";
@@ -1355,9 +1356,11 @@ struct PanelSplitterDragState {
     suppress_next_left_click: bool,
 }
 
+type DialogPathResult = Result<Option<PathBuf>, String>;
+
 enum PendingDialog {
-    Workspace(Arc<Mutex<mpsc::Receiver<Option<PathBuf>>>>),
-    Save(Arc<Mutex<mpsc::Receiver<Option<PathBuf>>>>),
+    Workspace(Arc<Mutex<mpsc::Receiver<DialogPathResult>>>),
+    Save(Arc<Mutex<mpsc::Receiver<DialogPathResult>>>),
 }
 
 struct DialogMainThreadMarker;

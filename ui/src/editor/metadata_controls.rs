@@ -308,6 +308,7 @@ fn sync_markdown_metadata_controls_ui(
             &mut BackgroundColor,
         ),
         (
+            Without<MarkdownMetadataPanelRoot>,
             Without<MarkdownMetadataFieldButton>,
             Without<MarkdownMetadataDropdownRoot>,
         ),

@@ -465,8 +465,10 @@ fn handle_file_shortcuts(
 fn open_workspace_dialog(
     state: &mut EditorState,
     dialogs: &mut DialogState,
-    _parent_handle: Option<&RawHandleWrapper>,
+    parent_handle: Option<&RawHandleWrapper>,
 ) {
+    #[cfg(target_os = "linux")]
+    let _ = parent_handle;
     state.close_link_autocomplete();
     if dialogs.pending.is_some() {
         let pending_kind = dialogs
@@ -496,34 +498,59 @@ fn open_workspace_dialog(
         warn!("[dialog] No preferred directory found for workspace dialog");
     }
 
-    let (sender, receiver) = mpsc::channel();
-    std::thread::spawn(move || {
-        info!(
-            "[dialog] Workspace dialog thread started: {:?}",
-            std::thread::current().id()
-        );
-        let mut dialog = FileDialog::new().set_title("Open Workspace Folder");
+    #[cfg(target_os = "linux")]
+    {
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            info!(
+                "[dialog] Linux workspace dialog thread started: {:?}",
+                std::thread::current().id()
+            );
+            let result = linux_pick_workspace_folder(directory);
+            log_dialog_path_result("Workspace", &result);
+            let _ = sender.send(result);
+        });
+
+        dialogs.begin_pending(PendingDialog::Workspace(Arc::new(Mutex::new(receiver))));
+        info!("[dialog] Linux workspace dialog helper thread spawned");
+        state.status_message = "Opening workspace picker...".to_string();
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let mut dialog =
+            dialog_with_parent(FileDialog::new().set_title("Open Workspace Folder"), parent_handle);
         if let Some(directory) = directory {
             dialog = dialog.set_directory(directory);
         }
-        let result = dialog.pick_folder();
-        match &result {
-            Some(path) => info!("[dialog] Workspace thread received path: {}", path.display()),
-            None => info!("[dialog] Workspace thread returned: canceled"),
-        }
-        let _ = sender.send(result);
-    });
 
-    dialogs.begin_pending(PendingDialog::Workspace(Arc::new(Mutex::new(receiver))));
-    info!("[dialog] Native workspace dialog thread spawned");
-    state.status_message = "Opening workspace picker...".to_string();
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            info!(
+                "[dialog] Workspace dialog thread started: {:?}",
+                std::thread::current().id()
+            );
+            let result = dialog.pick_folder();
+            match &result {
+                Some(path) => info!("[dialog] Workspace thread received path: {}", path.display()),
+                None => info!("[dialog] Workspace thread returned: canceled"),
+            }
+            let _ = sender.send(Ok(result));
+        });
+
+        dialogs.begin_pending(PendingDialog::Workspace(Arc::new(Mutex::new(receiver))));
+        info!("[dialog] Native workspace dialog thread spawned");
+        state.status_message = "Opening workspace picker...".to_string();
+    }
 }
 
 fn open_save_dialog(
     state: &mut EditorState,
     dialogs: &mut DialogState,
-    _parent_handle: Option<&RawHandleWrapper>,
+    parent_handle: Option<&RawHandleWrapper>,
 ) {
+    #[cfg(target_os = "linux")]
+    let _ = parent_handle;
     state.close_link_autocomplete();
     if dialogs.pending.is_some() {
         let pending_kind = dialogs
@@ -563,30 +590,55 @@ fn open_save_dialog(
 
     info!("[dialog] Save dialog default filename: {}", default_name);
 
-    let (sender, receiver) = mpsc::channel();
-    std::thread::spawn(move || {
-        info!(
-            "[dialog] Save dialog thread started: {:?}",
-            std::thread::current().id()
+    #[cfg(target_os = "linux")]
+    {
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            info!(
+                "[dialog] Linux save dialog thread started: {:?}",
+                std::thread::current().id()
+            );
+            let result = linux_save_file(directory, &default_name);
+            log_dialog_path_result("Save", &result);
+            let _ = sender.send(result);
+        });
+
+        dialogs.begin_pending(PendingDialog::Save(Arc::new(Mutex::new(receiver))));
+        info!("[dialog] Linux save dialog helper thread spawned");
+        state.status_message = "Opening save dialog...".to_string();
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let mut dialog = dialog_with_parent(
+            FileDialog::new()
+                .set_title("Save Script File")
+                .add_filter("Script files", &["fountain", "txt", "md"])
+                .set_file_name(default_name.as_str()),
+            parent_handle,
         );
-        let mut dialog = FileDialog::new()
-            .set_title("Save Script File")
-            .add_filter("Script files", &["fountain", "txt", "md"])
-            .set_file_name(default_name.as_str());
         if let Some(directory) = directory {
             dialog = dialog.set_directory(directory);
         }
-        let result = dialog.save_file();
-        match &result {
-            Some(path) => info!("[dialog] Save thread received path: {}", path.display()),
-            None => info!("[dialog] Save thread returned: canceled"),
-        }
-        let _ = sender.send(result);
-    });
 
-    dialogs.begin_pending(PendingDialog::Save(Arc::new(Mutex::new(receiver))));
-    info!("[dialog] Native save dialog thread spawned");
-    state.status_message = "Opening save dialog...".to_string();
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            info!(
+                "[dialog] Save dialog thread started: {:?}",
+                std::thread::current().id()
+            );
+            let result = dialog.save_file();
+            match &result {
+                Some(path) => info!("[dialog] Save thread received path: {}", path.display()),
+                None => info!("[dialog] Save thread returned: canceled"),
+            }
+            let _ = sender.send(Ok(result));
+        });
+
+        dialogs.begin_pending(PendingDialog::Save(Arc::new(Mutex::new(receiver))));
+        info!("[dialog] Native save dialog thread spawned");
+        state.status_message = "Opening save dialog...".to_string();
+    }
 }
 
 fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<DialogState>) {
@@ -596,8 +648,8 @@ fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<Di
     let pending_kind = pending.kind_name();
 
     enum DialogResult {
-        Workspace(Option<PathBuf>),
-        Save(Option<PathBuf>),
+        Workspace(DialogPathResult),
+        Save(DialogPathResult),
     }
 
     let finished = match pending {
@@ -605,22 +657,30 @@ fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<Di
             Ok(receiver) => match receiver.try_recv() {
                 Ok(path) => Some(DialogResult::Workspace(path)),
                 Err(mpsc::TryRecvError::Empty) => None,
-                Err(mpsc::TryRecvError::Disconnected) => Some(DialogResult::Workspace(None)),
+                Err(mpsc::TryRecvError::Disconnected) => Some(DialogResult::Workspace(Err(
+                    "Workspace picker closed before returning a result.".to_string(),
+                ))),
             },
             Err(error) => {
                 warn!("[dialog] Workspace dialog receiver poisoned: {error}");
-                Some(DialogResult::Workspace(None))
+                Some(DialogResult::Workspace(Err(format!(
+                    "Workspace picker receiver failed: {error}"
+                ))))
             }
         },
         PendingDialog::Save(receiver) => match receiver.lock() {
             Ok(receiver) => match receiver.try_recv() {
                 Ok(path) => Some(DialogResult::Save(path)),
                 Err(mpsc::TryRecvError::Empty) => None,
-                Err(mpsc::TryRecvError::Disconnected) => Some(DialogResult::Save(None)),
+                Err(mpsc::TryRecvError::Disconnected) => Some(DialogResult::Save(Err(
+                    "Save picker closed before returning a result.".to_string(),
+                ))),
             },
             Err(error) => {
                 warn!("[dialog] Save dialog receiver poisoned: {error}");
-                Some(DialogResult::Save(None))
+                Some(DialogResult::Save(Err(format!(
+                    "Save picker receiver failed: {error}"
+                ))))
             }
         },
     };
@@ -657,23 +717,295 @@ fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<Di
     dialogs.clear_pending();
 
     match result {
-        DialogResult::Workspace(Some(path)) => {
+        DialogResult::Workspace(path) => finish_workspace_dialog(&mut state, path),
+        DialogResult::Save(path) => finish_save_dialog(&mut state, path),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn dialog_with_parent(dialog: FileDialog, parent_handle: Option<&RawHandleWrapper>) -> FileDialog {
+    let Some(parent_handle) = parent_handle else {
+        return dialog;
+    };
+
+    // SAFETY: callers are Bevy systems with `DialogMainThreadMarker` as a `NonSend`
+    // parameter, so this runs on the main thread before any dialog backend sees the handle.
+    let parent = unsafe { parent_handle.get_handle() };
+    dialog.set_parent(&parent)
+}
+
+fn finish_workspace_dialog(state: &mut EditorState, result: DialogPathResult) {
+    match result {
+        Ok(Some(path)) => {
             info!("[dialog] Opening selected workspace path: {}", path.display());
             state.set_workspace_root(path);
         }
-        DialogResult::Workspace(None) => {
+        Ok(None) => {
             info!("[dialog] Workspace dialog canceled by user");
             state.status_message = "Workspace open canceled.".to_string();
         }
-        DialogResult::Save(Some(path)) => {
+        Err(error) => {
+            warn!("[dialog] Workspace dialog failed: {error}");
+            state.status_message = format!("Workspace picker failed: {error}");
+        }
+    }
+}
+
+fn finish_save_dialog(state: &mut EditorState, result: DialogPathResult) {
+    match result {
+        Ok(Some(path)) => {
             info!("[dialog] Saving to selected path: {}", path.display());
             state.save_to_path(path);
         }
-        DialogResult::Save(None) => {
+        Ok(None) => {
             info!("[dialog] Save dialog canceled by user");
             state.status_message = "Save canceled.".to_string();
         }
+        Err(error) => {
+            warn!("[dialog] Save dialog failed: {error}");
+            state.status_message = format!("Save dialog failed: {error}");
+        }
     }
+}
+
+#[cfg(target_os = "linux")]
+fn log_dialog_path_result(label: &str, result: &DialogPathResult) {
+    match result {
+        Ok(Some(path)) => info!("[dialog] {label} dialog received path: {}", path.display()),
+        Ok(None) => info!("[dialog] {label} dialog returned: canceled"),
+        Err(error) => warn!("[dialog] {label} dialog failed: {error}"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_pick_workspace_folder(directory: Option<PathBuf>) -> DialogPathResult {
+    let start_dir = directory.as_deref();
+    let mut errors = Vec::new();
+    match linux_run_zenity_folder(start_dir) {
+        Ok(result) => return Ok(result),
+        Err(error) => linux_collect_dialog_error(error, &mut errors),
+    }
+    match linux_run_kdialog_folder(start_dir) {
+        Ok(result) => return Ok(result),
+        Err(error) => linux_collect_dialog_error(error, &mut errors),
+    }
+    match linux_run_yad_folder(start_dir) {
+        Ok(result) => return Ok(result),
+        Err(error) => linux_collect_dialog_error(error, &mut errors),
+    }
+    linux_dialog_failure("workspace folder picker", errors)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_save_file(directory: Option<PathBuf>, default_name: &str) -> DialogPathResult {
+    let start_path = linux_save_start_path(directory.as_deref(), default_name);
+    let mut errors = Vec::new();
+    match linux_run_zenity_save(&start_path) {
+        Ok(result) => return Ok(result),
+        Err(error) => linux_collect_dialog_error(error, &mut errors),
+    }
+    match linux_run_kdialog_save(&start_path) {
+        Ok(result) => return Ok(result),
+        Err(error) => linux_collect_dialog_error(error, &mut errors),
+    }
+    match linux_run_yad_save(&start_path) {
+        Ok(result) => return Ok(result),
+        Err(error) => linux_collect_dialog_error(error, &mut errors),
+    }
+    linux_dialog_failure("save dialog", errors)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_collect_dialog_error(error: LinuxDialogAttemptError, errors: &mut Vec<String>) {
+    match error {
+        LinuxDialogAttemptError::Unavailable => {}
+        LinuxDialogAttemptError::Failed(error) => errors.push(error),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_dialog_failure(label: &str, errors: Vec<String>) -> DialogPathResult {
+    if errors.is_empty() {
+        Err(format!(
+            "No Linux {label} helper found. Install zenity, kdialog, or yad."
+        ))
+    } else {
+        Err(format!(
+            "No Linux {label} helper succeeded. {}",
+            errors.join("; ")
+        ))
+    }
+}
+
+#[cfg(target_os = "linux")]
+enum LinuxDialogAttemptError {
+    Unavailable,
+    Failed(String),
+}
+
+#[cfg(target_os = "linux")]
+fn linux_run_zenity_folder(
+    directory: Option<&Path>,
+) -> Result<Option<PathBuf>, LinuxDialogAttemptError> {
+    let mut args = vec![
+        "--file-selection".to_string(),
+        "--directory".to_string(),
+        "--title=Open Workspace Folder".to_string(),
+    ];
+    if let Some(directory) = linux_directory_arg(directory) {
+        args.push(format!("--filename={directory}"));
+    }
+    linux_run_dialog_command("zenity", args)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_run_kdialog_folder(
+    directory: Option<&Path>,
+) -> Result<Option<PathBuf>, LinuxDialogAttemptError> {
+    let mut args = vec![
+        "--title".to_string(),
+        "Open Workspace Folder".to_string(),
+        "--getexistingdirectory".to_string(),
+    ];
+    if let Some(directory) = directory {
+        args.push(directory.to_string_lossy().to_string());
+    }
+    linux_run_dialog_command("kdialog", args)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_run_yad_folder(directory: Option<&Path>) -> Result<Option<PathBuf>, LinuxDialogAttemptError> {
+    let mut args = vec![
+        "--file".to_string(),
+        "--directory".to_string(),
+        "--title=Open Workspace Folder".to_string(),
+    ];
+    if let Some(directory) = linux_directory_arg(directory) {
+        args.push(format!("--filename={directory}"));
+    }
+    linux_run_dialog_command("yad", args)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_run_zenity_save(start_path: &Path) -> Result<Option<PathBuf>, LinuxDialogAttemptError> {
+    linux_run_dialog_command(
+        "zenity",
+        vec![
+            "--file-selection".to_string(),
+            "--save".to_string(),
+            "--confirm-overwrite".to_string(),
+            "--title=Save Script File".to_string(),
+            format!("--filename={}", start_path.to_string_lossy()),
+        ],
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn linux_run_kdialog_save(start_path: &Path) -> Result<Option<PathBuf>, LinuxDialogAttemptError> {
+    linux_run_dialog_command(
+        "kdialog",
+        vec![
+            "--title".to_string(),
+            "Save Script File".to_string(),
+            "--getsavefilename".to_string(),
+            start_path.to_string_lossy().to_string(),
+            "Script files (*.fountain *.txt *.md)".to_string(),
+        ],
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn linux_run_yad_save(start_path: &Path) -> Result<Option<PathBuf>, LinuxDialogAttemptError> {
+    linux_run_dialog_command(
+        "yad",
+        vec![
+            "--file".to_string(),
+            "--save".to_string(),
+            "--confirm-overwrite".to_string(),
+            "--title=Save Script File".to_string(),
+            format!("--filename={}", start_path.to_string_lossy()),
+        ],
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn linux_run_dialog_command(
+    program: &str,
+    args: Vec<String>,
+) -> Result<Option<PathBuf>, LinuxDialogAttemptError> {
+    let output = match std::process::Command::new(program).args(args).output() {
+        Ok(output) => output,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Err(LinuxDialogAttemptError::Unavailable);
+        }
+        Err(error) => {
+            return Err(LinuxDialogAttemptError::Failed(format!(
+                "{program} could not start: {error}"
+            )));
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let path = stdout.trim();
+    if output.status.success() {
+        return if path.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(PathBuf::from(path)))
+        };
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if output.status.code() == Some(1) && stderr.trim().is_empty() {
+        return Ok(None);
+    }
+
+    Err(LinuxDialogAttemptError::Failed(format!(
+        "{program} exited with {}{}",
+        linux_status_label(output.status),
+        linux_stderr_suffix(&stderr)
+    )))
+}
+
+#[cfg(target_os = "linux")]
+fn linux_status_label(status: std::process::ExitStatus) -> String {
+    status
+        .code()
+        .map(|code| format!("status {code}"))
+        .unwrap_or_else(|| "no status".to_string())
+}
+
+#[cfg(target_os = "linux")]
+fn linux_stderr_suffix(stderr: &str) -> String {
+    let stderr = stderr.trim();
+    if stderr.is_empty() {
+        String::new()
+    } else {
+        format!(": {stderr}")
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_directory_arg(directory: Option<&Path>) -> Option<String> {
+    let directory = directory?;
+    let mut value = directory.to_string_lossy().to_string();
+    if !value.ends_with(std::path::MAIN_SEPARATOR) {
+        value.push(std::path::MAIN_SEPARATOR);
+    }
+    Some(value)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_save_start_path(directory: Option<&Path>, default_name: &str) -> PathBuf {
+    let file_name = if default_name.trim().is_empty() {
+        "script.fountain"
+    } else {
+        default_name
+    };
+
+    directory
+        .map(|directory| directory.join(file_name))
+        .unwrap_or_else(|| PathBuf::from(file_name))
 }
 
 fn preferred_dialog_directory(state: &EditorState) -> Option<PathBuf> {
