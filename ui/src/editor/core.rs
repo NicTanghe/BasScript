@@ -25,7 +25,6 @@ use bevy::{
     ui::{RelativeCursorPosition, UiTransform, Val2},
     window::{PrimaryWindow, RawHandleWrapper},
 };
-#[cfg(not(target_os = "linux"))]
 use rfd::FileDialog;
 
 const FONT_PATH: &str = "fonts/Courier Prime/Courier Prime.ttf";
@@ -1868,6 +1867,7 @@ impl FromWorld for EditorState {
 }
 
 impl EditorState {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     fn any_glass_enabled(&self) -> bool {
         self.processed_glass || self.explorer_glass || self.settings_glass
     }

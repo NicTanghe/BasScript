@@ -91,8 +91,66 @@ fn apply_initial_workspace_root(
 fn resolve_initial_workspace_root(load_path: &Path, saved_workspace_root: Option<&str>) -> Option<PathBuf> {
     WORKSPACE_INITIAL_ROOT_OVERRIDE
         .map(PathBuf::from)
-        .or_else(|| saved_workspace_root.map(PathBuf::from))
-        .or_else(|| load_path.parent().map(Path::to_path_buf))
+        .and_then(resolve_workspace_directory_candidate)
+        .or_else(|| {
+            saved_workspace_root
+                .map(PathBuf::from)
+                .and_then(resolve_workspace_directory_candidate)
+        })
+        .or_else(|| {
+            load_path
+                .parent()
+                .map(Path::to_path_buf)
+                .and_then(resolve_workspace_directory_candidate)
+        })
+}
+
+fn resolve_workspace_directory_candidate(path: PathBuf) -> Option<PathBuf> {
+    if path.is_dir() {
+        return Some(path.canonicalize().unwrap_or(path));
+    }
+
+    #[cfg(target_os = "linux")]
+    if let Some(path) = linux_windows_workspace_path(&path).filter(|path| path.is_dir()) {
+        return Some(path.canonicalize().unwrap_or(path));
+    }
+
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn linux_windows_workspace_path(path: &Path) -> Option<PathBuf> {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let windows_path = normalized.strip_prefix("//?/").unwrap_or(&normalized);
+    let bytes = windows_path.as_bytes();
+    if bytes.len() < 3 || bytes[1] != b':' || bytes[2] != b'/' || !bytes[0].is_ascii_alphabetic() {
+        return None;
+    }
+
+    let drive = (bytes[0] as char).to_ascii_lowercase().to_string();
+    let remainder = windows_path[3..].trim_start_matches('/');
+    Some(PathBuf::from("/mnt").join(drive).join(remainder))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod workspace_root_candidate_tests {
+    use super::*;
+
+    #[test]
+    fn maps_extended_windows_drive_path_to_wsl_mount() {
+        assert_eq!(
+            linux_windows_workspace_path(Path::new("//?/C:/Users/duplico/scripts/Trools")),
+            Some(PathBuf::from("/mnt/c/Users/duplico/scripts/Trools"))
+        );
+    }
+
+    #[test]
+    fn maps_plain_windows_drive_path_to_wsl_mount() {
+        assert_eq!(
+            linux_windows_workspace_path(Path::new("D:/Projects/BasScript")),
+            Some(PathBuf::from("/mnt/d/Projects/BasScript"))
+        );
+    }
 }
 
 fn workspace_root_label_text(root: Option<&Path>) -> String {
