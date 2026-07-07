@@ -666,6 +666,7 @@ struct ProcessedVisualFragment {
     text: String,
     is_link: bool,
     link_target: Option<String>,
+    inline_style: InlineTextStyle,
 }
 
 #[derive(Clone, Debug)]
@@ -774,14 +775,12 @@ fn font_variant_for_processed_fragment(
     fragment: &ProcessedVisualFragment,
     format: DocumentFormat,
 ) -> FontVariant {
-    if !fragment.is_link || format != DocumentFormat::Fountain {
-        return base;
+    let mut style = fragment.inline_style;
+    if fragment.is_link && format == DocumentFormat::Fountain {
+        style.bold = true;
     }
 
-    match base {
-        FontVariant::Italic | FontVariant::BoldItalic => FontVariant::BoldItalic,
-        FontVariant::Regular | FontVariant::Bold => FontVariant::Bold,
-    }
+    apply_inline_style_to_font_variant(base, style)
 }
 
 fn font_for_variant_with_format(

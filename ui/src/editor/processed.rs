@@ -202,6 +202,7 @@ struct PreparedProcessedText {
     text: String,
     display_to_raw: Vec<usize>,
     link_targets: Vec<Option<String>>,
+    inline_styles: Vec<InlineTextStyle>,
 }
 
 fn identity_link_display_text(input: &str) -> LinkDisplayText {
@@ -277,15 +278,22 @@ fn prepare_processed_line_text(
     } else {
         build_link_targets(&display_to_raw, &parsed_line.script_links)
     };
+    let effective_kind = render_override
+        .map(|override_style| &override_style.kind)
+        .unwrap_or(&parsed_line.kind);
+    let prepared = PreparedProcessedText {
+        inline_styles: vec![InlineTextStyle::default(); rendered.text.chars().count()],
+        text: rendered.text,
+        display_to_raw,
+        link_targets,
+    };
+    let prepared = if !raw_override_active && markdown_inline_emphasis_allowed(effective_kind) {
+        apply_markdown_inline_emphasis(prepared)
+    } else {
+        prepared
+    };
 
-    (
-        PreparedProcessedText {
-            text: rendered.text,
-            display_to_raw,
-            link_targets,
-        },
-        checklist_state,
-    )
+    (prepared, checklist_state)
 }
 
 fn prepare_image_embed_line_text(parsed_line: &ParsedLine) -> PreparedProcessedText {
@@ -328,9 +336,276 @@ fn prepare_image_embed_line_text(parsed_line: &ParsedLine) -> PreparedProcessedT
     let link_targets = build_link_targets(&display_to_raw, &parsed_line.script_links);
 
     PreparedProcessedText {
+        inline_styles: vec![InlineTextStyle::default(); rendered.text.chars().count()],
         text: rendered.text,
         display_to_raw,
         link_targets,
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct MarkdownOpenDelimiter {
+    marker: char,
+    start: usize,
+    used: usize,
+    remaining: usize,
+}
+
+fn markdown_inline_emphasis_allowed(kind: &LineKind) -> bool {
+    matches!(
+        kind,
+        LineKind::MarkdownHeading
+            | LineKind::MarkdownListItem
+            | LineKind::MarkdownQuote
+            | LineKind::MarkdownParagraph
+    )
+}
+
+fn apply_markdown_inline_emphasis(prepared: PreparedProcessedText) -> PreparedProcessedText {
+    let chars = prepared.text.chars().collect::<Vec<_>>();
+    if chars.is_empty() {
+        return prepared;
+    }
+
+    let code_span_mask = markdown_code_span_mask(&chars);
+    let mut remove = vec![false; chars.len()];
+    let mut styles = vec![InlineTextStyle::default(); chars.len()];
+    let mut stack = Vec::<MarkdownOpenDelimiter>::new();
+    let mut index = 0usize;
+
+    while index < chars.len() {
+        let marker = chars[index];
+        if code_span_mask[index]
+            || !matches!(marker, '*' | '_')
+            || markdown_delimiter_is_escaped(&chars, index)
+        {
+            index += 1;
+            continue;
+        }
+
+        let mut len = 1usize;
+        while chars.get(index + len).is_some_and(|ch| *ch == marker) {
+            len += 1;
+        }
+
+        let (can_open, can_close) = markdown_delimiter_flanking(&chars, index, len, marker);
+        let mut consumed_as_close = 0usize;
+        if can_close {
+            consumed_as_close = close_markdown_emphasis_run(
+                &mut stack,
+                &mut remove,
+                &mut styles,
+                marker,
+                index,
+                len,
+            );
+        }
+
+        if can_open && consumed_as_close < len {
+            stack.push(MarkdownOpenDelimiter {
+                marker,
+                start: index + consumed_as_close,
+                used: 0,
+                remaining: len - consumed_as_close,
+            });
+        }
+
+        index += len;
+    }
+
+    build_emphasized_processed_text(prepared, &chars, &remove, &styles)
+}
+
+fn close_markdown_emphasis_run(
+    stack: &mut Vec<MarkdownOpenDelimiter>,
+    remove: &mut [bool],
+    styles: &mut [InlineTextStyle],
+    marker: char,
+    close_start: usize,
+    len: usize,
+) -> usize {
+    let mut close_used = 0usize;
+    let mut close_remaining = len;
+
+    while close_remaining > 0 {
+        let Some(open_index) = stack
+            .iter()
+            .rposition(|open| open.marker == marker && open.remaining > 0)
+        else {
+            break;
+        };
+
+        let use_len = markdown_emphasis_pair_len(stack[open_index].remaining, close_remaining);
+        let open_remove_start = stack[open_index].start + stack[open_index].used;
+        let close_remove_start = close_start + close_used;
+
+        for position in open_remove_start..open_remove_start.saturating_add(use_len) {
+            if let Some(slot) = remove.get_mut(position) {
+                *slot = true;
+            }
+        }
+        for position in close_remove_start..close_remove_start.saturating_add(use_len) {
+            if let Some(slot) = remove.get_mut(position) {
+                *slot = true;
+            }
+        }
+
+        let inline_style = markdown_emphasis_style_for_len(use_len);
+        let style_start = open_remove_start.saturating_add(use_len);
+        let styles_len = styles.len();
+        let style_start = style_start.min(styles_len);
+        let style_end = close_start.min(styles_len);
+        for style in styles[style_start..style_end].iter_mut() {
+            style.bold |= inline_style.bold;
+            style.italic |= inline_style.italic;
+        }
+
+        stack[open_index].used += use_len;
+        stack[open_index].remaining = stack[open_index].remaining.saturating_sub(use_len);
+        if stack[open_index].remaining == 0 {
+            stack.remove(open_index);
+        }
+
+        close_used += use_len;
+        close_remaining -= use_len;
+    }
+
+    close_used
+}
+
+fn markdown_emphasis_pair_len(open_remaining: usize, close_remaining: usize) -> usize {
+    if open_remaining >= 3 && close_remaining >= 3 {
+        3
+    } else if open_remaining >= 2 && close_remaining >= 2 {
+        2
+    } else {
+        1
+    }
+}
+
+fn markdown_emphasis_style_for_len(len: usize) -> InlineTextStyle {
+    InlineTextStyle {
+        bold: len >= 2,
+        italic: len == 1 || len >= 3,
+    }
+}
+
+fn build_emphasized_processed_text(
+    prepared: PreparedProcessedText,
+    chars: &[char],
+    remove: &[bool],
+    styles: &[InlineTextStyle],
+) -> PreparedProcessedText {
+    let mut text = String::new();
+    let mut display_to_raw = vec![prepared.display_to_raw.first().copied().unwrap_or(0)];
+    let mut link_targets = Vec::<Option<String>>::new();
+    let mut inline_styles = Vec::<InlineTextStyle>::new();
+
+    for (index, ch) in chars.iter().enumerate() {
+        let raw_boundary = prepared
+            .display_to_raw
+            .get(index + 1)
+            .copied()
+            .unwrap_or_else(|| *display_to_raw.last().unwrap_or(&0));
+
+        if remove.get(index).copied().unwrap_or(false) {
+            if let Some(last) = display_to_raw.last_mut() {
+                *last = raw_boundary;
+            }
+            continue;
+        }
+
+        text.push(*ch);
+        display_to_raw.push(raw_boundary);
+        link_targets.push(prepared.link_targets.get(index).cloned().unwrap_or(None));
+        inline_styles.push(styles.get(index).copied().unwrap_or_default());
+    }
+
+    PreparedProcessedText {
+        text,
+        display_to_raw,
+        link_targets,
+        inline_styles,
+    }
+}
+
+fn markdown_code_span_mask(chars: &[char]) -> Vec<bool> {
+    let mut mask = vec![false; chars.len()];
+    let mut index = 0usize;
+
+    while index < chars.len() {
+        if chars[index] != '`' {
+            index += 1;
+            continue;
+        }
+
+        let run_len = markdown_same_char_run_len(chars, index, '`');
+        let mut search = index + run_len;
+        let mut closing = None;
+        while search < chars.len() {
+            if chars[search] == '`' && markdown_same_char_run_len(chars, search, '`') == run_len {
+                closing = Some(search);
+                break;
+            }
+            search += 1;
+        }
+
+        if let Some(closing) = closing {
+            for slot in &mut mask[index..closing.saturating_add(run_len).min(chars.len())] {
+                *slot = true;
+            }
+            index = closing + run_len;
+        } else {
+            index += run_len;
+        }
+    }
+
+    mask
+}
+
+fn markdown_same_char_run_len(chars: &[char], start: usize, marker: char) -> usize {
+    let mut len = 0usize;
+    while chars.get(start + len).is_some_and(|ch| *ch == marker) {
+        len += 1;
+    }
+    len
+}
+
+fn markdown_delimiter_is_escaped(chars: &[char], index: usize) -> bool {
+    let mut slash_count = 0usize;
+    let mut cursor = index;
+    while cursor > 0 && chars[cursor - 1] == '\\' {
+        slash_count += 1;
+        cursor -= 1;
+    }
+    slash_count % 2 == 1
+}
+
+fn markdown_delimiter_flanking(
+    chars: &[char],
+    start: usize,
+    len: usize,
+    marker: char,
+) -> (bool, bool) {
+    let before = start.checked_sub(1).and_then(|index| chars.get(index)).copied();
+    let after = chars.get(start + len).copied();
+    let before_whitespace = before.map_or(true, char::is_whitespace);
+    let after_whitespace = after.map_or(true, char::is_whitespace);
+    let before_punctuation = before.is_some_and(|ch| ch.is_ascii_punctuation());
+    let after_punctuation = after.is_some_and(|ch| ch.is_ascii_punctuation());
+
+    let left_flanking =
+        !after_whitespace && (!after_punctuation || before_whitespace || before_punctuation);
+    let right_flanking =
+        !before_whitespace && (!before_punctuation || after_whitespace || after_punctuation);
+
+    if marker == '_' {
+        (
+            left_flanking && (!right_flanking || before_punctuation),
+            right_flanking && (!left_flanking || after_punctuation),
+        )
+    } else {
+        (left_flanking, right_flanking)
     }
 }
 
@@ -644,13 +919,17 @@ fn push_processed_fragment(
     text: String,
     is_link: bool,
     link_target: Option<String>,
+    inline_style: InlineTextStyle,
 ) {
     if text.is_empty() {
         return;
     }
 
     if let Some(previous) = fragments.last_mut() {
-        if previous.is_link == is_link && previous.link_target == link_target {
+        if previous.is_link == is_link
+            && previous.link_target == link_target
+            && previous.inline_style == inline_style
+        {
             previous.text.push_str(&text);
             return;
         }
@@ -660,6 +939,7 @@ fn push_processed_fragment(
         text,
         is_link,
         link_target,
+        inline_style,
     });
 }
 
@@ -701,6 +981,7 @@ fn push_wrapped_visual_lines(
                 text: " ".repeat(blank_columns),
                 is_link: false,
                 link_target: None,
+                inline_style: InlineTextStyle::default(),
             }],
             display_to_raw: vec![raw_column; blank_columns.saturating_add(1)],
             raw_start_column: raw_column,
@@ -730,7 +1011,13 @@ fn push_wrapped_visual_lines(
 
         let mut fragments = Vec::<ProcessedVisualFragment>::new();
         if indent_width > 0 {
-            push_processed_fragment(&mut fragments, " ".repeat(indent_width), false, None);
+            push_processed_fragment(
+                &mut fragments,
+                " ".repeat(indent_width),
+                false,
+                None,
+                InlineTextStyle::default(),
+            );
         }
 
         let mut index = start;
@@ -741,6 +1028,11 @@ fn push_wrapped_visual_lines(
                 .cloned()
                 .unwrap_or(None);
             let is_link = link_target.is_some();
+            let inline_style = prepared_text
+                .inline_styles
+                .get(index)
+                .copied()
+                .unwrap_or_default();
             let fragment_start = index;
             index += 1;
             while index < split
@@ -750,6 +1042,12 @@ fn push_wrapped_visual_lines(
                     .cloned()
                     .unwrap_or(None)
                     == link_target
+                && prepared_text
+                    .inline_styles
+                    .get(index)
+                    .copied()
+                    .unwrap_or_default()
+                    == inline_style
             {
                 index += 1;
             }
@@ -760,6 +1058,7 @@ fn push_wrapped_visual_lines(
                 uppercase_processed_text(&fragment_text, uppercase),
                 is_link,
                 link_target,
+                inline_style,
             );
         }
 
@@ -814,6 +1113,7 @@ fn push_page_spacers(out: &mut Vec<ProcessedVisualLine>, source_line: usize, cou
                 text: " ".to_owned(),
                 is_link: false,
                 link_target: None,
+                inline_style: InlineTextStyle::default(),
             }],
             display_to_raw: vec![0, 0],
             raw_start_column: 0,
@@ -840,6 +1140,7 @@ fn push_image_embed_visual_lines(
                 text: " ".to_owned(),
                 is_link: false,
                 link_target: None,
+                inline_style: InlineTextStyle::default(),
             }],
             display_to_raw: vec![embed.raw_start_column, embed.raw_end_column],
             raw_start_column: embed.raw_start_column,
@@ -861,6 +1162,7 @@ fn push_image_embed_visual_lines(
                     text: " ".to_owned(),
                     is_link: false,
                     link_target: None,
+                    inline_style: InlineTextStyle::default(),
                 }],
                 display_to_raw: vec![embed.raw_start_column, embed.raw_end_column],
                 raw_start_column: embed.raw_start_column,
@@ -1099,6 +1401,9 @@ fn processed_visual_fragment_for_part(
     let all_same_link_state = tail.iter().all(|fragment| {
         fragment.is_link == tail[0].is_link && fragment.link_target == tail[0].link_target
     });
+    let all_same_inline_style = tail
+        .iter()
+        .all(|fragment| fragment.inline_style == tail[0].inline_style);
 
     Some(ProcessedVisualFragment {
         text: tail
@@ -1110,6 +1415,11 @@ fn processed_visual_fragment_for_part(
             tail[0].link_target.clone()
         } else {
             None
+        },
+        inline_style: if all_same_inline_style {
+            tail[0].inline_style
+        } else {
+            InlineTextStyle::default()
         },
     })
 }
@@ -1170,6 +1480,133 @@ fn processed_visual_fragment_count(visual_line: &ProcessedVisualLine) -> usize {
         .len()
         .min(PROCESSED_LINE_SPAN_PARTS)
         .max(1)
+}
+
+#[cfg(test)]
+mod processed_markdown_inline_tests {
+    use super::*;
+
+    fn style(bold: bool, italic: bool) -> InlineTextStyle {
+        InlineTextStyle { bold, italic }
+    }
+
+    fn prepared_markdown(raw: &str) -> PreparedProcessedText {
+        let document = Document::from_text(raw);
+        let parsed = parse_document_with_format(&document, DocumentFormat::Markdown);
+        prepare_processed_line_text(&parsed[0], false, None).0
+    }
+
+    fn style_for_text(prepared: &PreparedProcessedText, needle: &str) -> InlineTextStyle {
+        let byte_start = prepared
+            .text
+            .find(needle)
+            .unwrap_or_else(|| panic!("{needle:?} not found in {:?}", prepared.text));
+        let char_start = prepared.text[..byte_start].chars().count();
+        let char_len = needle.chars().count();
+        let styles = &prepared.inline_styles[char_start..char_start + char_len];
+        let first = styles[0];
+        assert!(
+            styles.iter().all(|style| *style == first),
+            "{needle:?} should have one inline style"
+        );
+        first
+    }
+
+    #[test]
+    fn parses_markdown_asterisk_emphasis_into_processed_styles() {
+        let prepared = prepared_markdown("Plain *italic*, **bold**, and ***both***.");
+
+        assert_eq!(prepared.text, "Plain italic, bold, and both.");
+        assert_eq!(style_for_text(&prepared, "Plain"), InlineTextStyle::default());
+        assert_eq!(style_for_text(&prepared, "italic"), style(false, true));
+        assert_eq!(style_for_text(&prepared, "bold"), style(true, false));
+        assert_eq!(style_for_text(&prepared, "both"), style(true, true));
+
+        let mut lines = Vec::<ProcessedVisualLine>::new();
+        push_wrapped_visual_lines(
+            &mut lines,
+            0,
+            0,
+            false,
+            &prepared,
+            0,
+            prepared.text.chars().count(),
+            120,
+        );
+        let styled_fragments = lines[0]
+            .fragments
+            .iter()
+            .filter(|fragment| fragment.inline_style != InlineTextStyle::default())
+            .map(|fragment| (fragment.text.as_str(), fragment.inline_style))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            styled_fragments,
+            vec![
+                ("italic", style(false, true)),
+                ("bold", style(true, false)),
+                ("both", style(true, true)),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_markdown_underscore_emphasis_without_touching_words() {
+        let prepared = prepared_markdown("snake_case and _italic_ and __bold__");
+
+        assert_eq!(prepared.text, "snake_case and italic and bold");
+        assert_eq!(
+            style_for_text(&prepared, "snake_case"),
+            InlineTextStyle::default()
+        );
+        assert_eq!(style_for_text(&prepared, "italic"), style(false, true));
+        assert_eq!(style_for_text(&prepared, "bold"), style(true, false));
+    }
+
+    #[test]
+    fn skips_markdown_emphasis_inside_code_spans() {
+        let prepared = prepared_markdown("`*literal*` and *italic*");
+
+        assert_eq!(prepared.text, "`*literal*` and italic");
+        assert_eq!(
+            style_for_text(&prepared, "*literal*"),
+            InlineTextStyle::default()
+        );
+        assert_eq!(style_for_text(&prepared, "italic"), style(false, true));
+    }
+
+    #[test]
+    fn leaves_markdown_emphasis_raw_on_current_line_override() {
+        let document = Document::from_text("Plain *italic*");
+        let parsed = parse_document_with_format(&document, DocumentFormat::Markdown);
+        let prepared = prepare_processed_line_text(&parsed[0], true, None).0;
+
+        assert_eq!(prepared.text, "Plain *italic*");
+        assert!(
+            prepared
+                .inline_styles
+                .iter()
+                .all(|style| *style == InlineTextStyle::default())
+        );
+    }
+
+    #[test]
+    fn combines_inline_markdown_style_with_base_font_variant() {
+        let fragment = ProcessedVisualFragment {
+            text: "heading italic".to_owned(),
+            is_link: false,
+            link_target: None,
+            inline_style: style(false, true),
+        };
+
+        assert_eq!(
+            font_variant_for_processed_fragment(
+                FontVariant::Bold,
+                &fragment,
+                DocumentFormat::Markdown
+            ),
+            FontVariant::BoldItalic
+        );
+    }
 }
 
 fn apply_processed_styles(

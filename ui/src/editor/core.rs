@@ -1647,6 +1647,29 @@ enum FontVariant {
     BoldItalic,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct InlineTextStyle {
+    bold: bool,
+    italic: bool,
+}
+
+fn apply_inline_style_to_font_variant(
+    base: FontVariant,
+    inline_style: InlineTextStyle,
+) -> FontVariant {
+    let base_bold = matches!(base, FontVariant::Bold | FontVariant::BoldItalic);
+    let base_italic = matches!(base, FontVariant::Italic | FontVariant::BoldItalic);
+    match (
+        base_bold || inline_style.bold,
+        base_italic || inline_style.italic,
+    ) {
+        (true, true) => FontVariant::BoldItalic,
+        (true, false) => FontVariant::Bold,
+        (false, true) => FontVariant::Italic,
+        (false, false) => FontVariant::Regular,
+    }
+}
+
 impl DialogState {
     fn begin_pending(&mut self, pending: PendingDialog) {
         let now = Instant::now();

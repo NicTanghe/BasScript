@@ -2496,6 +2496,7 @@ fn story_query_blank_visual_line() -> ProcessedVisualLine {
             text: " ".to_string(),
             is_link: false,
             link_target: None,
+            inline_style: InlineTextStyle::default(),
         }],
         display_to_raw: vec![0, 0],
         raw_start_column: 0,
