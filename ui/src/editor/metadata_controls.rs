@@ -790,7 +790,7 @@ fn set_markdown_metadata_field_value(
 ) {
     match field {
         MarkdownMetadataField::Id => fields.id = value.trim().to_string(),
-        MarkdownMetadataField::Target => fields.target = value.trim().to_string(),
+        MarkdownMetadataField::Target => fields.target = normalize_markdown_target_key(value),
         MarkdownMetadataField::Type => fields.entity_type = value.trim().to_string(),
         MarkdownMetadataField::Name => fields.name = value.to_string(),
         MarkdownMetadataField::Aliases => fields.aliases = parse_alias_input(value),
@@ -1034,6 +1034,39 @@ fn yaml_plain_scalar_safe(value: &str) -> bool {
         .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
 }
 
+fn normalize_markdown_target_key(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
+fn normalize_markdown_front_matter_target(document: &Document) -> Option<Document> {
+    let front_matter = markdown_front_matter_display(document)?;
+    let normalized = normalize_markdown_target_key(&front_matter.fields.target);
+    if normalized == front_matter.fields.target {
+        return None;
+    }
+
+    let mut lines = document.lines().to_vec();
+    for line_index in 1..front_matter.closing_line_index {
+        let line = lines.get(line_index)?;
+        let trimmed = line.trim();
+        let Some((key, _)) = trimmed.split_once(':') else {
+            continue;
+        };
+        if key.trim() != "target" {
+            continue;
+        }
+
+        let indent: String = line
+            .chars()
+            .take_while(|ch| ch.is_ascii_whitespace())
+            .collect();
+        lines[line_index] = format!("{indent}target: {}", yaml_scalar(&normalized));
+        return Some(Document::from_text(&lines.join("\n")));
+    }
+
+    None
+}
+
 impl EditorState {
     fn clear_markdown_metadata_focus(&mut self) {
         self.markdown_metadata_focus = None;
@@ -1123,6 +1156,27 @@ mod markdown_metadata_tests {
                 "status: draft",
                 "custom: value",
             ]
+        );
+    }
+
+    #[test]
+    fn lowercases_target_metadata_values() {
+        let mut fields = MarkdownMetadataFields::default();
+        set_markdown_metadata_field_value(&mut fields, MarkdownMetadataField::Target, " Elisah ");
+        assert_eq!(fields.target, "elisah");
+    }
+
+    #[test]
+    fn normalizes_front_matter_target_without_rewriting_body() {
+        let document = Document::from_text(
+            "---\nid: entity_elisah_001\ntarget: 'Elisah'\ntype: character\nname: 'Elisah'\naliases: [elisah]\n---\nBody [Elisah](Elisah)\n",
+        );
+        let normalized =
+            normalize_markdown_front_matter_target(&document).expect("target should change");
+
+        assert_eq!(
+            normalized.to_text(),
+            "---\nid: entity_elisah_001\ntarget: elisah\ntype: character\nname: 'Elisah'\naliases: [elisah]\n---\nBody [Elisah](Elisah)\n"
         );
     }
 }

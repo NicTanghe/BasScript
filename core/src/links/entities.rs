@@ -524,7 +524,7 @@ fn validate_target_against_path(path: &Path, target: &str) -> Result<(), LinkErr
             path: path.to_path_buf(),
         })?;
 
-    if file_stem != target {
+    if !file_stem.eq_ignore_ascii_case(target) {
         return Err(LinkError::FilenameTargetMismatch {
             path: path.to_path_buf(),
             file_stem: file_stem.to_owned(),

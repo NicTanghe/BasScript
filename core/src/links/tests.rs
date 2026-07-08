@@ -164,6 +164,14 @@ fn rejects_target_filename_mismatch() {
 }
 
 #[test]
+fn accepts_case_only_target_filename_mismatch() {
+    let markdown =
+        "---\nid: entity_elisah_001\ntarget: elisah\ntype: character\nname: Elisah\n---\n";
+    let document = EntityDocument::from_markdown("Elisah.md", markdown).unwrap();
+    assert_eq!(document.metadata.target, "elisah");
+}
+
+#[test]
 fn resolves_explicit_links_by_target_and_does_not_promote_local_labels() {
     let root = TestDir::new();
     root.write("door-kitchen-main.md", kitchen_door_markdown());

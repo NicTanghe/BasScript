@@ -2099,6 +2099,17 @@ impl EditorState {
             let _ = std::fs::create_dir_all(parent);
         }
 
+        if detect_document_format(&path, &self.document) == DocumentFormat::Markdown
+            && let Some(document) = normalize_markdown_front_matter_target(&self.document)
+        {
+            self.document = document;
+            self.cursor.position = self.document.clamp_position(self.cursor.position);
+            self.cursor.preferred_column = self
+                .cursor
+                .preferred_column
+                .min(self.document.line_len_chars(self.cursor.position.line));
+        }
+
         match self.document.save(&path) {
             Ok(()) => {
                 self.paths.load_path = path.clone();

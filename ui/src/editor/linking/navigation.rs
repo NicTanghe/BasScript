@@ -242,7 +242,9 @@ fn is_matching_link_target_file(path: &Path, target: &str) -> bool {
         return false;
     }
 
-    path.file_stem().and_then(|stem| stem.to_str()) == Some(target)
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .is_some_and(|stem| stem.eq_ignore_ascii_case(target))
 }
 
 fn is_markdown_entity_file(path: &Path) -> bool {
@@ -252,4 +254,21 @@ fn is_markdown_entity_file(path: &Path) -> bool {
         .map(|ext| ext.to_ascii_lowercase());
 
     matches!(extension.as_deref(), Some("md") | Some("markdown"))
+}
+
+#[cfg(test)]
+mod link_navigation_tests {
+    use super::*;
+
+    #[test]
+    fn matches_link_target_files_ignoring_case() {
+        assert!(is_matching_link_target_file(
+            Path::new("Characters/Secondairy/Elisah.md"),
+            "elisah"
+        ));
+        assert!(!is_matching_link_target_file(
+            Path::new("Characters/Main/eoghan.md"),
+            "elisah"
+        ));
+    }
 }
