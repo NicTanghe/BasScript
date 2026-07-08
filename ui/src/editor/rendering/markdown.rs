@@ -85,20 +85,20 @@ fn markdown_line_style(
 }
 
 fn markdown_heading_style(level: u8) -> LineRenderStyle {
-    let font_scale = match level.clamp(1, 6) {
-        1 => 1.80,
-        2 => 1.55,
-        3 => 1.35,
-        4 => 1.20,
-        5 => 1.05,
-        _ => 0.95,
+    let (font_scale, line_height_scale) = match level.clamp(1, 6) {
+        1 => (1.80, 2.15),
+        2 => (1.55, 1.85),
+        3 => (1.35, 1.60),
+        4 => (1.20, 1.45),
+        5 => (1.05, 1.30),
+        _ => (0.95, 1.20),
     };
 
     LineRenderStyle::new(
         FontVariant::Bold,
         COLOR_MARKDOWN_HEADING,
         font_scale,
-        1.0,
+        line_height_scale,
     )
 }
 
@@ -282,6 +282,17 @@ mod tests {
         assert_eq!(consumed, 2);
         assert_eq!(rendered, "test");
         assert_eq!(checklist, None);
+    }
+
+    #[test]
+    fn gives_markdown_headings_extra_line_height() {
+        let h1 = markdown_heading_style(1);
+        let h2 = markdown_heading_style(2);
+        let h6 = markdown_heading_style(6);
+
+        assert!(h1.line_height_scale > h1.font_scale);
+        assert!(h2.line_height_scale > h2.font_scale);
+        assert!(h6.line_height_scale > h6.font_scale);
     }
 
     #[test]
