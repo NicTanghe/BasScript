@@ -1115,6 +1115,10 @@ enum WorkspaceSelectedRow {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum WorkspacePrompt {
     Create { input: String },
+    Rename {
+        target: WorkspaceSelectedRow,
+        input: String,
+    },
     Delete { target: WorkspaceSelectedRow },
 }
 

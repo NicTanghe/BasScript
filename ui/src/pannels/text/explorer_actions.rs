@@ -131,6 +131,20 @@ fn workspace_prompt_text(
             format!("{input}_"),
             "Enter creates. A path ending in / or \\ creates a folder. Esc cancels.".to_string(),
         ),
+        WorkspacePrompt::Rename { target, input } => {
+            let path = workspace_target_path(state, target);
+            let target_kind = if path.as_ref().is_some_and(|path| path.is_dir()) {
+                "folder"
+            } else {
+                "file"
+            };
+            (
+                format!("Rename {target_kind}"),
+                format!("{input}_"),
+                "Enter renames. Edit the full destination path inside the workspace. Esc cancels."
+                    .to_string(),
+            )
+        }
         WorkspacePrompt::Delete { target } => {
             let path = workspace_target_path(state, target);
             let label = path
@@ -176,12 +190,20 @@ fn handle_workspace_prompt_input(
 
     if paste_shortcut_just_pressed(&keys) {
         let mut status_message = None::<String>;
-        if let Some(WorkspacePrompt::Create { input }) = state.workspace_prompt.as_mut() {
-            if let Some(text) = read_system_clipboard_text() {
-                input.push_str(&text.replace('\n', ""));
-                status_message = Some("Pasted clipboard into explorer prompt.".to_string());
-            } else {
-                status_message = Some("Clipboard is empty or unavailable.".to_string());
+        if let Some(prompt) = state.workspace_prompt.as_mut() {
+            let input = match prompt {
+                WorkspacePrompt::Create { input } | WorkspacePrompt::Rename { input, .. } => {
+                    Some(input)
+                }
+                WorkspacePrompt::Delete { .. } => None,
+            };
+            if let Some(input) = input {
+                if let Some(text) = read_system_clipboard_text() {
+                    input.push_str(&text.replace('\n', ""));
+                    status_message = Some("Pasted clipboard into explorer prompt.".to_string());
+                } else {
+                    status_message = Some("Clipboard is empty or unavailable.".to_string());
+                }
             }
         }
         if let Some(message) = status_message {
@@ -198,6 +220,7 @@ fn handle_workspace_prompt_input(
 
     enum PromptAction {
         ConfirmCreate(String),
+        ConfirmRename(WorkspaceSelectedRow, String),
         ConfirmDelete(WorkspaceSelectedRow),
         Cancel,
     }
@@ -235,6 +258,38 @@ fn handle_workspace_prompt_input(
                 }
             }
         }
+        WorkspacePrompt::Rename { target, input } => {
+            for key_input in keyboard_inputs.read() {
+                if !key_input.state.is_pressed() {
+                    continue;
+                }
+
+                if text_input_should_skip_for_shortcut(&keys, key_input, &keybinds) {
+                    continue;
+                }
+
+                match &key_input.logical_key {
+                    Key::Enter => {
+                        action =
+                            Some(PromptAction::ConfirmRename(target.clone(), input.clone()));
+                        break;
+                    }
+                    Key::Backspace => {
+                        input.pop();
+                    }
+                    Key::Delete => {}
+                    _ => {
+                        if let Some(inserted_text) = &key_input.text {
+                            if !inserted_text.is_empty()
+                                && inserted_text.chars().all(is_printable_char)
+                            {
+                                input.push_str(inserted_text);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         WorkspacePrompt::Delete { target } => {
             if keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::KeyY) {
                 action = Some(PromptAction::ConfirmDelete(target.clone()));
@@ -248,6 +303,10 @@ fn handle_workspace_prompt_input(
         Some(PromptAction::ConfirmCreate(input)) => {
             state.workspace_prompt = None;
             confirm_workspace_create(&mut state, &input);
+        }
+        Some(PromptAction::ConfirmRename(target, input)) => {
+            state.workspace_prompt = None;
+            confirm_workspace_rename(&mut state, target, &input);
         }
         Some(PromptAction::ConfirmDelete(target)) => {
             state.workspace_prompt = None;
@@ -305,7 +364,7 @@ fn handle_workspace_keyboard_input(
             state.refresh_workspace();
             state.status_message = "Workspace refreshed.".to_string();
         } else {
-            state.status_message = "Explorer rename is not implemented yet.".to_string();
+            begin_workspace_rename_prompt(&mut state);
         }
     }
 }
@@ -485,6 +544,29 @@ fn begin_workspace_delete_prompt(state: &mut EditorState) {
     state.workspace_prompt = Some(WorkspacePrompt::Delete { target });
 }
 
+fn begin_workspace_rename_prompt(state: &mut EditorState) {
+    let Some(target) = state.workspace_selected_row.clone() else {
+        state.status_message = "Select a file or folder to rename.".to_string();
+        return;
+    };
+    let Some(path) = workspace_target_path(state, &target) else {
+        state.status_message = "Explorer selection has no filesystem target.".to_string();
+        return;
+    };
+    if !path.exists() {
+        state.status_message = format!("Rename target does not exist: {}", path.display());
+        state.refresh_workspace();
+        return;
+    }
+
+    state.workspace_focused = true;
+    state.close_link_autocomplete();
+    state.workspace_prompt = Some(WorkspacePrompt::Rename {
+        target,
+        input: path.display().to_string(),
+    });
+}
+
 fn confirm_workspace_create(state: &mut EditorState, input: &str) {
     let raw = input.trim();
     let Some(root) = state.workspace_root.clone() else {
@@ -563,6 +645,105 @@ fn confirm_workspace_create(state: &mut EditorState, input: &str) {
         }
         Err(error) => {
             state.status_message = format!("Create file failed for {}: {error}", path.display());
+        }
+    }
+}
+
+fn confirm_workspace_rename(
+    state: &mut EditorState,
+    target: WorkspaceSelectedRow,
+    input: &str,
+) {
+    let Some(root) = state.workspace_root.clone() else {
+        state.status_message = "Open a workspace before renaming files.".to_string();
+        return;
+    };
+    let Some(source) = workspace_target_path(state, &target) else {
+        state.status_message = "Explorer selection has no filesystem target.".to_string();
+        return;
+    };
+    if !source.exists() {
+        state.status_message = format!("Rename target does not exist: {}", source.display());
+        state.refresh_workspace();
+        return;
+    }
+    if !workspace_path_is_under_root(&root, &source) {
+        state.status_message = "Rename target must be inside the workspace.".to_string();
+        return;
+    }
+
+    let destination = match workspace_rename_destination(&source, input) {
+        Ok(destination) => destination,
+        Err(message) => {
+            state.status_message = message;
+            return;
+        }
+    };
+    if workspace_paths_match(&source, &destination) {
+        state.status_message = "Rename path is unchanged.".to_string();
+        return;
+    }
+    if !workspace_destination_is_under_root(&root, &destination) {
+        state.status_message = "Rename path must stay inside the workspace.".to_string();
+        return;
+    }
+    if destination.exists() {
+        state.status_message = format!("Rename target already exists: {}", destination.display());
+        return;
+    }
+
+    let source_is_dir = source.is_dir();
+    if source_is_dir
+        && destination
+            .parent()
+            .is_some_and(|parent| workspace_path_is_under_root(&source, parent))
+    {
+        state.status_message = "Cannot rename a folder into itself.".to_string();
+        return;
+    }
+
+    match fs::rename(&source, &destination) {
+        Ok(()) => {
+            let active_rebased =
+                rebase_workspace_active_paths_after_rename(state, &source, &destination);
+            if active_rebased {
+                state.document_format =
+                    detect_document_format(&state.paths.load_path, &state.document);
+                state.set_zoom(state.zoom);
+                state.clear_script_link_target_cache();
+                state.reparse();
+            }
+
+            state.refresh_workspace();
+            if source_is_dir {
+                if let Some(folder_key) = workspace_folder_key_for_path(&root, &destination) {
+                    expand_workspace_parent_folders(state, &folder_key);
+                    state.workspace_expanded_folders.insert(folder_key.clone());
+                    state.workspace_selected_row = Some(WorkspaceSelectedRow::Folder(folder_key));
+                }
+            } else {
+                if let Some(parent_key) = destination
+                    .parent()
+                    .and_then(|parent| workspace_folder_key_for_path(&root, parent))
+                {
+                    expand_workspace_parent_folders(state, &parent_key);
+                }
+                state.workspace_selected_row = Some(WorkspaceSelectedRow::File(destination.clone()));
+            }
+            state.workspace_focused = true;
+            state.workspace_ui_dirty = true;
+            state.status_message = format!(
+                "Renamed {} to {}",
+                source.display(),
+                destination.display()
+            );
+        }
+        Err(error) => {
+            state.status_message = format!(
+                "Rename failed for {} to {}: {error}",
+                source.display(),
+                destination.display()
+            );
         }
     }
 }
@@ -737,6 +918,53 @@ fn path_with_trailing_separator(path: &Path) -> String {
     text
 }
 
+fn workspace_rename_destination(source: &Path, input: &str) -> Result<PathBuf, String> {
+    let raw = input.trim();
+    if raw.is_empty() {
+        return Err("Rename path is empty.".to_string());
+    }
+
+    let candidate = PathBuf::from(raw);
+    let destination = if candidate.is_absolute() {
+        candidate
+    } else {
+        source
+            .parent()
+            .ok_or_else(|| "Rename target has no parent folder.".to_string())?
+            .join(candidate)
+    };
+
+    let file_name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Rename path must include a file or folder name.".to_string())?;
+    if file_name == "." || file_name == ".." {
+        return Err("Rename path must include a valid file or folder name.".to_string());
+    }
+
+    let parent = destination
+        .parent()
+        .ok_or_else(|| "Rename path has no parent folder.".to_string())?;
+    if !parent.is_dir() {
+        return Err(format!("Rename parent folder does not exist: {}", parent.display()));
+    }
+
+    Ok(parent
+        .canonicalize()
+        .unwrap_or_else(|_| parent.to_path_buf())
+        .join(file_name))
+}
+
+fn workspace_destination_is_under_root(root: &Path, destination: &Path) -> bool {
+    let Some(parent) = destination.parent() else {
+        return false;
+    };
+    if !parent.is_dir() {
+        return false;
+    }
+    workspace_path_is_under_root(root, parent)
+}
+
 fn workspace_path_is_under_root(root: &Path, path: &Path) -> bool {
     let root_key = workspace_path_key(root);
     let path_key = workspace_path_key(path);
@@ -771,6 +999,40 @@ fn workspace_active_path_affected(state: &EditorState, deleted_path: &Path) -> b
     let active_key = workspace_path_key(&state.paths.load_path);
     let deleted_key = workspace_path_key(deleted_path);
     active_key == deleted_key || active_key.starts_with(&format!("{deleted_key}/"))
+}
+
+fn rebase_workspace_active_paths_after_rename(
+    state: &mut EditorState,
+    source: &Path,
+    destination: &Path,
+) -> bool {
+    let mut changed = false;
+    if let Some(path) = workspace_rebase_path(&state.paths.load_path, source, destination) {
+        state.paths.load_path = path;
+        changed = true;
+    }
+    if let Some(path) = workspace_rebase_path(&state.paths.save_path, source, destination) {
+        state.paths.save_path = path;
+        changed = true;
+    }
+    changed
+}
+
+fn workspace_rebase_path(path: &Path, source: &Path, destination: &Path) -> Option<PathBuf> {
+    if workspace_paths_match(path, source) {
+        return Some(destination.to_path_buf());
+    }
+
+    let path_key = workspace_path_key(path);
+    let source_key = workspace_path_key(source);
+    let prefix = format!("{source_key}/");
+    let suffix = path_key.strip_prefix(&prefix)?;
+    Some(
+        suffix
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .fold(destination.to_path_buf(), |path, part| path.join(part)),
+    )
 }
 
 impl EditorState {
