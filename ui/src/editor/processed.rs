@@ -63,15 +63,28 @@ fn processed_page_layout(panel_size: Vec2, state: &EditorState) -> ProcessedPage
     }
 }
 
-fn processed_anchor_line_in_page(processed_view: &ProcessedView, page_step_lines: usize) -> usize {
-    processed_view
-        .anchor_index
-        .saturating_sub(processed_view.start_index)
-        .min(page_step_lines.max(1).saturating_sub(1))
-}
-
 fn processed_anchor_scroll_offset_px(anchor_line_in_page: usize, line_height: f32) -> f32 {
     anchor_line_in_page as f32 * line_height.max(1.0)
+}
+
+fn processed_anchor_scroll_offset_px_from_lines(
+    state: &EditorState,
+    lines: &[ProcessedVisualLine],
+    anchor_index: usize,
+    page_step_lines: usize,
+    line_height: f32,
+) -> f32 {
+    let page_step_lines = page_step_lines.max(1);
+    let page_start = (anchor_index / page_step_lines) * page_step_lines;
+    let anchor_index = anchor_index.min(lines.len());
+    let height_units = lines
+        .get(page_start..anchor_index)
+        .unwrap_or(&[])
+        .iter()
+        .map(|line| processed_visual_line_height_units(state, line))
+        .sum::<f32>();
+
+    height_units * line_height.max(1.0)
 }
 
 fn processed_page_step_px(geometry: &ProcessedPageGeometry, zoom: f32) -> f32 {
@@ -124,9 +137,13 @@ fn processed_anchor_page_top_for_state(
         step_lines,
         view_capacity,
     );
-    let anchor_line_in_page = processed_anchor_line_in_page(&view, step_lines);
-    let anchor_offset_px =
-        processed_anchor_scroll_offset_px(anchor_line_in_page, processed_line_height);
+    let anchor_offset_px = processed_anchor_scroll_offset_px_from_lines(
+        state,
+        &all_lines,
+        view.anchor_index,
+        step_lines,
+        processed_line_height,
+    );
     let page_top = processed_page_top_for_slot(&layout.geometry, 0, step_px, anchor_offset_px)
         + state.processed_zoom_anchor_bias_px;
     Some(page_top)
@@ -621,7 +638,7 @@ fn build_processed_segment_lines(
 ) -> Vec<ProcessedVisualLine> {
     let lines_per_page = lines_per_page.max(1);
     let mut paged_lines = Vec::<ProcessedVisualLine>::new();
-    let mut lines_in_page = 0usize;
+    let mut page_fill = ProcessedPageFill::default();
     let markdown_front_matter = markdown_front_matter_display(&state.document);
 
     for source_line in start_line..end_line_exclusive {
@@ -713,17 +730,22 @@ fn build_processed_segment_lines(
         push_paged_visual_lines(
             &mut paged_lines,
             wrapped,
+            state,
             source_line,
-            &mut lines_in_page,
+            &mut page_fill,
             lines_per_page,
             spacer_lines,
         );
     }
 
-    if ends_with_hard_break && lines_in_page > 0 {
-        let remaining_content = lines_per_page.saturating_sub(lines_in_page);
-        let spacer_total = remaining_content.saturating_add(spacer_lines);
-        push_page_spacers(&mut paged_lines, end_line_exclusive, spacer_total);
+    if ends_with_hard_break && page_fill.entries > 0 {
+        finish_processed_page(
+            &mut paged_lines,
+            end_line_exclusive,
+            &mut page_fill,
+            lines_per_page,
+            spacer_lines,
+        );
     }
 
     paged_lines
@@ -1126,6 +1148,25 @@ fn push_page_spacers(out: &mut Vec<ProcessedVisualLine>, source_line: usize, cou
     }
 }
 
+fn processed_visual_line_height_units(
+    state: &EditorState,
+    visual_line: &ProcessedVisualLine,
+) -> f32 {
+    let (style, _) = processed_visual_line_style_for_state(state, visual_line);
+    style.line_height_scale.max(0.0)
+}
+
+fn processed_visual_line_block_height_units(
+    state: &EditorState,
+    visual_line: &ProcessedVisualLine,
+) -> f32 {
+    visual_line
+        .image_block
+        .as_ref()
+        .map(|image_block| image_block.reserved_lines.max(1) as f32)
+        .unwrap_or_else(|| processed_visual_line_height_units(state, visual_line))
+}
+
 fn push_image_embed_visual_lines(
     out: &mut Vec<ProcessedVisualLine>,
     source_line: usize,
@@ -1176,39 +1217,73 @@ fn push_image_embed_visual_lines(
     }
 }
 
-fn push_paged_visual_lines(
+#[derive(Clone, Copy, Debug, Default)]
+struct ProcessedPageFill {
+    entries: usize,
+    height_units: f32,
+}
+
+fn finish_processed_page(
     paged_lines: &mut Vec<ProcessedVisualLine>,
-    lines: Vec<ProcessedVisualLine>,
     source_line: usize,
-    lines_in_page: &mut usize,
+    page_fill: &mut ProcessedPageFill,
     lines_per_page: usize,
     spacer_lines: usize,
 ) {
+    let page_step_lines = lines_per_page.saturating_add(spacer_lines).max(1);
+    if page_fill.entries < page_step_lines {
+        push_page_spacers(
+            paged_lines,
+            source_line,
+            page_step_lines.saturating_sub(page_fill.entries),
+        );
+    }
+
+    *page_fill = ProcessedPageFill::default();
+}
+
+fn push_paged_visual_lines(
+    paged_lines: &mut Vec<ProcessedVisualLine>,
+    lines: Vec<ProcessedVisualLine>,
+    state: &EditorState,
+    source_line: usize,
+    page_fill: &mut ProcessedPageFill,
+    lines_per_page: usize,
+    spacer_lines: usize,
+) {
+    const HEIGHT_EPSILON: f32 = 0.001;
+
+    let page_height_units = lines_per_page.max(1) as f32;
     let mut index = 0usize;
     while index < lines.len() {
         let visual_line = lines[index].clone();
-        if let Some(image_block) = visual_line.image_block.as_ref() {
-            let block_lines = image_block.reserved_lines.max(1);
-            if *lines_in_page > 0
-                && (*lines_in_page).saturating_add(block_lines) > lines_per_page
-            {
-                let remaining_content = lines_per_page.saturating_sub(*lines_in_page);
-                push_page_spacers(
-                    paged_lines,
-                    source_line,
-                    remaining_content.saturating_add(spacer_lines),
-                );
-                *lines_in_page = 0;
-            }
+        let block_height_units = processed_visual_line_block_height_units(state, &visual_line);
+        if page_fill.entries > 0
+            && page_fill.height_units + block_height_units > page_height_units + HEIGHT_EPSILON
+        {
+            finish_processed_page(
+                paged_lines,
+                source_line,
+                page_fill,
+                lines_per_page,
+                spacer_lines,
+            );
         }
 
-        if *lines_in_page >= lines_per_page {
-            push_page_spacers(paged_lines, source_line, spacer_lines);
-            *lines_in_page = 0;
-        }
-
+        let line_height_units = processed_visual_line_height_units(state, &visual_line);
         paged_lines.push(visual_line);
-        *lines_in_page = lines_in_page.saturating_add(1);
+        page_fill.entries = page_fill.entries.saturating_add(1);
+        page_fill.height_units += line_height_units;
+
+        if page_fill.height_units >= page_height_units - HEIGHT_EPSILON {
+            finish_processed_page(
+                paged_lines,
+                source_line,
+                page_fill,
+                lines_per_page,
+                spacer_lines,
+            );
+        }
         index += 1;
     }
 }
@@ -1312,14 +1387,14 @@ fn processed_display_column_from_raw(
 fn processed_caret_visual<'a>(
     state: &EditorState,
     processed_view: &'a ProcessedView,
-) -> Option<(usize, usize, &'a str)> {
+) -> Option<(usize, usize, &'a ProcessedVisualLine)> {
     processed_cursor_visual_from_lines(state, &processed_view.lines)
 }
 
 fn processed_cursor_visual_from_lines<'a>(
     state: &EditorState,
     lines: &'a [ProcessedVisualLine],
-) -> Option<(usize, usize, &'a str)> {
+) -> Option<(usize, usize, &'a ProcessedVisualLine)> {
     let source_line = state.cursor.position.line;
     let raw_column = state.cursor.position.column;
 
@@ -1345,7 +1420,7 @@ fn processed_cursor_visual_from_lines<'a>(
             return Some((
                 *visual_index,
                 processed_display_column_from_raw(visual_line, raw_column),
-                &visual_line.text,
+                visual_line,
             ));
         }
     }
@@ -1353,7 +1428,7 @@ fn processed_cursor_visual_from_lines<'a>(
     Some((
         default_index,
         processed_display_column_from_raw(default_line, raw_column),
-        &default_line.text,
+        default_line,
     ))
 }
 
@@ -1607,6 +1682,22 @@ mod processed_markdown_inline_tests {
             FontVariant::BoldItalic
         );
     }
+
+    #[test]
+    fn finish_processed_page_pads_to_fixed_page_step() {
+        let mut lines = Vec::<ProcessedVisualLine>::new();
+        push_page_spacers(&mut lines, 7, 2);
+        let mut page_fill = ProcessedPageFill {
+            entries: 2,
+            height_units: 3.6,
+        };
+
+        finish_processed_page(&mut lines, 7, &mut page_fill, 5, 2);
+
+        assert_eq!(lines.len(), 7);
+        assert_eq!(page_fill.entries, 0);
+        assert_eq!(page_fill.height_units, 0.0);
+    }
 }
 
 fn apply_processed_styles(
@@ -1663,26 +1754,7 @@ fn apply_processed_styles(
             text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
             continue;
         };
-        let raw_current_line_mode_active = state.display_mode
-            == DisplayMode::ProcessedRawCurrentLine
-            && visual_line.source_line == state.cursor.position.line;
-        let (style, allow_link_color) = if visual_line.is_spacer {
-            (transparent_line_render_style(), false)
-        } else if let Some(render_override) = visual_line.render_override.as_ref() {
-            (
-                processed_line_style_for_kind(
-                    &render_override.kind,
-                    render_override.markdown_heading_level,
-                ),
-                true,
-            )
-        } else if raw_current_line_mode_active {
-            (default_line_render_style(), false)
-        } else if let Some(parsed_line) = state.parsed.get(visual_line.source_line) {
-            (processed_line_style(parsed_line), true)
-        } else {
-            (default_line_render_style(), false)
-        };
+        let (style, allow_link_color) = processed_visual_line_style_for_state(state, visual_line);
 
         let used_fragment_count = processed_visual_fragment_count(visual_line);
         let Some(mut fragment) =
@@ -1830,6 +1902,17 @@ fn line_top_from_layout(
     let step = default_line_step(&top_samples, fallback_height);
 
     interpolate_line_value(&top_samples, line_index, step)
+}
+
+fn line_height_from_layout(
+    layout: &TextLayoutInfo,
+    line_index: usize,
+    inverse_scale: f32,
+) -> Option<f32> {
+    layout_line_bounds(layout, inverse_scale)
+        .into_iter()
+        .find(|(index, _, _)| *index == line_index)
+        .map(|(_, top, bottom)| (bottom - top).max(1.0))
 }
 
 fn line_index_from_layout_y(

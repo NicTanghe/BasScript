@@ -35,6 +35,15 @@ fn caret_x_offset_for_state(state: &EditorState) -> f32 {
     }
 }
 
+fn processed_caret_line_height(
+    state: &EditorState,
+    visual_line: &ProcessedVisualLine,
+    base_line_height: f32,
+) -> f32 {
+    let (style, _) = processed_visual_line_style_for_state(state, visual_line);
+    (base_line_height * style.line_height_scale).max(1.0)
+}
+
 fn render_panel_carets(
     caret_query: &mut Query<
         (&PanelCaret, &mut Node, &mut Visibility, &mut UiTransform),
@@ -93,6 +102,7 @@ fn render_panel_carets(
             panel_line_height,
             panel_caret_x_offset,
             panel_caret_width,
+            fallback_caret_height,
             clamp_display_column,
             clamp_local_position_to_origin,
         ) = match panel_caret.kind {
@@ -120,12 +130,13 @@ fn render_panel_carets(
                     plain_line_height,
                     caret_x_offset_for_state(state),
                     caret_width_for_state(state, plain_char_width),
+                    plain_line_height,
                     true,
                     true,
                 )
             }
             PanelKind::Processed => {
-                let Some((visual_index, display_column, line_text)) =
+                let Some((visual_index, display_column, visual_line)) =
                     processed_caret_visual(state, processed_view)
                 else {
                     *visibility = Visibility::Hidden;
@@ -160,7 +171,7 @@ fn render_panel_carets(
                 (
                     line_in_page,
                     display_column,
-                    line_text,
+                    visual_line.text.as_str(),
                     processed_layout,
                     processed_inverse_scale,
                     processed_origin_x,
@@ -169,6 +180,7 @@ fn render_panel_carets(
                     processed_line_height,
                     caret_x_offset_for_state(state),
                     caret_width_for_state(state, processed_char_width),
+                    processed_caret_line_height(state, visual_line, processed_line_height),
                     true,
                     true,
                 )
@@ -196,6 +208,10 @@ fn render_panel_carets(
         let caret_top = panel_layout
             .and_then(|layout| line_top_from_layout(layout, line_offset, panel_inverse_scale))
             .unwrap_or(line_offset as f32 * panel_line_height);
+        let caret_height = panel_layout
+            .and_then(|layout| line_height_from_layout(layout, line_offset, panel_inverse_scale))
+            .unwrap_or(fallback_caret_height)
+            .max(1.0);
 
         let local_caret_left = if clamp_local_position_to_origin {
             (caret_x + panel_caret_x_offset).max(0.0)
@@ -203,7 +219,7 @@ fn render_panel_carets(
             caret_x + panel_caret_x_offset
         };
         let caret_left = origin_x + local_caret_left;
-        let caret_y_offset = caret_vertical_offset(panel_line_height);
+        let caret_y_offset = caret_vertical_offset(caret_height);
         let local_caret_top = if clamp_local_position_to_origin {
             (caret_top + caret_y_offset).max(0.0)
         } else {
@@ -213,7 +229,7 @@ fn render_panel_carets(
         node.left = px(caret_left);
         node.top = px(caret_top);
         node.width = px(panel_caret_width);
-        node.height = px(panel_line_height.max(1.0));
+        node.height = px(caret_height);
         transform.scale = Vec2::ONE;
         transform.translation = Val2::ZERO;
         *visibility = Visibility::Visible;

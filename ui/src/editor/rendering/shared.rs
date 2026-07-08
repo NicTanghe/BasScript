@@ -238,10 +238,13 @@ fn render_editor(
         processed_view_capacity,
     );
     let first_visible_page = processed_view.start_index / processed_page_step_lines;
-    let anchor_line_in_page =
-        processed_anchor_line_in_page(&processed_view, processed_page_step_lines);
-    let processed_anchor_offset_px =
-        processed_anchor_scroll_offset_px(anchor_line_in_page, processed_line_height);
+    let processed_anchor_offset_px = processed_anchor_scroll_offset_px_from_lines(
+        &state,
+        &processed_all_lines,
+        processed_view.anchor_index,
+        processed_page_step_lines,
+        processed_line_height,
+    );
     let processed_page_step_pixels = processed_page_step_px(&processed_geometry, state.zoom);
     let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
     for (_, mut transform) in canvas_query.iter_mut() {
@@ -768,6 +771,32 @@ fn processed_line_style_for_kind(
     fountain_line_style(kind)
         .or_else(|| markdown_line_style(kind, markdown_heading_level))
         .unwrap_or_else(default_line_render_style)
+}
+
+fn processed_visual_line_style_for_state(
+    state: &EditorState,
+    visual_line: &ProcessedVisualLine,
+) -> (LineRenderStyle, bool) {
+    let raw_current_line_mode_active = state.display_mode == DisplayMode::ProcessedRawCurrentLine
+        && visual_line.source_line == state.cursor.position.line;
+
+    if visual_line.is_spacer {
+        (transparent_line_render_style(), false)
+    } else if let Some(render_override) = visual_line.render_override.as_ref() {
+        (
+            processed_line_style_for_kind(
+                &render_override.kind,
+                render_override.markdown_heading_level,
+            ),
+            true,
+        )
+    } else if raw_current_line_mode_active {
+        (default_line_render_style(), false)
+    } else if let Some(parsed_line) = state.parsed.get(visual_line.source_line) {
+        (processed_line_style(parsed_line), true)
+    } else {
+        (default_line_render_style(), false)
+    }
 }
 
 fn font_variant_for_processed_fragment(

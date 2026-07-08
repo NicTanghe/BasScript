@@ -159,9 +159,13 @@ fn handle_mouse_selection(
     let processed_char_width = scaled_char_width(&state).max(1.0);
     let plain_origin_x = scaled_text_padding_x(&state) - state.plain_horizontal_scroll;
     let plain_origin_y = scaled_text_padding_y(&state);
-    let anchor_line_in_page = processed_anchor_line_in_page(&processed_view, processed_step_lines);
-    let processed_anchor_offset_px =
-        processed_anchor_scroll_offset_px(anchor_line_in_page, processed_line_height);
+    let processed_anchor_offset_px = processed_anchor_scroll_offset_px_from_lines(
+        &state,
+        &processed_all_lines,
+        processed_view.anchor_index,
+        processed_step_lines,
+        processed_line_height,
+    );
     let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
     let mut hit = None::<(PanelKind, Position)>;
 
@@ -451,9 +455,13 @@ fn hovered_processed_link_at_cursor(
     let first_visible_page = processed_view.start_index / processed_step_lines;
     let processed_line_height = scaled_line_height(state).max(1.0);
     let processed_char_width = scaled_char_width(state).max(1.0);
-    let anchor_line_in_page = processed_anchor_line_in_page(&processed_view, processed_step_lines);
-    let processed_anchor_offset_px =
-        processed_anchor_scroll_offset_px(anchor_line_in_page, processed_line_height);
+    let processed_anchor_offset_px = processed_anchor_scroll_offset_px_from_lines(
+        state,
+        &processed_all_lines,
+        processed_view.anchor_index,
+        processed_step_lines,
+        processed_line_height,
+    );
     let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
     let size = computed.size() * computed.inverse_scale_factor();
     let panel_x = (normalized.x + 0.5) * size.x;

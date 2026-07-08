@@ -2374,6 +2374,7 @@ fn story_query_visual_pages(
     let parsed = parse_document_with_format(&document, document_format);
     let wrap_columns = story_query_wrap_columns(document_format);
     let mut visual_lines = Vec::<ProcessedVisualLine>::new();
+    let mut page_fill = ProcessedPageFill::default();
 
     for (source_line, parsed_line) in parsed.iter().enumerate() {
         let visual_override = if document_format == DocumentFormat::Markdown {
@@ -2442,7 +2443,40 @@ fn story_query_visual_pages(
             visual_line.render_override = Some(style_override.clone());
         }
 
-        visual_lines.extend(wrapped);
+        let line_height_units = processed_line_style_for_kind(
+            &style_override.kind,
+            style_override.markdown_heading_level,
+        )
+        .line_height_scale;
+
+        for visual_line in wrapped {
+            if page_fill.entries > 0
+                && page_fill.height_units + line_height_units
+                    > STORY_QUERY_PAGE_LINE_LIMIT as f32 + 0.001
+            {
+                finish_processed_page(
+                    &mut visual_lines,
+                    source_line,
+                    &mut page_fill,
+                    STORY_QUERY_PAGE_LINE_LIMIT,
+                    0,
+                );
+            }
+
+            visual_lines.push(visual_line);
+            page_fill.entries = page_fill.entries.saturating_add(1);
+            page_fill.height_units += line_height_units;
+
+            if page_fill.height_units >= STORY_QUERY_PAGE_LINE_LIMIT as f32 - 0.001 {
+                finish_processed_page(
+                    &mut visual_lines,
+                    source_line,
+                    &mut page_fill,
+                    STORY_QUERY_PAGE_LINE_LIMIT,
+                    0,
+                );
+            }
+        }
     }
 
     if visual_lines.is_empty() {
