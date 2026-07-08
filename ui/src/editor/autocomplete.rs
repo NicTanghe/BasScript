@@ -459,13 +459,12 @@ fn link_autocomplete_menu_position(
 
     let mut left_top = link_autocomplete_caret_anchor_rect(state, caret_query)
         .map(|anchor| {
+            let top = window_size.map_or(anchor.line_bottom + LINK_AUTOCOMPLETE_MENU_GAP, |size| {
+                link_autocomplete_menu_top_for_anchor(anchor, menu_height, size.y)
+            });
             (
                 anchor.left + LINK_AUTOCOMPLETE_MENU_GAP,
-                link_autocomplete_menu_top_for_anchor(
-                    anchor,
-                    menu_height,
-                    window_size.map(|size| size.y),
-                ),
+                top,
             )
         })
         .unwrap_or((320.0, 96.0));
@@ -491,14 +490,10 @@ fn link_autocomplete_menu_position(
 fn link_autocomplete_menu_top_for_anchor(
     anchor: LinkAutocompleteAnchorRect,
     menu_height: f32,
-    window_height: Option<f32>,
+    window_height: f32,
 ) -> f32 {
     let below_top = anchor.line_bottom + LINK_AUTOCOMPLETE_MENU_GAP;
     let above_top = anchor.line_top - menu_height - LINK_AUTOCOMPLETE_MENU_GAP;
-    let Some(window_height) = window_height else {
-        return below_top;
-    };
-
     let bottom_limit = window_height - LINK_AUTOCOMPLETE_WINDOW_BOTTOM_MARGIN;
     if below_top + menu_height <= bottom_limit {
         return below_top;
@@ -1299,7 +1294,7 @@ mod link_autocomplete_tests {
     fn menu_position_prefers_below_the_typed_line() {
         let anchor = test_anchor(100.0, 112.0);
 
-        let top = link_autocomplete_menu_top_for_anchor(anchor, 90.0, Some(260.0));
+        let top = link_autocomplete_menu_top_for_anchor(anchor, 90.0, 260.0);
 
         assert_close(top, 118.0);
     }
@@ -1308,7 +1303,7 @@ mod link_autocomplete_tests {
     fn menu_position_flips_above_when_below_does_not_fit() {
         let anchor = test_anchor(220.0, 232.0);
 
-        let top = link_autocomplete_menu_top_for_anchor(anchor, 90.0, Some(260.0));
+        let top = link_autocomplete_menu_top_for_anchor(anchor, 90.0, 260.0);
 
         assert_close(top, 124.0);
     }
@@ -1317,7 +1312,7 @@ mod link_autocomplete_tests {
     fn menu_position_still_prefers_below_when_both_sides_fit() {
         let anchor = test_anchor(120.0, 132.0);
 
-        let top = link_autocomplete_menu_top_for_anchor(anchor, 60.0, Some(260.0));
+        let top = link_autocomplete_menu_top_for_anchor(anchor, 60.0, 260.0);
 
         assert_close(top, 138.0);
     }
