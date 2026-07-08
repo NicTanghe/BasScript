@@ -22,7 +22,7 @@ use bevy::{
     log::{info, warn},
     prelude::*,
     text::{LineHeight, TextLayoutInfo},
-    ui::{RelativeCursorPosition, UiTransform, Val2},
+    ui::{RelativeCursorPosition, UiGlobalTransform, UiTransform, Val2},
     window::{PrimaryWindow, RawHandleWrapper},
 };
 use rfd::FileDialog;

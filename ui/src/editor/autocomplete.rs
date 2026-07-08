@@ -5,6 +5,13 @@ const LINK_AUTOCOMPLETE_MENU_WIDTH: f32 = 340.0;
 const LINK_AUTOCOMPLETE_ROW_HEIGHT: f32 = 30.0;
 const LINK_AUTOCOMPLETE_MENU_PADDING: f32 = 5.0;
 const LINK_AUTOCOMPLETE_MENU_GAP: f32 = 6.0;
+const LINK_AUTOCOMPLETE_WINDOW_MARGIN: f32 = 8.0;
+const LINK_AUTOCOMPLETE_WINDOW_BOTTOM_MARGIN: f32 = 28.0;
+const LINK_AUTOCOMPLETE_MENU_Z: i32 = 120;
+const LINK_AUTOCOMPLETE_ROW_Z: i32 = 121;
+const LINK_AUTOCOMPLETE_TEXT_Z: i32 = 122;
+const COLOR_LINK_AUTOCOMPLETE_MENU_BG: Color = Color::srgb(0.97, 0.98, 0.99);
+const COLOR_LINK_AUTOCOMPLETE_SELECTED_BG: Color = Color::srgb(0.86, 0.91, 0.97);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LinkAutocompleteSource {
@@ -88,6 +95,13 @@ struct LinkAutocompleteInputCapture {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct LinkAutocompleteAcceptResult {
     source: LinkAutocompleteSource,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct LinkAutocompleteAnchorRect {
+    left: f32,
+    line_top: f32,
+    line_bottom: f32,
 }
 
 impl LinkAutocompleteInputCapture {
@@ -214,9 +228,10 @@ fn spawn_link_autocomplete_menu(parent: &mut ChildSpawnerCommands<'_>, font: Han
                 overflow: Overflow::clip(),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.97, 0.98, 0.99, 0.97)),
+            BackgroundColor(COLOR_LINK_AUTOCOMPLETE_MENU_BG),
             BorderColor::all(Color::srgba(0.10, 0.12, 0.14, 0.18)),
-            ZIndex(94),
+            ZIndex(LINK_AUTOCOMPLETE_MENU_Z),
+            GlobalZIndex(LINK_AUTOCOMPLETE_MENU_Z),
             LinkAutocompleteRoot,
         ))
         .with_children(|menu| {
@@ -245,6 +260,8 @@ fn spawn_link_autocomplete_row(
                 ..default()
             },
             BackgroundColor(Color::NONE),
+            ZIndex(LINK_AUTOCOMPLETE_ROW_Z),
+            GlobalZIndex(LINK_AUTOCOMPLETE_ROW_Z),
             LinkAutocompleteRow { index },
         ))
         .with_children(|row| {
@@ -263,6 +280,8 @@ fn spawn_link_autocomplete_row(
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
+                ZIndex(LINK_AUTOCOMPLETE_TEXT_Z),
+                GlobalZIndex(LINK_AUTOCOMPLETE_TEXT_Z),
                 LinkAutocompleteNameText { index },
             ));
             row.spawn((
@@ -279,6 +298,8 @@ fn spawn_link_autocomplete_row(
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MUTED),
+                ZIndex(LINK_AUTOCOMPLETE_TEXT_Z),
+                GlobalZIndex(LINK_AUTOCOMPLETE_TEXT_Z),
                 LinkAutocompleteTypeText { index },
             ));
             row.spawn((
@@ -295,6 +316,8 @@ fn spawn_link_autocomplete_row(
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MUTED),
+                ZIndex(LINK_AUTOCOMPLETE_TEXT_Z),
+                GlobalZIndex(LINK_AUTOCOMPLETE_TEXT_Z),
                 LinkAutocompleteTargetText { index },
             ));
         });
@@ -304,7 +327,7 @@ fn sync_link_autocomplete_ui(
     state: Res<EditorState>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     caret_query: Query<
-        (&PanelCaret, &Node, &Visibility),
+        (&PanelCaret, &ComputedNode, &UiGlobalTransform),
         (Without<LinkAutocompleteRoot>, Without<LinkAutocompleteRow>),
     >,
     mut root_query: Query<
@@ -368,7 +391,7 @@ fn sync_link_autocomplete_ui(
 
         node.display = Display::Flex;
         background.0 = if suggestion_index == active.selected_index {
-            Color::srgba(0.12, 0.34, 0.62, 0.18)
+            COLOR_LINK_AUTOCOMPLETE_SELECTED_BG
         } else {
             Color::NONE
         };
@@ -425,36 +448,82 @@ fn link_autocomplete_menu_position(
     state: &EditorState,
     window_query: &Query<&Window, With<PrimaryWindow>>,
     caret_query: &Query<
-        (&PanelCaret, &Node, &Visibility),
+        (&PanelCaret, &ComputedNode, &UiGlobalTransform),
         (Without<LinkAutocompleteRoot>, Without<LinkAutocompleteRow>),
     >,
     visible_count: usize,
 ) -> (f32, f32) {
-    let mut left_top = link_autocomplete_caret_left_top(state, caret_query)
-        .map(|(left, top)| (left + LINK_AUTOCOMPLETE_MENU_GAP, top + state.measured_line_step + LINK_AUTOCOMPLETE_MENU_GAP))
+    let menu_height = (visible_count as f32 * LINK_AUTOCOMPLETE_ROW_HEIGHT)
+        + (LINK_AUTOCOMPLETE_MENU_PADDING * 2.0);
+    let window_size = window_query.single().ok().map(|window| window.size());
+
+    let mut left_top = link_autocomplete_caret_anchor_rect(state, caret_query)
+        .map(|anchor| {
+            (
+                anchor.left + LINK_AUTOCOMPLETE_MENU_GAP,
+                link_autocomplete_menu_top_for_anchor(
+                    anchor,
+                    menu_height,
+                    window_size.map(|size| size.y),
+                ),
+            )
+        })
         .unwrap_or((320.0, 96.0));
 
-    if let Ok(window) = window_query.single() {
-        let menu_height = (visible_count as f32 * LINK_AUTOCOMPLETE_ROW_HEIGHT)
-            + (LINK_AUTOCOMPLETE_MENU_PADDING * 2.0);
-        let max_left = (window.width() - LINK_AUTOCOMPLETE_MENU_WIDTH - 8.0).max(8.0);
-        left_top.0 = left_top.0.clamp(8.0, max_left);
-
-        if left_top.1 + menu_height > window.height() - 28.0 {
-            left_top.1 = (left_top.1 - menu_height - state.measured_line_step).max(8.0);
-        }
+    if let Some(window_size) = window_size {
+        let max_left =
+            (window_size.x - LINK_AUTOCOMPLETE_MENU_WIDTH - LINK_AUTOCOMPLETE_WINDOW_MARGIN)
+                .max(LINK_AUTOCOMPLETE_WINDOW_MARGIN);
+        left_top.0 = left_top
+            .0
+            .clamp(LINK_AUTOCOMPLETE_WINDOW_MARGIN, max_left);
+        let max_top =
+            (window_size.y - LINK_AUTOCOMPLETE_WINDOW_BOTTOM_MARGIN - menu_height)
+                .max(LINK_AUTOCOMPLETE_WINDOW_MARGIN);
+        left_top.1 = left_top
+            .1
+            .clamp(LINK_AUTOCOMPLETE_WINDOW_MARGIN, max_top);
     }
 
     left_top
 }
 
-fn link_autocomplete_caret_left_top(
+fn link_autocomplete_menu_top_for_anchor(
+    anchor: LinkAutocompleteAnchorRect,
+    menu_height: f32,
+    window_height: Option<f32>,
+) -> f32 {
+    let below_top = anchor.line_bottom + LINK_AUTOCOMPLETE_MENU_GAP;
+    let above_top = anchor.line_top - menu_height - LINK_AUTOCOMPLETE_MENU_GAP;
+    let Some(window_height) = window_height else {
+        return below_top;
+    };
+
+    let bottom_limit = window_height - LINK_AUTOCOMPLETE_WINDOW_BOTTOM_MARGIN;
+    if below_top + menu_height <= bottom_limit {
+        return below_top;
+    }
+
+    if above_top >= LINK_AUTOCOMPLETE_WINDOW_MARGIN {
+        return above_top;
+    }
+
+    let below_space = (bottom_limit - below_top).max(0.0);
+    let above_space = (anchor.line_top - LINK_AUTOCOMPLETE_WINDOW_MARGIN).max(0.0);
+    if below_space >= above_space {
+        below_top
+    } else {
+        above_top
+    }
+}
+
+fn link_autocomplete_caret_anchor_rect(
     state: &EditorState,
     caret_query: &Query<
-        (&PanelCaret, &Node, &Visibility),
+        (&PanelCaret, &ComputedNode, &UiGlobalTransform),
         (Without<LinkAutocompleteRoot>, Without<LinkAutocompleteRow>),
     >,
-) -> Option<(f32, f32)> {
+) -> Option<LinkAutocompleteAnchorRect> {
     if state
         .link_autocomplete
         .as_ref()
@@ -467,14 +536,21 @@ fn link_autocomplete_caret_left_top(
     caret_query
         .iter()
         .find(|(caret, _, _)| caret.kind == panel)
-        .and_then(|(_, node, _)| Some((val_to_px(node.left)?, val_to_px(node.top)?)))
-}
-
-fn val_to_px(value: Val) -> Option<f32> {
-    match value {
-        Val::Px(value) => Some(value),
-        _ => None,
-    }
+        .map(|(_, computed, transform)| {
+            let (_, _, translation) = transform.to_scale_angle_translation();
+            let node_size = computed.size() * computed.inverse_scale_factor();
+            let top_left =
+                (translation * computed.inverse_scale_factor()) - (node_size * 0.5);
+            let line_height = node_size.y.max(state.measured_line_step).max(1.0);
+            let left = top_left.x;
+            let caret_top = top_left.y;
+            let line_top = caret_top - caret_vertical_offset(line_height);
+            LinkAutocompleteAnchorRect {
+                left,
+                line_top,
+                line_bottom: line_top + line_height,
+            }
+        })
 }
 
 impl EditorState {
@@ -1220,6 +1296,33 @@ mod link_autocomplete_tests {
     }
 
     #[test]
+    fn menu_position_prefers_below_the_typed_line() {
+        let anchor = test_anchor(100.0, 112.0);
+
+        let top = link_autocomplete_menu_top_for_anchor(anchor, 90.0, Some(260.0));
+
+        assert_close(top, 118.0);
+    }
+
+    #[test]
+    fn menu_position_flips_above_when_below_does_not_fit() {
+        let anchor = test_anchor(220.0, 232.0);
+
+        let top = link_autocomplete_menu_top_for_anchor(anchor, 90.0, Some(260.0));
+
+        assert_close(top, 124.0);
+    }
+
+    #[test]
+    fn menu_position_still_prefers_below_when_both_sides_fit() {
+        let anchor = test_anchor(120.0, 132.0);
+
+        let top = link_autocomplete_menu_top_for_anchor(anchor, 60.0, Some(260.0));
+
+        assert_close(top, 138.0);
+    }
+
+    #[test]
     fn replacement_uses_safe_target_only_links_outside_character_cues() {
         let suggestion = test_suggestion("character", "Eoghan", "eoghan");
 
@@ -1350,5 +1453,20 @@ mod link_autocomplete_tests {
             detail: format!("{target}.md"),
             score: 1,
         }
+    }
+
+    fn test_anchor(line_top: f32, line_bottom: f32) -> LinkAutocompleteAnchorRect {
+        LinkAutocompleteAnchorRect {
+            left: 42.0,
+            line_top,
+            line_bottom,
+        }
+    }
+
+    fn assert_close(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < f32::EPSILON,
+            "expected {expected}, got {actual}"
+        );
     }
 }
