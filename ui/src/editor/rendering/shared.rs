@@ -238,6 +238,8 @@ fn render_editor(
         processed_view_capacity,
     );
     let first_visible_page = processed_view.start_index / processed_page_step_lines;
+    let processed_total_pages =
+        processed_page_count_for_lines(&processed_all_lines, processed_page_step_lines);
     let processed_anchor_offset_px = processed_anchor_scroll_offset_px_from_lines(
         &state,
         &processed_all_lines,
@@ -255,6 +257,12 @@ fn render_editor(
     for (panel_paper, mut node, mut visibility, mut color, mut transform) in paper_query.iter_mut()
     {
         if panel_paper.kind != PanelKind::Processed {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+
+        let page_index = first_visible_page.saturating_add(panel_paper.slot);
+        if page_index >= processed_total_pages {
             *visibility = Visibility::Hidden;
             continue;
         }

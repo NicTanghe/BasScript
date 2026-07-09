@@ -117,6 +117,15 @@ fn processed_page_step_px(geometry: &ProcessedPageGeometry, zoom: f32) -> f32 {
     (geometry.paper_height + PAGE_GAP * zoom.max(f32::EPSILON)).max(1.0)
 }
 
+fn processed_page_count_for_lines(lines: &[ProcessedVisualLine], page_step_lines: usize) -> usize {
+    let page_step_lines = page_step_lines.max(1);
+    let page_count = lines
+        .len()
+        .saturating_add(page_step_lines.saturating_sub(1))
+        / page_step_lines;
+    page_count.max(1)
+}
+
 fn processed_page_top_for_slot(
     geometry: &ProcessedPageGeometry,
     slot: usize,

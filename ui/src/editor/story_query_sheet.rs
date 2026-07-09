@@ -975,11 +975,19 @@ fn sync_story_query_sheet_ui(
         processed_view_capacity,
     );
     let first_visible_page = processed_view.start_index / page_step_lines;
+    let total_pages =
+        processed_page_count_for_lines(&state.story_query_sheet.visual_lines, page_step_lines);
     let page_label =
         story_query_page_label(&state.story_query_sheet, first_visible_page, page_step_lines);
 
     for (paper, mut node, mut visibility, mut color, mut transform) in story_paper_query.iter_mut()
     {
+        let page_index = first_visible_page.saturating_add(paper.slot);
+        if page_index >= total_pages {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+
         let page_top = processed_page_top_for_slot(
             &result_geometry,
             paper.slot,
