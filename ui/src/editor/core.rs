@@ -274,6 +274,12 @@ impl Plugin for UiPlugin {
         );
         app.add_systems(
             Update,
+            handle_story_query_sheet_mouse_scroll
+                .before(handle_mouse_scroll)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
             handle_link_autocomplete_keyboard_input
                 .before(handle_vim_input)
                 .before(handle_text_input)

@@ -5,12 +5,6 @@ use serde::Deserialize;
 
 const STORY_QUERY_RESULT_WIDTH_PERCENT: f32 = 61.803;
 const STORY_QUERY_MENU_WIDTH_PERCENT: f32 = 38.197;
-const STORY_QUERY_A4_SCALE: f32 = 0.86;
-const STORY_QUERY_A4_PAGE_WIDTH: f32 = A4_WIDTH_POINTS * STORY_QUERY_A4_SCALE;
-const STORY_QUERY_A4_PAGE_HEIGHT: f32 = A4_HEIGHT_POINTS * STORY_QUERY_A4_SCALE;
-const STORY_QUERY_RESULT_FONT_SIZE: f32 = FONT_SIZE * STORY_QUERY_A4_SCALE;
-const STORY_QUERY_RESULT_LINE_HEIGHT: f32 = LINE_HEIGHT * STORY_QUERY_A4_SCALE;
-const STORY_QUERY_PAGE_LINE_LIMIT: usize = 56;
 const STORY_QUERY_DROPDOWN_VISIBLE_OPTIONS: usize = 8;
 const STORY_QUERY_MAX_CATEGORY_ROWS: usize = 8;
 const DEFAULT_STORY_TAXONOMY_RON: &str = r#"(
@@ -197,12 +191,28 @@ struct StoryQuerySheet {
     taxonomy: StoryTaxonomyConfig,
     taxonomy_notice: Option<String>,
     open_dropdown: Option<StoryQueryDropdownKind>,
-    page_index: usize,
-    visual_pages: Vec<Vec<ProcessedVisualLine>>,
+    result_scroll_visual: usize,
+    result_scroll_anchor_bias_px: f32,
+    result_horizontal_scroll: f32,
+    visual_lines: Vec<ProcessedVisualLine>,
+    visual_layout_signature: Option<StoryQueryLayoutSignature>,
     result_title: String,
     result_status: String,
+    result_text: String,
     result_format: StoryQueryOutputFormat,
+    dialogue_double_space_newline: bool,
+    non_dialogue_double_space_newline: bool,
     source_targets: Vec<StoryQuerySourceTarget>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct StoryQueryLayoutSignature {
+    output_format: StoryQueryOutputFormat,
+    wrap_columns: usize,
+    lines_per_page: usize,
+    spacer_lines: usize,
+    dialogue_double_space_newline: bool,
+    non_dialogue_double_space_newline: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -228,16 +238,17 @@ impl Default for StoryQuerySheet {
             taxonomy: StoryTaxonomyConfig::default(),
             taxonomy_notice: None,
             open_dropdown: None,
-            page_index: 0,
-            visual_pages: story_query_visual_pages(
-                "No result yet.",
-                StoryQueryOutputFormat::Markdown,
-                false,
-                false,
-            ),
+            result_scroll_visual: 0,
+            result_scroll_anchor_bias_px: 0.0,
+            result_horizontal_scroll: 0.0,
+            visual_lines: Vec::new(),
+            visual_layout_signature: None,
             result_title: "Story Query Sheet".to_string(),
             result_status: "Ready.".to_string(),
-            result_format: StoryQueryOutputFormat::Fountain,
+            result_text: "No result yet.".to_string(),
+            result_format: StoryQueryOutputFormat::Markdown,
+            dialogue_double_space_newline: false,
+            non_dialogue_double_space_newline: false,
             source_targets: Vec::new(),
         }
     }
@@ -281,8 +292,6 @@ enum StoryQuerySheetAction {
     },
     Run,
     OpenFirstSource,
-    PreviousPage,
-    NextPage,
     AddCategory,
     Close,
 }
@@ -310,10 +319,24 @@ struct StoryQueryDropdownOptionText {
 }
 
 #[derive(Component)]
-struct StoryQueryRenderedText;
+struct StoryQueryResultPanel;
+
+#[derive(Component)]
+struct StoryQueryResultCanvas;
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct StoryQueryPaper {
+    slot: usize,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct StoryQueryRenderedText {
+    slot: usize,
+}
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 struct StoryQueryRenderedLineSpan {
+    slot: usize,
     line_offset: usize,
     part_index: usize,
 }
@@ -362,86 +385,29 @@ fn story_query_sheet_bundle(font: Handle<Font>) -> impl Bundle {
     )
 }
 
-fn story_query_sheet_page_bundle(font: Handle<Font>) -> impl Bundle {
+fn story_query_sheet_page_bundle(_font: Handle<Font>) -> impl Bundle {
     (
         Node {
             width: percent(STORY_QUERY_RESULT_WIDTH_PERCENT),
             height: percent(100.0),
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            padding: UiRect::all(px(PAGE_OUTER_MARGIN)),
+            position_type: PositionType::Relative,
             overflow: Overflow::clip(),
             ..default()
         },
         BackgroundColor(COLOR_PANEL_BODY_PROCESSED),
+        RelativeCursorPosition::default(),
+        StoryQueryResultPanel,
         children![(
             Node {
-                width: px(STORY_QUERY_A4_PAGE_WIDTH),
-                height: px(STORY_QUERY_A4_PAGE_HEIGHT),
-                flex_direction: FlexDirection::Column,
-                row_gap: px(8.0),
-                padding: UiRect::new(
-                    px(PAGE_TEXT_MARGIN_LEFT * STORY_QUERY_A4_SCALE),
-                    px(PAGE_TEXT_MARGIN_RIGHT * STORY_QUERY_A4_SCALE),
-                    px(PAGE_TEXT_MARGIN_TOP * STORY_QUERY_A4_SCALE),
-                    px(PAGE_TEXT_MARGIN_BOTTOM * STORY_QUERY_A4_SCALE),
-                ),
-                overflow: Overflow::clip(),
-                border: UiRect::all(px(1.0)),
+                position_type: PositionType::Absolute,
+                left: px(0.0),
+                top: px(0.0),
+                width: percent(100.0),
+                height: percent(100.0),
                 ..default()
             },
-            BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.12)),
-            BackgroundColor(COLOR_PAPER),
-            BoxShadow::new(
-                Color::srgba(0.0, 0.0, 0.0, 0.22),
-                px(0.0),
-                px(12.0),
-                px(24.0),
-                px(0.0),
-            ),
-            children![
-                story_query_text(
-                    font.clone(),
-                    "",
-                    15.0,
-                    COLOR_TEXT_MAIN,
-                    StoryQuerySheetTextSlot::Title,
-                ),
-                (
-                    Node {
-                        width: percent(100.0),
-                        flex_grow: 1.0,
-                        overflow: Overflow::clip(),
-                        ..default()
-                    },
-                    children![(
-                        Text::new(""),
-                        TextLayout::new_with_no_wrap(),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: STORY_QUERY_RESULT_FONT_SIZE,
-                            ..default()
-                        },
-                        LineHeight::Px(STORY_QUERY_RESULT_LINE_HEIGHT),
-                        TextColor(COLOR_ACTION),
-                        Node {
-                            width: percent(100.0),
-                            height: percent(100.0),
-                            overflow: Overflow::visible(),
-                            ..default()
-                        },
-                        RelativeCursorPosition::default(),
-                        StoryQueryRenderedText,
-                    )],
-                ),
-                story_query_text(
-                    font,
-                    "",
-                    10.0,
-                    COLOR_TEXT_MUTED,
-                    StoryQuerySheetTextSlot::Page,
-                ),
-            ],
+            UiTransform::default(),
+            StoryQueryResultCanvas,
         )],
     )
 }
@@ -463,16 +429,34 @@ fn story_query_sheet_menu_bundle(font: Handle<Font>) -> impl Bundle {
         children![
             (
                 Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(3.0),
                     padding: UiRect::bottom(px(3.0)),
                     ..default()
                 },
-                children![story_query_text(
-                    font.clone(),
-                    "Story Query Sheet",
-                    16.0,
-                    COLOR_TEXT_MAIN,
-                    StoryQuerySheetTextSlot::Status,
-                )],
+                children![
+                    story_query_text(
+                        font.clone(),
+                        "Story Query Sheet",
+                        16.0,
+                        COLOR_TEXT_MAIN,
+                        StoryQuerySheetTextSlot::Title,
+                    ),
+                    story_query_text(
+                        font.clone(),
+                        "",
+                        11.0,
+                        COLOR_TEXT_MUTED,
+                        StoryQuerySheetTextSlot::Status,
+                    ),
+                    story_query_text(
+                        font.clone(),
+                        "",
+                        10.0,
+                        COLOR_TEXT_MUTED,
+                        StoryQuerySheetTextSlot::Page,
+                    ),
+                ],
             ),
             story_query_dropdown_row(
                 font.clone(),
@@ -561,49 +545,89 @@ fn story_query_sheet_menu_bundle(font: Handle<Font>) -> impl Bundle {
                     story_query_static_button(font.clone(), "Close", StoryQuerySheetAction::Close),
                 ],
             ),
-            (
-                Node {
-                    flex_direction: FlexDirection::Row,
-                    column_gap: px(8.0),
-                    ..default()
-                },
-                children![
-                    story_query_static_button(
-                        font.clone(),
-                        "Prev page",
-                        StoryQuerySheetAction::PreviousPage,
-                    ),
-                    story_query_static_button(font, "Next page", StoryQuerySheetAction::NextPage),
-                ],
-            ),
         ],
     )
 }
 
 fn setup_story_query_sheet_result_spans(
     mut commands: Commands,
-    text_query: Query<Entity, With<StoryQueryRenderedText>>,
+    canvas_query: Query<Entity, With<StoryQueryResultCanvas>>,
     fonts: Res<EditorFonts>,
 ) {
-    for entity in text_query.iter() {
-        commands.entity(entity).with_children(|text_parent| {
-            for line_offset in 0..STORY_QUERY_PAGE_LINE_LIMIT {
-                for part_index in 0..PROCESSED_LINE_SPAN_PARTS {
-                    text_parent.spawn((
-                        TextSpan::new(""),
-                        TextFont {
-                            font: fonts.regular.clone(),
-                            font_size: STORY_QUERY_RESULT_FONT_SIZE,
+    let regular_font = fonts.regular.clone();
+    let span_capacity = processed_page_step_lines().max(1);
+
+    for entity in canvas_query.iter() {
+        commands.entity(entity).with_children(|parent| {
+            for slot in 0..PROCESSED_PAPER_CAPACITY {
+                let slot_font = regular_font.clone();
+                parent
+                    .spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            overflow: Overflow::clip(),
                             ..default()
                         },
-                        LineHeight::Px(STORY_QUERY_RESULT_LINE_HEIGHT),
-                        TextColor(COLOR_ACTION),
-                        StoryQueryRenderedLineSpan {
-                            line_offset,
-                            part_index,
-                        },
-                    ));
-                }
+                        UiTransform::default(),
+                        BackgroundColor(COLOR_PAPER),
+                        Visibility::Hidden,
+                        ZIndex(0),
+                        StoryQueryPaper { slot },
+                    ))
+                    .with_children(|paper| {
+                        paper
+                            .spawn((
+                                Text::new(""),
+                                TextLayout::new_with_no_wrap(),
+                                TextFont {
+                                    font: slot_font.clone(),
+                                    font_size: FONT_SIZE,
+                                    ..default()
+                                },
+                                LineHeight::Px(LINE_HEIGHT),
+                                TextColor(COLOR_ACTION),
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: px(PAGE_TEXT_MARGIN_LEFT),
+                                    top: px(PAGE_TEXT_MARGIN_TOP),
+                                    width: px((A4_WIDTH_POINTS
+                                        - PAGE_TEXT_MARGIN_LEFT
+                                        - PAGE_TEXT_MARGIN_RIGHT)
+                                        .max(1.0)),
+                                    height: px((A4_HEIGHT_POINTS
+                                        - PAGE_TEXT_MARGIN_TOP
+                                        - PAGE_TEXT_MARGIN_BOTTOM)
+                                        .max(1.0)),
+                                    overflow: Overflow::visible(),
+                                    ..default()
+                                },
+                                UiTransform::default(),
+                                ZIndex(1),
+                                RelativeCursorPosition::default(),
+                                StoryQueryRenderedText { slot },
+                            ))
+                            .with_children(|text_parent| {
+                                for line_offset in 0..span_capacity {
+                                    for part_index in 0..PROCESSED_LINE_SPAN_PARTS {
+                                        text_parent.spawn((
+                                            TextSpan::new(""),
+                                            TextFont {
+                                                font: slot_font.clone(),
+                                                font_size: FONT_SIZE,
+                                                ..default()
+                                            },
+                                            LineHeight::Px(LINE_HEIGHT),
+                                            TextColor(COLOR_ACTION),
+                                            StoryQueryRenderedLineSpan {
+                                                slot,
+                                                line_offset,
+                                                part_index,
+                                            },
+                                        ));
+                                    }
+                                }
+                            });
+                    });
             }
         });
     }
@@ -789,7 +813,7 @@ fn story_query_text(
 }
 
 fn sync_story_query_sheet_ui(
-    state: Res<EditorState>,
+    mut state: ResMut<EditorState>,
     fonts: Res<EditorFonts>,
     mut root_query: Query<
         &mut Node,
@@ -798,6 +822,8 @@ fn sync_story_query_sheet_ui(
             Without<StoryQueryControlRow>,
             Without<StoryQueryDropdownOptionsRoot>,
             Without<StoryQueryDropdownOptionNode>,
+            Without<StoryQueryPaper>,
+            Without<StoryQueryRenderedText>,
         ),
     >,
     mut row_query: Query<
@@ -806,6 +832,8 @@ fn sync_story_query_sheet_ui(
             Without<StoryQuerySheetRoot>,
             Without<StoryQueryDropdownOptionsRoot>,
             Without<StoryQueryDropdownOptionNode>,
+            Without<StoryQueryPaper>,
+            Without<StoryQueryRenderedText>,
         ),
     >,
     mut dropdown_root_query: Query<
@@ -814,6 +842,8 @@ fn sync_story_query_sheet_ui(
             Without<StoryQuerySheetRoot>,
             Without<StoryQueryControlRow>,
             Without<StoryQueryDropdownOptionNode>,
+            Without<StoryQueryPaper>,
+            Without<StoryQueryRenderedText>,
         ),
     >,
     mut option_node_query: Query<
@@ -822,6 +852,8 @@ fn sync_story_query_sheet_ui(
             Without<StoryQuerySheetRoot>,
             Without<StoryQueryControlRow>,
             Without<StoryQueryDropdownOptionsRoot>,
+            Without<StoryQueryPaper>,
+            Without<StoryQueryRenderedText>,
         ),
     >,
     mut text_query: Query<
@@ -831,6 +863,33 @@ fn sync_story_query_sheet_ui(
     mut option_text_query: Query<
         (&StoryQueryDropdownOptionText, &mut Text),
         Without<StoryQuerySheetTextSlot>,
+    >,
+    result_panel_query: Query<&ComputedNode, With<StoryQueryResultPanel>>,
+    mut story_paper_query: Query<
+        (
+            &StoryQueryPaper,
+            &mut Node,
+            &mut Visibility,
+            &mut BackgroundColor,
+            &mut UiTransform,
+        ),
+        (
+            Without<StoryQuerySheetRoot>,
+            Without<StoryQueryControlRow>,
+            Without<StoryQueryDropdownOptionsRoot>,
+            Without<StoryQueryDropdownOptionNode>,
+            Without<StoryQueryRenderedText>,
+        ),
+    >,
+    mut rendered_text_node_query: Query<
+        (&StoryQueryRenderedText, &mut Node, &mut UiTransform),
+        (
+            Without<StoryQuerySheetRoot>,
+            Without<StoryQueryControlRow>,
+            Without<StoryQueryDropdownOptionsRoot>,
+            Without<StoryQueryDropdownOptionNode>,
+            Without<StoryQueryPaper>,
+        ),
     >,
     mut rendered_span_query: Query<
         (
@@ -843,19 +902,114 @@ fn sync_story_query_sheet_ui(
         Without<ProcessedPaperLineSpan>,
     >,
 ) {
-    let sheet = &state.story_query_sheet;
+    let sheet_open = state.story_query_sheet.open;
     if let Ok(mut root) = root_query.single_mut() {
-        root.display = if sheet.open {
+        root.display = if sheet_open {
             Display::Flex
         } else {
             Display::None
         };
     }
 
-    if !sheet.open {
+    if !sheet_open {
         return;
     }
 
+    let result_panel_size = result_panel_query
+        .single()
+        .ok()
+        .map(|computed| computed.size() * computed.inverse_scale_factor())
+        .unwrap_or(Vec2::ZERO);
+    let document_format = story_query_document_format(state.story_query_sheet.result_format);
+    let result_layout =
+        processed_page_layout_for_format(result_panel_size, &state, document_format, 0.0);
+    let result_geometry = result_layout.geometry;
+    let page_step_lines = result_layout.page_step_lines.max(1);
+    let lines_per_page = result_layout.lines_per_page.max(1).min(page_step_lines);
+    let processed_font_size = scaled_font_size(&state);
+    let processed_line_height = scaled_line_height(&state).max(1.0);
+    let processed_page_step_pixels = processed_page_step_px(&result_geometry, state.zoom);
+    let (horizontal_min, horizontal_max) =
+        story_query_horizontal_scroll_bounds(&result_layout, result_panel_size);
+    let layout_signature = StoryQueryLayoutSignature {
+        output_format: state.story_query_sheet.result_format,
+        wrap_columns: result_layout.wrap_columns,
+        lines_per_page: result_layout.lines_per_page,
+        spacer_lines: result_layout.spacer_lines,
+        dialogue_double_space_newline: state.story_query_sheet.dialogue_double_space_newline,
+        non_dialogue_double_space_newline: state
+            .story_query_sheet
+            .non_dialogue_double_space_newline,
+    };
+
+    {
+        let sheet = &mut state.story_query_sheet;
+        sheet.ensure_visual_lines_for_layout(layout_signature);
+        sheet.result_horizontal_scroll = sheet
+            .result_horizontal_scroll
+            .clamp(horizontal_min, horizontal_max);
+        if sheet.visual_lines.is_empty() {
+            sheet.result_scroll_visual = 0;
+            sheet.result_scroll_anchor_bias_px = 0.0;
+        } else {
+            sheet.result_scroll_visual = sheet
+                .result_scroll_visual
+                .min(sheet.visual_lines.len().saturating_sub(1));
+        }
+    }
+
+    let processed_anchor_offset_px = processed_anchor_scroll_offset_px_from_lines(
+        &state,
+        &state.story_query_sheet.visual_lines,
+        state.story_query_sheet.result_scroll_visual,
+        page_step_lines,
+        processed_line_height,
+    );
+    let processed_view_capacity = page_step_lines
+        .saturating_mul(PROCESSED_PAPER_CAPACITY)
+        .max(1);
+    let processed_view = build_processed_view(
+        &state.story_query_sheet.visual_lines,
+        state.story_query_sheet.result_scroll_visual,
+        page_step_lines,
+        processed_view_capacity,
+    );
+    let first_visible_page = processed_view.start_index / page_step_lines;
+    let page_label =
+        story_query_page_label(&state.story_query_sheet, first_visible_page, page_step_lines);
+
+    for (paper, mut node, mut visibility, mut color, mut transform) in story_paper_query.iter_mut()
+    {
+        let page_top = processed_page_top_for_slot(
+            &result_geometry,
+            paper.slot,
+            processed_page_step_pixels,
+            processed_anchor_offset_px,
+        ) + state.story_query_sheet.result_scroll_anchor_bias_px;
+        let page_left =
+            result_geometry.paper_left - state.story_query_sheet.result_horizontal_scroll;
+
+        node.left = px(page_left);
+        node.top = px(page_top);
+        node.width = px(result_geometry.paper_width);
+        node.height = px(result_geometry.paper_height);
+        transform.scale = Vec2::ONE;
+        transform.translation = Val2::ZERO;
+        color.0 = COLOR_PAPER;
+        *visibility = Visibility::Visible;
+    }
+
+    for (_, mut node, mut transform) in rendered_text_node_query.iter_mut() {
+        node.left = px(result_geometry.text_left - result_geometry.paper_left);
+        node.top = px(result_geometry.text_top - result_geometry.paper_top);
+        node.width = px(result_geometry.text_width);
+        node.height = px(result_geometry.text_height);
+        node.overflow = Overflow::visible();
+        transform.scale = Vec2::ONE;
+        transform.translation = Val2::ZERO;
+    }
+
+    let sheet = &state.story_query_sheet;
     for (row, mut node) in row_query.iter_mut() {
         node.display = if story_query_control_visible(sheet, row.slot) {
             Display::Flex
@@ -945,7 +1099,7 @@ fn sync_story_query_sheet_ui(
                     compact_story_query_label(&selected_scene_label(&state))
                 )
             }
-            StoryQuerySheetTextSlot::Page => sheet.page_label(),
+            StoryQuerySheetTextSlot::Page => page_label.clone(),
         };
     }
 
@@ -965,7 +1119,18 @@ fn sync_story_query_sheet_ui(
             .unwrap_or_default();
     }
 
-    apply_story_query_rendered_page_styles(&mut rendered_span_query, sheet, &state, &fonts);
+    apply_story_query_rendered_page_styles(
+        &mut rendered_span_query,
+        sheet,
+        &state,
+        &fonts,
+        document_format,
+        first_visible_page,
+        page_step_lines,
+        lines_per_page,
+        processed_font_size,
+        processed_line_height,
+    );
 }
 
 fn apply_story_query_rendered_page_styles(
@@ -982,22 +1147,42 @@ fn apply_story_query_rendered_page_styles(
     sheet: &StoryQuerySheet,
     state: &EditorState,
     fonts: &EditorFonts,
+    document_format: DocumentFormat,
+    first_visible_page: usize,
+    page_step_lines: usize,
+    lines_per_page: usize,
+    font_size: f32,
+    line_height: f32,
 ) {
-    let document_format = story_query_document_format(sheet.result_format);
-    let page = sheet
-        .visual_pages
-        .get(sheet.page_index)
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
+    let page_step_lines = page_step_lines.max(1);
+    let lines_per_page = lines_per_page.max(1).min(page_step_lines);
 
     for (span, mut text_span, mut text_font, mut text_line_height, mut text_color) in
         rendered_span_query.iter_mut()
     {
-        let Some(visual_line) = page.get(span.line_offset) else {
+        let page_index = first_visible_page.saturating_add(span.slot);
+        let line_offset = span.line_offset.min(page_step_lines.saturating_sub(1));
+        let page_start = page_index.saturating_mul(page_step_lines);
+        let global_index = page_start.saturating_add(line_offset);
+
+        if line_offset >= lines_per_page {
             **text_span = String::new();
             text_font.font = font_for_variant_with_format(fonts, FontVariant::Regular, document_format);
-            text_font.font_size = STORY_QUERY_RESULT_FONT_SIZE;
-            *text_line_height = LineHeight::Px(STORY_QUERY_RESULT_LINE_HEIGHT);
+            text_font.font_size = font_size;
+            *text_line_height = LineHeight::Px(line_height);
+            text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
+            continue;
+        };
+
+        let Some(visual_line) = sheet.visual_lines.get(global_index) else {
+            **text_span = if span.part_index == 0 && line_offset + 1 < lines_per_page {
+                "\n".to_owned()
+            } else {
+                String::new()
+            };
+            text_font.font = font_for_variant_with_format(fonts, FontVariant::Regular, document_format);
+            text_font.font_size = font_size;
+            *text_line_height = LineHeight::Px(line_height);
             text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
             continue;
         };
@@ -1020,24 +1205,19 @@ fn apply_story_query_rendered_page_styles(
         let Some(mut fragment) = processed_visual_fragment_for_part(visual_line, span.part_index)
         else {
             **text_span = String::new();
-            text_font.font = font_for_variant_with_format(fonts, FontVariant::Regular, document_format);
-            text_font.font_size = STORY_QUERY_RESULT_FONT_SIZE;
-            *text_line_height = LineHeight::Px(STORY_QUERY_RESULT_LINE_HEIGHT);
             text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
             continue;
         };
 
-        if span.part_index + 1 == used_fragment_count
-            && span.line_offset + 1 < STORY_QUERY_PAGE_LINE_LIMIT
-        {
+        if span.part_index + 1 == used_fragment_count && line_offset + 1 < lines_per_page {
             fragment.text.push('\n');
         }
 
         let effective_variant =
             font_variant_for_processed_fragment(style.font_variant, &fragment, document_format);
         text_font.font = font_for_variant_with_format(fonts, effective_variant, document_format);
-        text_font.font_size = STORY_QUERY_RESULT_FONT_SIZE * style.font_scale;
-        *text_line_height = LineHeight::Px(STORY_QUERY_RESULT_LINE_HEIGHT * style.line_height_scale);
+        text_font.font_size = font_size * style.font_scale;
+        *text_line_height = LineHeight::Px(line_height * style.line_height_scale);
         **text_span = fragment.text;
         text_color.0 = if allow_link_color && fragment.is_link {
             story_query_link_color_for_target(sheet, state, fragment.link_target.as_deref())
@@ -1077,18 +1257,16 @@ fn handle_story_query_sheet_buttons(
                 if let Some(choice) = choices.get(start + *slot_index) {
                     apply_story_query_dropdown_choice(&mut state.story_query_sheet, *kind, choice.value);
                     state.story_query_sheet.open_dropdown = None;
-                    state.story_query_sheet.page_index = 0;
+                    state.story_query_sheet.reset_result_scroll();
                     state.story_query_sheet.result_status = "Selection changed.".to_string();
                 }
             }
             StoryQuerySheetAction::Run => state.run_story_query_sheet(),
             StoryQuerySheetAction::OpenFirstSource => state.open_first_story_query_source(),
-            StoryQuerySheetAction::PreviousPage => state.story_query_sheet.previous_page(),
-            StoryQuerySheetAction::NextPage => state.story_query_sheet.next_page(),
             StoryQuerySheetAction::AddCategory => {
                 add_story_query_category(&mut state.story_query_sheet);
                 state.story_query_sheet.open_dropdown = None;
-                state.story_query_sheet.page_index = 0;
+                state.story_query_sheet.reset_result_scroll();
                 state.story_query_sheet.result_status = "Category field added.".to_string();
             }
             StoryQuerySheetAction::Close => state.story_query_sheet.open = false,
@@ -1099,18 +1277,45 @@ fn handle_story_query_sheet_buttons(
 fn handle_story_query_sheet_link_click(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     rendered_text_query: Query<
-        (&RelativeCursorPosition, &ComputedNode, &TextLayoutInfo),
+        (
+            &StoryQueryRenderedText,
+            &RelativeCursorPosition,
+            &ComputedNode,
+            &TextLayoutInfo,
+        ),
         With<StoryQueryRenderedText>,
     >,
+    result_panel_query: Query<&ComputedNode, With<StoryQueryResultPanel>>,
     mut state: ResMut<EditorState>,
 ) {
     if !state.story_query_sheet.open || !mouse_buttons.just_pressed(MouseButton::Left) {
         return;
     }
 
+    let result_panel_size = result_panel_query
+        .single()
+        .ok()
+        .map(|computed| computed.size() * computed.inverse_scale_factor())
+        .unwrap_or(Vec2::ZERO);
+    let document_format = story_query_document_format(state.story_query_sheet.result_format);
+    let result_layout =
+        processed_page_layout_for_format(result_panel_size, &state, document_format, 0.0);
+    let page_step_lines = result_layout.page_step_lines.max(1);
+    let lines_per_page = result_layout.lines_per_page.max(1).min(page_step_lines);
+    let processed_view_capacity = page_step_lines
+        .saturating_mul(PROCESSED_PAPER_CAPACITY)
+        .max(1);
+    let processed_view = build_processed_view(
+        &state.story_query_sheet.visual_lines,
+        state.story_query_sheet.result_scroll_visual,
+        page_step_lines,
+        processed_view_capacity,
+    );
+    let first_visible_page = processed_view.start_index / page_step_lines;
+
     let target = rendered_text_query
         .iter()
-        .find_map(|(relative_cursor, computed, layout)| {
+        .find_map(|(rendered_text, relative_cursor, computed, layout)| {
             if !relative_cursor.cursor_over() {
                 return None;
             }
@@ -1124,6 +1329,12 @@ fn handle_story_query_sheet_link_click(
                 computed.inverse_scale_factor(),
                 local_x,
                 local_y,
+                rendered_text.slot,
+                first_visible_page,
+                page_step_lines,
+                lines_per_page,
+                document_format,
+                state.zoom,
             )
         });
 
@@ -1157,10 +1368,92 @@ fn handle_story_query_sheet_keyboard(
         } else {
             state.run_story_query_sheet();
         }
-    } else if keys.just_pressed(KeyCode::PageUp) {
-        state.story_query_sheet.previous_page();
-    } else if keys.just_pressed(KeyCode::PageDown) {
-        state.story_query_sheet.next_page();
+    }
+}
+
+fn handle_story_query_sheet_mouse_scroll(
+    mut mouse_wheels: MessageReader<MouseWheel>,
+    keys: Res<ButtonInput<KeyCode>>,
+    result_panel_query: Query<(&RelativeCursorPosition, &ComputedNode), With<StoryQueryResultPanel>>,
+    mut state: ResMut<EditorState>,
+) {
+    if !state.story_query_sheet.open {
+        return;
+    }
+
+    let result_panel = result_panel_query.single().ok();
+    let Some((relative_cursor, computed)) = result_panel else {
+        for _ in mouse_wheels.read() {}
+        return;
+    };
+
+    if !relative_cursor.cursor_over() {
+        for _ in mouse_wheels.read() {}
+        return;
+    }
+
+    let result_panel_size = computed.size() * computed.inverse_scale_factor();
+    let shift_horizontal = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+
+    if platform_shortcut_modifier_pressed(&keys) {
+        let mut zoom_steps = 0.0_f32;
+        for wheel in mouse_wheels.read() {
+            let y = match wheel.unit {
+                MouseScrollUnit::Line => wheel.y,
+                MouseScrollUnit::Pixel => wheel.y / 120.0,
+            };
+            zoom_steps += y;
+        }
+
+        if zoom_steps.abs() > f32::EPSILON {
+            let next_zoom = state.zoom + zoom_steps * ZOOM_STEP;
+            state.set_zoom(next_zoom);
+            state.status_message = format!("Zoom: {}%", state.zoom_percent());
+        }
+        return;
+    }
+
+    let mut vertical_delta_lines = 0.0_f32;
+    let mut horizontal_delta_px = 0.0_f32;
+
+    for wheel in mouse_wheels.read() {
+        let mut dx = wheel.x;
+        let mut dy = wheel.y;
+        if shift_horizontal && dx.abs() <= f32::EPSILON {
+            dx = -dy;
+            dy = 0.0;
+        }
+
+        match wheel.unit {
+            MouseScrollUnit::Line => {
+                vertical_delta_lines += -dy;
+                horizontal_delta_px += -dx * 32.0;
+            }
+            MouseScrollUnit::Pixel => {
+                vertical_delta_lines += -dy / scaled_line_height(&state).max(1.0);
+                horizontal_delta_px += -dx;
+            }
+        }
+    }
+
+    let mut scrolled = false;
+    if horizontal_delta_px.abs() > f32::EPSILON {
+        scrolled |= apply_story_query_horizontal_scroll(
+            &mut state,
+            result_panel_size,
+            horizontal_delta_px,
+        );
+    }
+    if vertical_delta_lines.abs() > f32::EPSILON {
+        scrolled |= apply_story_query_vertical_scroll(
+            &mut state,
+            result_panel_size,
+            vertical_delta_lines,
+        );
+    }
+
+    if scrolled {
+        state.reset_blink();
     }
 }
 
@@ -1382,32 +1675,171 @@ fn step_open_story_query_dropdown(state: &mut EditorState, direction: isize) {
         kind,
         choices[next_index as usize].value,
     );
-    state.story_query_sheet.page_index = 0;
+    state.story_query_sheet.reset_result_scroll();
     state.story_query_sheet.result_status = "Selection changed.".to_string();
 }
 
+fn story_query_horizontal_scroll_bounds(
+    layout: &ProcessedPageLayout,
+    panel_size: Vec2,
+) -> (f32, f32) {
+    if panel_size.x <= 1.0 {
+        return (0.0, 0.0);
+    }
+
+    let base_left = layout.geometry.paper_left;
+    let base_right = layout.geometry.paper_left + layout.geometry.paper_width;
+    let overflow_left = (-base_left).max(0.0);
+    let overflow_right = (base_right - panel_size.x).max(0.0);
+    let overscroll = (panel_size.x * PROCESSED_HORIZONTAL_OVERSCROLL_FACTOR)
+        .max(PROCESSED_HORIZONTAL_OVERSCROLL_MIN);
+    (-(overflow_left + overscroll), overflow_right + overscroll)
+}
+
+fn apply_story_query_horizontal_scroll(
+    state: &mut EditorState,
+    result_panel_size: Vec2,
+    horizontal_delta_px: f32,
+) -> bool {
+    if horizontal_delta_px.abs() <= f32::EPSILON {
+        return false;
+    }
+
+    let document_format = story_query_document_format(state.story_query_sheet.result_format);
+    let layout = processed_page_layout_for_format(result_panel_size, state, document_format, 0.0);
+    let (min_scroll, max_scroll) = story_query_horizontal_scroll_bounds(&layout, result_panel_size);
+    let next_scroll = (state.story_query_sheet.result_horizontal_scroll + horizontal_delta_px)
+        .clamp(min_scroll, max_scroll);
+    let changed =
+        (next_scroll - state.story_query_sheet.result_horizontal_scroll).abs() > f32::EPSILON;
+    state.story_query_sheet.result_horizontal_scroll = next_scroll;
+    changed
+}
+
+fn apply_story_query_vertical_scroll(
+    state: &mut EditorState,
+    result_panel_size: Vec2,
+    delta_lines: f32,
+) -> bool {
+    if delta_lines.abs() <= f32::EPSILON {
+        return false;
+    }
+
+    let document_format = story_query_document_format(state.story_query_sheet.result_format);
+    let layout = processed_page_layout_for_format(result_panel_size, state, document_format, 0.0);
+    let layout_signature = StoryQueryLayoutSignature {
+        output_format: state.story_query_sheet.result_format,
+        wrap_columns: layout.wrap_columns,
+        lines_per_page: layout.lines_per_page,
+        spacer_lines: layout.spacer_lines,
+        dialogue_double_space_newline: state.story_query_sheet.dialogue_double_space_newline,
+        non_dialogue_double_space_newline: state.story_query_sheet.non_dialogue_double_space_newline,
+    };
+    state
+        .story_query_sheet
+        .ensure_visual_lines_for_layout(layout_signature);
+
+    if state.story_query_sheet.visual_lines.is_empty() {
+        state.story_query_sheet.result_scroll_visual = 0;
+        state.story_query_sheet.result_scroll_anchor_bias_px = 0.0;
+        return false;
+    }
+
+    let line_height = scaled_line_height(state).max(1.0);
+    let requested_whole_lines = delta_lines.trunc() as isize;
+    let max_visual = state.story_query_sheet.visual_lines.len().saturating_sub(1) as isize;
+    let current_visual = state
+        .story_query_sheet
+        .result_scroll_visual
+        .min(max_visual as usize) as isize;
+    let next_visual = (current_visual + requested_whole_lines).clamp(0, max_visual);
+    let actual_whole_lines = next_visual - current_visual;
+    state.story_query_sheet.result_scroll_visual = next_visual as usize;
+
+    let leftover_px = (delta_lines - actual_whole_lines as f32) * line_height;
+    state.story_query_sheet.result_scroll_anchor_bias_px -= leftover_px;
+
+    while state.story_query_sheet.result_scroll_anchor_bias_px <= -line_height
+        && state.story_query_sheet.result_scroll_visual
+            < state.story_query_sheet.visual_lines.len().saturating_sub(1)
+    {
+        state.story_query_sheet.result_scroll_anchor_bias_px += line_height;
+        state.story_query_sheet.result_scroll_visual = state
+            .story_query_sheet
+            .result_scroll_visual
+            .saturating_add(1);
+    }
+    while state.story_query_sheet.result_scroll_anchor_bias_px >= line_height
+        && state.story_query_sheet.result_scroll_visual > 0
+    {
+        state.story_query_sheet.result_scroll_anchor_bias_px -= line_height;
+        state.story_query_sheet.result_scroll_visual = state
+            .story_query_sheet
+            .result_scroll_visual
+            .saturating_sub(1);
+    }
+
+    state.story_query_sheet.result_scroll_anchor_bias_px = state
+        .story_query_sheet
+        .result_scroll_anchor_bias_px
+        .clamp(-line_height, line_height);
+
+    actual_whole_lines != 0 || leftover_px.abs() > f32::EPSILON
+}
+
+fn story_query_page_label(
+    sheet: &StoryQuerySheet,
+    first_visible_page: usize,
+    page_step_lines: usize,
+) -> String {
+    let format = match sheet.result_format {
+        StoryQueryOutputFormat::Fountain => "Fountain",
+        StoryQueryOutputFormat::Markdown => "Markdown",
+    };
+    let page_step_lines = page_step_lines.max(1);
+    let total_pages = sheet
+        .visual_lines
+        .len()
+        .saturating_add(page_step_lines.saturating_sub(1))
+        / page_step_lines;
+    let total_pages = total_pages.max(1);
+    let first_page = first_visible_page.saturating_add(1).min(total_pages);
+    let last_page = first_visible_page
+        .saturating_add(PROCESSED_PAPER_CAPACITY)
+        .min(total_pages);
+
+    if first_page == last_page {
+        format!("{format} page {first_page} of {total_pages}")
+    } else {
+        format!("{format} pages {first_page}-{last_page} of {total_pages}")
+    }
+}
+
 impl StoryQuerySheet {
-    fn page_label(&self) -> String {
-        let format = match self.result_format {
-            StoryQueryOutputFormat::Fountain => "Fountain",
-            StoryQueryOutputFormat::Markdown => "Markdown",
-        };
-        format!(
-            "{} page {} of {}",
-            format,
-            self.page_index.saturating_add(1),
-            self.visual_pages.len().max(1)
-        )
+    fn reset_result_scroll(&mut self) {
+        self.result_scroll_visual = 0;
+        self.result_scroll_anchor_bias_px = 0.0;
+        self.result_horizontal_scroll = 0.0;
     }
 
-    fn previous_page(&mut self) {
-        self.page_index = self.page_index.saturating_sub(1);
-    }
-
-    fn next_page(&mut self) {
-        if self.page_index + 1 < self.visual_pages.len() {
-            self.page_index += 1;
+    fn ensure_visual_lines_for_layout(&mut self, signature: StoryQueryLayoutSignature) {
+        if self.visual_layout_signature == Some(signature) && !self.visual_lines.is_empty() {
+            return;
         }
+
+        self.visual_lines = story_query_visual_lines(
+            &self.result_text,
+            self.result_format,
+            self.dialogue_double_space_newline,
+            self.non_dialogue_double_space_newline,
+            signature.wrap_columns,
+            signature.lines_per_page,
+            signature.spacer_lines,
+        );
+        self.visual_layout_signature = Some(signature);
+        self.result_scroll_visual = self
+            .result_scroll_visual
+            .min(self.visual_lines.len().saturating_sub(1));
     }
 
     fn set_output(
@@ -1419,24 +1851,27 @@ impl StoryQuerySheet {
         self.result_title = output.title;
         self.result_status = output.status;
         self.result_format = output.format;
-        self.visual_pages = story_query_visual_pages(
-            &output.text,
-            self.result_format,
-            dialogue_double_space_newline,
-            non_dialogue_double_space_newline,
-        );
+        self.result_text = output.text;
+        self.dialogue_double_space_newline = dialogue_double_space_newline;
+        self.non_dialogue_double_space_newline = non_dialogue_double_space_newline;
+        self.visual_layout_signature = None;
+        self.visual_lines.clear();
         self.source_targets = output.source_targets;
-        self.page_index = 0;
+        self.reset_result_scroll();
     }
 
     fn set_error(&mut self, title: &str, message: String) {
-        self.set_output(StoryQueryRunOutput {
-            title: title.to_string(),
-            status: message.clone(),
-            format: StoryQueryOutputFormat::Markdown,
-            text: format!("# {title}\n\n{message}"),
-            source_targets: Vec::new(),
-        }, false, false);
+        self.set_output(
+            StoryQueryRunOutput {
+                title: title.to_string(),
+                status: message.clone(),
+                format: StoryQueryOutputFormat::Markdown,
+                text: format!("# {title}\n\n{message}"),
+                source_targets: Vec::new(),
+            },
+            false,
+            false,
+        );
     }
 }
 
@@ -2363,16 +2798,20 @@ fn story_query_document_format(format: StoryQueryOutputFormat) -> DocumentFormat
     }
 }
 
-fn story_query_visual_pages(
+fn story_query_visual_lines(
     text: &str,
     output_format: StoryQueryOutputFormat,
     dialogue_double_space_newline: bool,
     non_dialogue_double_space_newline: bool,
-) -> Vec<Vec<ProcessedVisualLine>> {
+    wrap_columns: usize,
+    lines_per_page: usize,
+    spacer_lines: usize,
+) -> Vec<ProcessedVisualLine> {
     let document_format = story_query_document_format(output_format);
     let document = Document::from_text(text);
     let parsed = parse_document_with_format(&document, document_format);
-    let wrap_columns = story_query_wrap_columns(document_format);
+    let wrap_columns = wrap_columns.max(1);
+    let lines_per_page = lines_per_page.max(1);
     let mut visual_lines = Vec::<ProcessedVisualLine>::new();
     let mut page_fill = ProcessedPageFill::default();
 
@@ -2452,14 +2891,14 @@ fn story_query_visual_pages(
         for visual_line in wrapped {
             if page_fill.entries > 0
                 && page_fill.height_units + line_height_units
-                    > STORY_QUERY_PAGE_LINE_LIMIT as f32 + 0.001
+                    > lines_per_page as f32 + 0.001
             {
                 finish_processed_page(
                     &mut visual_lines,
                     source_line,
                     &mut page_fill,
-                    STORY_QUERY_PAGE_LINE_LIMIT,
-                    0,
+                    lines_per_page,
+                    spacer_lines,
                 );
             }
 
@@ -2467,13 +2906,13 @@ fn story_query_visual_pages(
             page_fill.entries = page_fill.entries.saturating_add(1);
             page_fill.height_units += line_height_units;
 
-            if page_fill.height_units >= STORY_QUERY_PAGE_LINE_LIMIT as f32 - 0.001 {
+            if page_fill.height_units >= lines_per_page as f32 - 0.001 {
                 finish_processed_page(
                     &mut visual_lines,
                     source_line,
                     &mut page_fill,
-                    STORY_QUERY_PAGE_LINE_LIMIT,
-                    0,
+                    lines_per_page,
+                    spacer_lines,
                 );
             }
         }
@@ -2484,18 +2923,6 @@ fn story_query_visual_pages(
     }
 
     visual_lines
-        .chunks(STORY_QUERY_PAGE_LINE_LIMIT)
-        .map(|chunk| chunk.to_vec())
-        .collect()
-}
-
-fn story_query_wrap_columns(document_format: DocumentFormat) -> usize {
-    let text_width = (STORY_QUERY_A4_PAGE_WIDTH
-        - (PAGE_TEXT_MARGIN_LEFT + PAGE_TEXT_MARGIN_RIGHT) * STORY_QUERY_A4_SCALE)
-        .max(1.0);
-    let char_width = (default_char_width_for_format(document_format) * STORY_QUERY_A4_SCALE)
-        .max(0.1);
-    ((text_width / char_width) + 1e-4).floor().max(1.0) as usize
 }
 
 fn story_query_should_split_on_double_space(
@@ -2572,24 +2999,35 @@ fn story_query_link_target_at_position(
     inverse_scale: f32,
     local_x: f32,
     local_y: f32,
+    slot: usize,
+    first_visible_page: usize,
+    page_step_lines: usize,
+    lines_per_page: usize,
+    document_format: DocumentFormat,
+    zoom: f32,
 ) -> Option<String> {
-    let page = sheet.visual_pages.get(sheet.page_index)?;
-    let document_format = story_query_document_format(sheet.result_format);
     let fallback_char_width =
-        (default_char_width_for_format(document_format) * STORY_QUERY_A4_SCALE).max(1.0);
-    let fallback_line = ((local_y / STORY_QUERY_RESULT_LINE_HEIGHT)
+        (default_char_width_for_format(document_format) * zoom.max(f32::EPSILON)).max(1.0);
+    let line_height = (LINE_HEIGHT * zoom.max(f32::EPSILON)).max(1.0);
+    let page_step_lines = page_step_lines.max(1);
+    let lines_per_page = lines_per_page.max(1).min(page_step_lines);
+    let fallback_line = ((local_y / line_height)
         .floor()
         .max(0.0) as usize)
-        .min(STORY_QUERY_PAGE_LINE_LIMIT.saturating_sub(1));
+        .min(lines_per_page.saturating_sub(1));
     let line_offset = line_index_from_layout_y(
         layout,
         local_y,
-        STORY_QUERY_PAGE_LINE_LIMIT,
+        lines_per_page,
         inverse_scale,
     )
     .unwrap_or(fallback_line)
-    .min(STORY_QUERY_PAGE_LINE_LIMIT.saturating_sub(1));
-    let visual_line = page.get(line_offset)?;
+    .min(lines_per_page.saturating_sub(1));
+    let page_index = first_visible_page.saturating_add(slot);
+    let global_index = page_index
+        .saturating_mul(page_step_lines)
+        .saturating_add(line_offset);
+    let visual_line = sheet.visual_lines.get(global_index)?;
     let fallback_column = (local_x / fallback_char_width).round().max(0.0) as usize;
     let display_column = column_from_layout_x(
         layout,

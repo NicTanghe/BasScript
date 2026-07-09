@@ -4,7 +4,11 @@ fn processed_page_step_lines() -> usize {
         .max(1.0) as usize
 }
 
-fn processed_page_geometry(panel_size: Vec2, state: &EditorState) -> ProcessedPageGeometry {
+fn processed_page_geometry_with_header_offset(
+    panel_size: Vec2,
+    state: &EditorState,
+    header_offset: f32,
+) -> ProcessedPageGeometry {
     let zoom = state.zoom.max(f32::EPSILON);
     let paper_width = A4_WIDTH_POINTS * zoom;
     // Keep paper height on the same line grid used by processed pagination.
@@ -16,7 +20,7 @@ fn processed_page_geometry(panel_size: Vec2, state: &EditorState) -> ProcessedPa
     } else {
         PAGE_OUTER_MARGIN
     };
-    let paper_top = PAGE_OUTER_MARGIN + markdown_metadata_header_offset(state);
+    let paper_top = PAGE_OUTER_MARGIN + header_offset.max(0.0);
 
     let margin_left = state.page_margin_left * zoom;
     let margin_right = state.page_margin_right * zoom;
@@ -39,15 +43,37 @@ fn processed_page_geometry(panel_size: Vec2, state: &EditorState) -> ProcessedPa
     }
 }
 
+fn processed_page_geometry(panel_size: Vec2, state: &EditorState) -> ProcessedPageGeometry {
+    processed_page_geometry_with_header_offset(
+        panel_size,
+        state,
+        markdown_metadata_header_offset(state),
+    )
+}
+
 fn processed_page_layout(panel_size: Vec2, state: &EditorState) -> ProcessedPageLayout {
-    let geometry = processed_page_geometry(panel_size, state);
+    processed_page_layout_for_format(
+        panel_size,
+        state,
+        state.document_format,
+        markdown_metadata_header_offset(state),
+    )
+}
+
+fn processed_page_layout_for_format(
+    panel_size: Vec2,
+    state: &EditorState,
+    document_format: DocumentFormat,
+    header_offset: f32,
+) -> ProcessedPageLayout {
+    let geometry = processed_page_geometry_with_header_offset(panel_size, state, header_offset);
     let page_step_lines = processed_page_step_lines();
     let base_paper_height = ((page_step_lines as f32 * LINE_HEIGHT) - PAGE_GAP).max(1.0);
     let base_text_width =
         (A4_WIDTH_POINTS - state.page_margin_left - state.page_margin_right).max(1.0);
     let base_text_height =
         (base_paper_height - state.page_margin_top - state.page_margin_bottom).max(1.0);
-    let base_char_width = default_char_width_for_format(state.document_format).max(0.1);
+    let base_char_width = default_char_width_for_format(document_format).max(0.1);
     let wrap_columns = ((base_text_width / base_char_width) + 1e-4)
         .floor()
         .max(1.0) as usize;

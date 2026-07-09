@@ -10,6 +10,11 @@ fn handle_mouse_scroll(
         return;
     }
 
+    if state.story_query_sheet.open {
+        for _ in mouse_wheels.read() {}
+        return;
+    }
+
     let shift_horizontal = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let panel_context = gather_scroll_panels_context(&panel_query, &state);
     state.clamp_horizontal_scrolls(
