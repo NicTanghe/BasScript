@@ -1188,6 +1188,7 @@ struct EditorState {
     pending_space_combo_canceled: bool,
     vim_enabled: bool,
     vim_mode: VimMode,
+    vim_suppress_next_insert_input: bool,
     vim_pending_operator: Option<VimPendingOperator>,
     vim_register: Option<VimRegister>,
     vim_visual_anchor: Option<Position>,
@@ -1783,6 +1784,7 @@ impl FromWorld for EditorState {
             pending_space_combo_canceled: false,
             vim_enabled: settings.vim_mode_enabled,
             vim_mode: VimMode::Normal,
+            vim_suppress_next_insert_input: false,
             vim_pending_operator: None,
             vim_register: None,
             vim_visual_anchor: None,
@@ -2155,6 +2157,7 @@ impl EditorState {
                 self.vim_pending_operator = None;
                 self.vim_visual_anchor = None;
                 self.vim_visual_head = None;
+                self.vim_suppress_next_insert_input = false;
                 self.command_menu = None;
                 self.clear_markdown_metadata_focus();
                 self.link_autocomplete = None;

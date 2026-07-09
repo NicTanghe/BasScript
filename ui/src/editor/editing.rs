@@ -37,6 +37,15 @@ fn handle_text_input(
         .find(|(panel, _)| panel.kind == PanelKind::Processed)
         .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
 
+    if state.vim_enabled && state.vim_suppress_next_insert_input {
+        for _ in keyboard_inputs.read() {}
+        state.vim_suppress_next_insert_input = false;
+        state.pending_space_insert = false;
+        state.pending_space_combo_canceled = false;
+        state.close_link_autocomplete();
+        return;
+    }
+
     if handle_document_clipboard_key_shortcut(
         &keys,
         &mut state,

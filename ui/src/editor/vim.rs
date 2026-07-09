@@ -190,6 +190,15 @@ fn handle_canvas_vim_input(
         return;
     }
 
+    if state.vim_mode == VimMode::Normal && keys.just_pressed(KeyCode::KeyA) {
+        let next = vim_append_position(&document, state.canvas_text_cursor.position);
+        state.set_canvas_text_cursor_with_selection(&document, next, true, false);
+        canvas_vim_enter_insert_mode(state);
+        state.canvas_text_suppress_next_insert_input = true;
+        reset_vim_repeat(repeat);
+        return;
+    }
+
     if state.vim_mode == VimMode::Normal && keys.just_pressed(KeyCode::KeyV) {
         if shift_modifier_pressed(keys) {
             canvas_vim_enter_visual_line_mode(state, &document);
@@ -236,6 +245,7 @@ fn canvas_vim_enter_normal_mode(state: &mut EditorState, clear_selection: bool) 
     state.vim_pending_operator = None;
     state.vim_visual_anchor = None;
     state.vim_visual_head = None;
+    state.canvas_text_suppress_next_insert_input = false;
     if clear_selection {
         state.canvas_text_selection_anchor = None;
     }
@@ -525,6 +535,15 @@ fn handle_vim_normal_command(
 ) -> bool {
     if keys.just_pressed(KeyCode::KeyI) {
         vim_enter_insert_mode(state);
+        state.vim_suppress_next_insert_input = true;
+        return true;
+    }
+
+    if keys.just_pressed(KeyCode::KeyA) {
+        let next = vim_append_position(&state.document, state.cursor.position);
+        state.set_cursor(next, true);
+        vim_enter_insert_mode(state);
+        state.vim_suppress_next_insert_input = true;
         return true;
     }
 
@@ -643,6 +662,7 @@ fn vim_enter_normal_mode(state: &mut EditorState, clear_selection: bool) {
     state.vim_pending_operator = None;
     state.vim_visual_anchor = None;
     state.vim_visual_head = None;
+    state.vim_suppress_next_insert_input = false;
     if clear_selection {
         if let Some(head) = visual_line_head {
             state.cursor.position = state.document.clamp_position(head);
@@ -662,6 +682,15 @@ fn vim_enter_insert_mode(state: &mut EditorState) {
     state.vim_visual_head = None;
     state.selection_anchor = None;
     state.status_message = "Vim insert mode.".to_string();
+}
+
+fn vim_append_position(document: &Document, position: Position) -> Position {
+    let current = document.clamp_position(position);
+    let line_len = document.line_len_chars(current.line);
+    Position {
+        line: current.line,
+        column: current.column.saturating_add(1).min(line_len),
+    }
 }
 
 fn vim_enter_visual_char_mode(state: &mut EditorState) {
