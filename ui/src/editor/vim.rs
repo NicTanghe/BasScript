@@ -3,7 +3,11 @@ fn handle_vim_input(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     body_query: Query<(&PanelBody, &ComputedNode)>,
-    text_layout_query: Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+    text_layout_query: Query<(
+        &CanvasRenderedNodeText,
+        &bevy::text::ComputedTextBlock,
+        &ComputedNode,
+    )>,
     capture: Res<LinkAutocompleteInputCapture>,
     mut repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
@@ -121,7 +125,11 @@ fn handle_canvas_vim_input(
     keyboard_inputs: &mut MessageReader<KeyboardInput>,
     keys: &ButtonInput<KeyCode>,
     time: &Time,
-    text_layout_query: &Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+    text_layout_query: &Query<(
+        &CanvasRenderedNodeText,
+        &bevy::text::ComputedTextBlock,
+        &ComputedNode,
+    )>,
     repeat: &mut NavigationRepeatState,
     state: &mut EditorState,
 ) {
@@ -302,7 +310,7 @@ fn canvas_vim_move_text_cursor(
     document: &Document,
     key: KeyCode,
     extend_selection: bool,
-    layout: Option<(&TextLayoutInfo, f32)>,
+    layout: Option<CanvasTextLayout<'_>>,
     zoom: f32,
 ) -> bool {
     let Some(arrow) = vim_movement_key_to_arrow(key) else {
@@ -519,7 +527,9 @@ fn handle_vim_non_movement_command(
     visible_lines: usize,
 ) -> bool {
     match state.vim_mode {
-        VimMode::Normal => handle_vim_normal_command(keys, state, processed_panel_size, visible_lines),
+        VimMode::Normal => {
+            handle_vim_normal_command(keys, state, processed_panel_size, visible_lines)
+        }
         VimMode::VisualChar | VimMode::VisualLine => {
             handle_vim_visual_command(keys, state, processed_panel_size, visible_lines)
         }
@@ -833,7 +843,9 @@ fn vim_delete_current_line(state: &mut EditorState) -> Option<usize> {
             line,
             column: state.document.line_len_chars(line),
         };
-        state.document.delete_range(Position { line, column: 0 }, end);
+        state
+            .document
+            .delete_range(Position { line, column: 0 }, end);
         state.set_cursor(Position { line: 0, column: 0 }, true);
     } else if line + 1 < line_count {
         state.document.delete_range(
@@ -933,10 +945,14 @@ fn vim_paste_register(state: &mut EditorState) -> Option<usize> {
             state.status_message = "Pasted selection.".to_string();
         }
         VimRegister::Linewise(text) => {
-            let line = current.line.min(state.document.line_count().saturating_sub(1));
+            let line = current
+                .line
+                .min(state.document.line_count().saturating_sub(1));
             let column = state.document.line_len_chars(line);
             let inserted = format!("\n{text}");
-            let next = state.document.insert_text(Position { line, column }, &inserted);
+            let next = state
+                .document
+                .insert_text(Position { line, column }, &inserted);
             state.set_cursor(next, true);
             state.status_message = "Pasted line.".to_string();
         }

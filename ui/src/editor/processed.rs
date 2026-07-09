@@ -639,7 +639,10 @@ fn markdown_delimiter_flanking(
     len: usize,
     marker: char,
 ) -> (bool, bool) {
-    let before = start.checked_sub(1).and_then(|index| chars.get(index)).copied();
+    let before = start
+        .checked_sub(1)
+        .and_then(|index| chars.get(index))
+        .copied();
     let after = chars.get(start + len).copied();
     let before_whitespace = before.map_or(true, char::is_whitespace);
     let after_whitespace = after.map_or(true, char::is_whitespace);
@@ -1627,7 +1630,10 @@ mod processed_markdown_inline_tests {
         let prepared = prepared_markdown("Plain *italic*, **bold**, and ***both***.");
 
         assert_eq!(prepared.text, "Plain italic, bold, and both.");
-        assert_eq!(style_for_text(&prepared, "Plain"), InlineTextStyle::default());
+        assert_eq!(
+            style_for_text(&prepared, "Plain"),
+            InlineTextStyle::default()
+        );
         assert_eq!(style_for_text(&prepared, "italic"), style(false, true));
         assert_eq!(style_for_text(&prepared, "bold"), style(true, false));
         assert_eq!(style_for_text(&prepared, "both"), style(true, true));
@@ -1770,8 +1776,8 @@ fn apply_processed_styles(
 
         if line_offset >= lines_per_page {
             **text_span = String::new();
-            text_font.font = fonts.regular.clone();
-            text_font.font_size = font_size;
+            text_font.font = fonts.regular.clone().into();
+            text_font.font_size = FontSize::Px(font_size);
             *text_line_height = LineHeight::Px(line_height);
             text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
             continue;
@@ -1783,8 +1789,8 @@ fn apply_processed_styles(
             } else {
                 String::new()
             };
-            text_font.font = fonts.regular.clone();
-            text_font.font_size = font_size;
+            text_font.font = fonts.regular.clone().into();
+            text_font.font_size = FontSize::Px(font_size);
             *text_line_height = LineHeight::Px(line_height);
             text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
             continue;
@@ -1813,8 +1819,8 @@ fn apply_processed_styles(
         let fragment_raw_range =
             processed_visual_fragment_raw_range(visual_line, processed_span.part_index);
         text_font.font =
-            font_for_variant_with_format(fonts, effective_variant, state.document_format);
-        text_font.font_size = font_size * style.font_scale;
+            font_for_variant_with_format(fonts, effective_variant, state.document_format).into();
+        text_font.font_size = FontSize::Px(font_size * style.font_scale);
         *text_line_height = LineHeight::Px(line_height * style.line_height_scale);
         **text_span = fragment.text;
         text_color.0 = if allow_link_color && fragment.is_link {
@@ -1840,265 +1846,140 @@ fn apply_processed_styles(
 }
 
 fn panel_layout_info<'a>(
-    text_layout_query: &'a Query<(&PanelText, &TextLayoutInfo)>,
+    text_layout_query: &'a Query<(&PanelText, &ComputedTextBlock)>,
     kind: PanelKind,
-) -> Option<&'a TextLayoutInfo> {
+) -> Option<&'a ComputedTextBlock> {
     text_layout_query
         .iter()
         .find(|(panel_text, _)| panel_text.kind == kind)
-        .map(|(_, layout)| layout)
+        .map(|(_, text_block)| text_block)
 }
 
-fn layout_line_bounds(layout: &TextLayoutInfo, inverse_scale: f32) -> Vec<(usize, f32, f32)> {
-    let mut per_line = BTreeMap::<usize, (f32, f32)>::new();
-
-    for glyph in &layout.glyphs {
-        let top = glyph.position.y * inverse_scale;
-        let bottom = (glyph.position.y + glyph.size.y) * inverse_scale;
-        let entry = per_line.entry(glyph.line_index).or_insert((top, bottom));
-        entry.0 = entry.0.min(top);
-        entry.1 = entry.1.max(bottom);
-    }
-
-    per_line
-        .into_iter()
-        .map(|(line_index, (top, bottom))| (line_index, top, bottom))
-        .collect()
-}
-
-fn median(values: &mut [f32]) -> Option<f32> {
-    if values.is_empty() {
-        return None;
-    }
-
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    Some(values[values.len().saturating_sub(1) / 2])
-}
-
-fn default_line_step(samples: &[(usize, f32)], fallback_height: f32) -> f32 {
-    let mut steps = samples
-        .windows(2)
-        .filter_map(|window| {
-            let left = window[0];
-            let right = window[1];
-            let index_delta = right.0.saturating_sub(left.0);
-            if index_delta == 0 {
-                return None;
-            }
-
-            let step = (right.1 - left.1) / index_delta as f32;
-            (step.is_finite() && step.abs() > 0.1).then_some(step)
-        })
-        .collect::<Vec<_>>();
-
-    median(&mut steps).unwrap_or(fallback_height.max(1.0))
-}
-
-fn interpolate_line_value(samples: &[(usize, f32)], line_index: usize, step: f32) -> Option<f32> {
-    if samples.is_empty() {
-        return None;
-    }
-
-    match samples.binary_search_by_key(&line_index, |(index, _)| *index) {
-        Ok(position) => Some(samples[position].1),
-        Err(insert) if insert > 0 && insert < samples.len() => {
-            let (left_index, left_value) = samples[insert - 1];
-            let (right_index, right_value) = samples[insert];
-            let index_span = right_index.saturating_sub(left_index).max(1);
-            let t = line_index.saturating_sub(left_index) as f32 / index_span as f32;
-            Some(left_value + (right_value - left_value) * t)
-        }
-        Err(0) => {
-            let (first_index, first_value) = samples[0];
-            Some(first_value - step * first_index.saturating_sub(line_index) as f32)
-        }
-        Err(_) => {
-            let (last_index, last_value) = samples[samples.len().saturating_sub(1)];
-            Some(last_value + step * line_index.saturating_sub(last_index) as f32)
-        }
-    }
-}
-
+/// Reads the exact shaped line box from Parley's `ComputedTextBlock` buffer.
+/// Bevy 0.19's renderer-facing glyphs intentionally no longer expose source
+/// byte ranges or glyph sizes.
 fn line_top_from_layout(
-    layout: &TextLayoutInfo,
+    text_block: &ComputedTextBlock,
     line_index: usize,
     inverse_scale: f32,
 ) -> Option<f32> {
-    let bounds = layout_line_bounds(layout, inverse_scale);
-    let mut heights = bounds
-        .iter()
-        .map(|(_, top, bottom)| (bottom - top).max(1.0))
-        .collect::<Vec<_>>();
-    let fallback_height = median(&mut heights).unwrap_or(LINE_HEIGHT);
-    let top_samples = bounds
-        .iter()
-        .map(|(index, top, _)| (*index, *top))
-        .collect::<Vec<_>>();
-    let step = default_line_step(&top_samples, fallback_height);
-
-    interpolate_line_value(&top_samples, line_index, step)
+    text_block
+        .buffer()
+        .get(line_index)
+        .map(|line| line.metrics().block_min_coord * inverse_scale)
 }
 
 fn line_height_from_layout(
-    layout: &TextLayoutInfo,
+    text_block: &ComputedTextBlock,
     line_index: usize,
     inverse_scale: f32,
 ) -> Option<f32> {
-    layout_line_bounds(layout, inverse_scale)
-        .into_iter()
-        .find(|(index, _, _)| *index == line_index)
-        .map(|(_, top, bottom)| (bottom - top).max(1.0))
+    text_block.buffer().get(line_index).map(|line| {
+        let metrics = line.metrics();
+        ((metrics.block_max_coord - metrics.block_min_coord) * inverse_scale).max(1.0)
+    })
 }
 
 fn line_index_from_layout_y(
-    layout: &TextLayoutInfo,
+    text_block: &ComputedTextBlock,
     y: f32,
     visible_lines: usize,
     inverse_scale: f32,
 ) -> Option<usize> {
-    let bounds = layout_line_bounds(layout, inverse_scale);
-    if bounds.is_empty() {
-        return None;
-    }
-
-    let mut heights = bounds
-        .iter()
-        .map(|(_, top, bottom)| (bottom - top).max(1.0))
-        .collect::<Vec<_>>();
-    let fallback_height = median(&mut heights).unwrap_or(LINE_HEIGHT);
-
-    let center_samples = bounds
-        .iter()
-        .map(|(index, top, bottom)| (*index, (*top + *bottom) * 0.5))
-        .collect::<Vec<_>>();
-    let center_step = default_line_step(&center_samples, fallback_height);
-
-    let mut best_line = 0usize;
-    let mut best_distance = f32::MAX;
-    for line in 0..visible_lines.max(1) {
-        let Some(center_y) = interpolate_line_value(&center_samples, line, center_step) else {
-            continue;
-        };
-
-        let distance = (center_y - y).abs();
-        if distance < best_distance {
-            best_distance = distance;
-            best_line = line;
-        }
-    }
-
-    Some(best_line)
+    text_block
+        .buffer()
+        .lines()
+        .take(visible_lines.max(1))
+        .enumerate()
+        .min_by(|(_, left), (_, right)| {
+            let left_metrics = left.metrics();
+            let right_metrics = right.metrics();
+            let left_top = left_metrics.block_min_coord * inverse_scale;
+            let left_bottom = left_metrics.block_max_coord * inverse_scale;
+            let right_top = right_metrics.block_min_coord * inverse_scale;
+            let right_bottom = right_metrics.block_max_coord * inverse_scale;
+            let left_distance = if y < left_top {
+                left_top - y
+            } else if y > left_bottom {
+                y - left_bottom
+            } else {
+                0.0
+            };
+            let right_distance = if y < right_top {
+                right_top - y
+            } else if y > right_bottom {
+                y - right_bottom
+            } else {
+                0.0
+            };
+            left_distance
+                .partial_cmp(&right_distance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(line_index, _)| line_index)
 }
 
 fn line_boundaries(
-    layout: &TextLayoutInfo,
+    text_block: &ComputedTextBlock,
     line_index: usize,
     line_text: &str,
     inverse_scale: f32,
     fallback_char_width: f32,
 ) -> Vec<(usize, f32)> {
     let line_len = line_text.len();
-    let mut glyphs = layout
-        .glyphs
-        .iter()
-        .filter(|glyph| glyph.line_index == line_index)
-        .collect::<Vec<_>>();
+    let fallback = || {
+        let mut boundaries = line_text
+            .char_indices()
+            .enumerate()
+            .map(|(column, (byte_index, _))| (byte_index, column as f32 * fallback_char_width))
+            .collect::<Vec<_>>();
+        boundaries.push((
+            line_len,
+            line_text.chars().count() as f32 * fallback_char_width,
+        ));
+        boundaries
+    };
 
-    if glyphs.is_empty() {
-        let mut boundaries = Vec::with_capacity(line_len.saturating_add(1));
-        for byte_index in 0..=line_len {
-            boundaries.push((byte_index, byte_index as f32 * fallback_char_width));
-        }
-        return boundaries;
+    let buffer = text_block.buffer();
+    let Some(line) = buffer.get(line_index) else {
+        return fallback();
+    };
+    if line_len == 0 {
+        return vec![(0, line.metrics().offset * inverse_scale)];
+    }
+    let source_range = line.text_range();
+    let source_start = source_range.start;
+    let source_end = source_range.end;
+    if source_start >= source_end && line_len > 0 {
+        return fallback();
     }
 
-    glyphs.sort_by_key(|glyph| (glyph.byte_index, glyph.byte_length));
-    let mut step_candidates = glyphs
-        .windows(2)
-        .filter_map(|window| {
-            let left = window[0];
-            let right = window[1];
-            let byte_gap = right.byte_index.saturating_sub(left.byte_index);
-            if byte_gap == 0 {
-                return None;
-            }
-            let step = (right.position.x - left.position.x) * inverse_scale / byte_gap as f32;
-            (step.is_finite() && step.abs() > 0.1).then_some(step)
-        })
+    let mut byte_indices = line_text
+        .char_indices()
+        .map(|(byte_index, _)| byte_index)
         .collect::<Vec<_>>();
+    byte_indices.push(line_len);
 
-    step_candidates.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let byte_step = step_candidates
-        .get(step_candidates.len().saturating_sub(1) / 2)
-        .copied()
-        .unwrap_or(fallback_char_width);
-
-    let mut anchors = BTreeMap::<usize, Vec<f32>>::new();
-
-    for glyph in glyphs {
-        let start = glyph.byte_index.min(line_len);
-        let end = glyph
-            .byte_index
-            .saturating_add(glyph.byte_length)
-            .min(line_len);
-        let span_bytes = end.saturating_sub(start).max(1);
-        let half_width = byte_step * span_bytes as f32 * 0.5;
-        let center_x = glyph.position.x * inverse_scale;
-        let left = center_x - half_width;
-        let right = center_x + half_width;
-
-        anchors.entry(start).or_default().push(left);
-        anchors.entry(end).or_default().push(right);
-    }
-
-    let mut known = anchors
+    byte_indices
         .into_iter()
-        .map(|(byte_index, xs)| {
-            let sum = xs.iter().copied().sum::<f32>();
-            (byte_index, sum / xs.len() as f32)
+        .map(|byte_index| {
+            // A line end immediately before a newline needs upstream affinity to
+            // remain on the rendered line rather than jumping to the next one.
+            let affinity = if byte_index >= line_len {
+                Affinity::Upstream
+            } else {
+                Affinity::Downstream
+            };
+            let source_index = source_start.saturating_add(byte_index).min(source_end);
+            let cursor = ParleyCursor::from_byte_index(buffer, source_index, affinity);
+            let geometry = cursor.geometry(buffer, 0.0);
+            (byte_index, geometry.x0 as f32 * inverse_scale)
         })
-        .collect::<Vec<_>>();
-
-    if known.is_empty() {
-        let mut boundaries = Vec::with_capacity(line_len.saturating_add(1));
-        for byte_index in 0..=line_len {
-            boundaries.push((byte_index, byte_index as f32 * fallback_char_width));
-        }
-        return boundaries;
-    }
-
-    known.sort_by_key(|(byte_index, _)| *byte_index);
-
-    let first = known[0];
-    let last = known[known.len().saturating_sub(1)];
-    let mut boundaries = Vec::with_capacity(line_len.saturating_add(1));
-    let mut segment = 0usize;
-
-    for byte_index in 0..=line_len {
-        while segment + 1 < known.len() && known[segment + 1].0 <= byte_index {
-            segment += 1;
-        }
-
-        let x = if byte_index <= first.0 {
-            first.1 - (first.0 - byte_index) as f32 * byte_step
-        } else if byte_index >= last.0 {
-            last.1 + (byte_index - last.0) as f32 * byte_step
-        } else {
-            let (left_byte, left_x) = known[segment];
-            let (right_byte, right_x) = known[segment + 1];
-            let gap = right_byte.saturating_sub(left_byte).max(1);
-            let t = byte_index.saturating_sub(left_byte) as f32 / gap as f32;
-            left_x + (right_x - left_x) * t
-        };
-
-        boundaries.push((byte_index, x));
-    }
-
-    boundaries
+        .collect()
 }
 
 fn caret_x_from_layout(
-    layout: &TextLayoutInfo,
+    text_block: &ComputedTextBlock,
     line_index: usize,
     line_text: &str,
     byte_index: usize,
@@ -2106,7 +1987,7 @@ fn caret_x_from_layout(
     fallback_char_width: f32,
 ) -> Option<f32> {
     let boundaries = line_boundaries(
-        layout,
+        text_block,
         line_index,
         line_text,
         inverse_scale,
@@ -2120,7 +2001,7 @@ fn caret_x_from_layout(
 }
 
 fn column_from_layout_x(
-    layout: &TextLayoutInfo,
+    text_block: &ComputedTextBlock,
     line_index: usize,
     x: f32,
     line_text: &str,
@@ -2128,7 +2009,7 @@ fn column_from_layout_x(
     fallback_char_width: f32,
 ) -> Option<usize> {
     let boundaries = line_boundaries(
-        layout,
+        text_block,
         line_index,
         line_text,
         inverse_scale,

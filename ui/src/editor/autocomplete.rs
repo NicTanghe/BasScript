@@ -275,8 +275,8 @@ fn spawn_link_autocomplete_row(
                 },
                 Text::new(""),
                 TextFont {
-                    font: font.clone(),
-                    font_size: 12.0,
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(12.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
@@ -293,8 +293,8 @@ fn spawn_link_autocomplete_row(
                 },
                 Text::new(""),
                 TextFont {
-                    font: font.clone(),
-                    font_size: 10.5,
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(10.5),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MUTED),
@@ -311,8 +311,8 @@ fn spawn_link_autocomplete_row(
                 },
                 Text::new(""),
                 TextFont {
-                    font,
-                    font_size: 10.5,
+                    font: font.into(),
+                    font_size: FontSize::Px(10.5),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MUTED),

@@ -214,8 +214,8 @@ fn markdown_metadata_field_button(
         children![(
             Text::new(""),
             TextFont {
-                font,
-                font_size: 11.0,
+                font: font.into(),
+                font_size: FontSize::Px(11.0),
                 ..default()
             },
             TextColor(COLOR_TEXT_MAIN),
@@ -275,8 +275,8 @@ fn markdown_metadata_dropdown_option(
         children![(
             Text::new(""),
             TextFont {
-                font,
-                font_size: 11.0,
+                font: font.into(),
+                font_size: FontSize::Px(11.0),
                 ..default()
             },
             TextColor(COLOR_TEXT_MAIN),

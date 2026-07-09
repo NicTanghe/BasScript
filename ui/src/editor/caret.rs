@@ -1,8 +1,9 @@
 const CARET_WIDTH: f32 = 2.0;
 const VIM_NORMAL_CARET_WIDTH: f32 = 8.0;
 const CARET_X_OFFSET: f32 = -1.0;
-// Negative moves the caret up, positive moves it down.
-const CARET_VERTICAL_OFFSET_LINES: f32 = -0.48;
+// Parley's line metrics already provide the line box top. The old glyph
+// metadata was center-based, which needed an upward compensation here.
+const CARET_VERTICAL_OFFSET_LINES: f32 = 0.0;
 
 #[derive(Component)]
 struct PanelCaret {
@@ -58,7 +59,7 @@ fn render_panel_carets(
     state: &EditorState,
     visible_lines: usize,
     plain_lines: &[String],
-    plain_layout: Option<&TextLayoutInfo>,
+    plain_layout: Option<&ComputedTextBlock>,
     plain_inverse_scale: f32,
     plain_origin_x: f32,
     plain_origin_y: f32,
@@ -69,7 +70,7 @@ fn render_panel_carets(
     processed_page_step_lines: usize,
     processed_lines_per_page: usize,
     processed_text_layout_query: &Query<
-        (&ProcessedPaperText, &TextLayoutInfo, &ComputedNode),
+        (&ProcessedPaperText, &ComputedTextBlock, &ComputedNode),
         (
             Without<PanelText>,
             Without<PanelPaper>,
@@ -154,8 +155,8 @@ fn render_panel_carets(
                 let (processed_layout, processed_inverse_scale) = processed_text_layout_query
                     .iter()
                     .find(|(paper_text, _, _)| paper_text.slot == slot)
-                    .map_or((None, 1.0), |(_, layout, computed)| {
-                        (Some(layout), computed.inverse_scale_factor())
+                    .map_or((None, 1.0), |(_, text_block, computed)| {
+                        (Some(text_block), computed.inverse_scale_factor())
                     });
 
                 let page_text_top = processed_text_top_for_slot(
@@ -194,9 +195,9 @@ fn render_panel_carets(
         };
         let byte_index = char_to_byte_index(line_text, display_column);
         let caret_x = panel_layout
-            .and_then(|layout| {
+            .and_then(|text_block| {
                 caret_x_from_layout(
-                    layout,
+                    text_block,
                     line_offset,
                     line_text,
                     byte_index,
@@ -206,10 +207,14 @@ fn render_panel_carets(
             })
             .unwrap_or(display_column as f32 * panel_char_width);
         let caret_top = panel_layout
-            .and_then(|layout| line_top_from_layout(layout, line_offset, panel_inverse_scale))
+            .and_then(|text_block| {
+                line_top_from_layout(text_block, line_offset, panel_inverse_scale)
+            })
             .unwrap_or(line_offset as f32 * panel_line_height);
         let caret_height = panel_layout
-            .and_then(|layout| line_height_from_layout(layout, line_offset, panel_inverse_scale))
+            .and_then(|text_block| {
+                line_height_from_layout(text_block, line_offset, panel_inverse_scale)
+            })
             .unwrap_or(fallback_caret_height)
             .max(1.0);
 

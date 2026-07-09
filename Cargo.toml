@@ -3,10 +3,6 @@ members = ["core", "ui", "app"]
 default-members = ["app"]
 resolver = "2"
 
-[patch.crates-io]
-bevy_winit = { path = "vendor/bevy_winit" }
-wgpu-hal = { path = "vendor/wgpu-hal" }
-
 # Enable more optimization in the release profile at the cost of compile time.
 [profile.release]
 # Compile the entire crate as one unit.
@@ -25,4 +21,3 @@ inherits = "release"
 opt-level = "s"
 # Strip all debugging information from the binary to slightly reduce file size.
 strip = "debuginfo"
-

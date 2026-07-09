@@ -41,10 +41,10 @@ fn status_line_bundle(font: Handle<Font>, background: Color) -> impl Bundle {
                 ..default()
             },
             Text::new(""),
-            TextLayout::new_with_no_wrap(),
+            TextLayout::no_wrap(),
             TextFont {
-                font,
-                font_size: STATUS_LINE_FONT_SIZE,
+                font: font.into(),
+                font_size: FontSize::Px(STATUS_LINE_FONT_SIZE),
                 ..default()
             },
             LineHeight::Px(STATUS_LINE_LINE_HEIGHT),

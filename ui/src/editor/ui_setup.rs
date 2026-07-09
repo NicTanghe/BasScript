@@ -99,8 +99,8 @@ fn setup(
                             (
                                 Text::new("BasScript"),
                                 TextFont {
-                                    font: font.clone(),
-                                    font_size: 14.0,
+                                    font: font.clone().into(),
+                                    font_size: FontSize::Px(14.0),
                                     ..default()
                                 },
                                 TextColor(COLOR_TEXT_MAIN),
@@ -206,8 +206,8 @@ fn setup(
                     (
                         Text::new("Settings"),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 22.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(22.0),
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MAIN),
@@ -215,8 +215,8 @@ fn setup(
                     (
                         Text::new("Processed page margins and formatting options."),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 13.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(13.0),
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MUTED),
@@ -286,8 +286,8 @@ fn setup(
                     (
                         Text::new("Keybinds"),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 22.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(22.0),
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MAIN),
@@ -295,8 +295,8 @@ fn setup(
                     (
                         Text::new("Keyboard shortcuts and mouse controls."),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 13.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(13.0),
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MUTED),
@@ -304,8 +304,8 @@ fn setup(
                     (
                         Text::new("Keyboard"),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 16.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(16.0),
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MAIN),
@@ -313,8 +313,8 @@ fn setup(
                     (
                         Text::new("Click a binding button, then press a key. Hold Ctrl, Alt, Super/Cmd, or Space to choose that modifier."),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 12.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(12.0),
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MUTED),
@@ -356,8 +356,8 @@ fn setup(
                     (
                         Text::new("Mouse"),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 16.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(16.0),
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MAIN),
@@ -412,8 +412,8 @@ fn setup(
                     (
                         Text::new(""),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 22.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(22.0),
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MAIN),
@@ -422,8 +422,8 @@ fn setup(
                     (
                         Text::new(""),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 13.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(13.0),
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MUTED),
@@ -485,8 +485,8 @@ fn setup(
                                     (
                                         Text::new(""),
                                         TextFont {
-                                            font: font.clone(),
-                                            font_size: 12.0,
+                                            font: font.clone().into(),
+                                            font_size: FontSize::Px(12.0),
                                             ..default()
                                         },
                                         TextColor(COLOR_TEXT_MAIN),
@@ -495,8 +495,8 @@ fn setup(
                                     (
                                         Text::new(""),
                                         TextFont {
-                                            font: font.clone(),
-                                            font_size: 12.0,
+                                            font: font.clone().into(),
+                                            font_size: FontSize::Px(12.0),
                                             ..default()
                                         },
                                         TextColor(COLOR_TEXT_MAIN),
@@ -505,8 +505,8 @@ fn setup(
                                     (
                                         Text::new(""),
                                         TextFont {
-                                            font: font.clone(),
-                                            font_size: 12.0,
+                                            font: font.clone().into(),
+                                            font_size: FontSize::Px(12.0),
                                             ..default()
                                         },
                                         TextColor(COLOR_TEXT_MAIN),
@@ -558,8 +558,8 @@ fn setup(
                     (
                         Text::new("◯"),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 34.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(34.0),
                             ..default()
                         },
                         TextColor(Color::srgba(0.10, 0.12, 0.15, 0.82)),
@@ -573,8 +573,8 @@ fn setup(
                     (
                         Text::new("•"),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 15.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(15.0),
                             ..default()
                         },
                         TextColor(Color::srgba(0.10, 0.12, 0.15, 0.95)),
@@ -588,8 +588,8 @@ fn setup(
                     (
                         Text::new("↑"),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 11.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(11.0),
                             ..default()
                         },
                         TextColor(Color::srgba(0.96, 0.97, 0.99, 0.95)),
@@ -603,8 +603,8 @@ fn setup(
                     (
                         Text::new("↓"),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 11.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(11.0),
                             ..default()
                         },
                         TextColor(Color::srgba(0.96, 0.97, 0.99, 0.95)),
@@ -618,8 +618,8 @@ fn setup(
                     (
                         Text::new("←"),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 11.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(11.0),
                             ..default()
                         },
                         TextColor(Color::srgba(0.96, 0.97, 0.99, 0.95)),
@@ -633,8 +633,8 @@ fn setup(
                     (
                         Text::new("→"),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 11.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(11.0),
                             ..default()
                         },
                         TextColor(Color::srgba(0.96, 0.97, 0.99, 0.95)),
@@ -842,10 +842,10 @@ fn setup_processed_papers(
                         paper
                             .spawn((
                                 Text::new(""),
-                                TextLayout::new_with_no_wrap(),
+                                TextLayout::no_wrap(),
                                 TextFont {
-                                    font: slot_font.clone(),
-                                    font_size: FONT_SIZE,
+                                    font: slot_font.clone().into(),
+                                    font_size: FontSize::Px(FONT_SIZE),
                                     ..default()
                                 },
                                 LineHeight::Px(LINE_HEIGHT),
@@ -876,8 +876,8 @@ fn setup_processed_papers(
                                         text_parent.spawn((
                                             TextSpan::new(""),
                                             TextFont {
-                                                font: slot_font.clone(),
-                                                font_size: FONT_SIZE,
+                                                font: slot_font.clone().into(),
+                                                font_size: FontSize::Px(FONT_SIZE),
                                                 ..default()
                                             },
                                             LineHeight::Px(LINE_HEIGHT),
@@ -942,10 +942,10 @@ fn setup_processed_papers(
             paper
                 .spawn((
                     Text::new(""),
-                    TextLayout::new_with_no_wrap(),
+                    TextLayout::no_wrap(),
                     TextFont {
-                        font: regular_font.clone(),
-                        font_size: FONT_SIZE,
+                        font: regular_font.clone().into(),
+                        font_size: FontSize::Px(FONT_SIZE),
                         ..default()
                     },
                     LineHeight::Px(LINE_HEIGHT),
@@ -976,8 +976,8 @@ fn setup_processed_papers(
                             text_parent.spawn((
                                 TextSpan::new(""),
                                 TextFont {
-                                    font: regular_font.clone(),
-                                    font_size: FONT_SIZE,
+                                    font: regular_font.clone().into(),
+                                    font_size: FontSize::Px(FONT_SIZE),
                                     ..default()
                                 },
                                 LineHeight::Px(LINE_HEIGHT),
@@ -1047,8 +1047,8 @@ fn toolbar_button(font: Handle<Font>, label: &str, action: ToolbarAction) -> imp
         children![(
             Text::new(label),
             TextFont {
-                font,
-                font_size: 13.0,
+                font: font.into(),
+                font_size: FontSize::Px(13.0),
                 ..default()
             },
             TextColor(COLOR_TEXT_MAIN),
@@ -1068,8 +1068,8 @@ fn settings_toggle_button(font: Handle<Font>, action: SettingsAction) -> impl Bu
         children![(
             Text::new(""),
             TextFont {
-                font,
-                font_size: 13.0,
+                font: font.into(),
+                font_size: FontSize::Px(13.0),
                 ..default()
             },
             TextColor(COLOR_TEXT_MAIN),
@@ -1094,8 +1094,8 @@ fn settings_action_button(font: Handle<Font>, label: &str, action: SettingsActio
         children![(
             Text::new(label),
             TextFont {
-                font,
-                font_size: 13.0,
+                font: font.into(),
+                font_size: FontSize::Px(13.0),
                 ..default()
             },
             TextColor(COLOR_TEXT_MAIN),
@@ -1115,8 +1115,8 @@ fn keybind_setting_row(font: Handle<Font>, action: ShortcutAction) -> impl Bundl
             (
                 Text::new(shortcut_action_description(action)),
                 TextFont {
-                    font: font.clone(),
-                    font_size: 13.0,
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MUTED),
@@ -1137,8 +1137,8 @@ fn keybind_setting_row(font: Handle<Font>, action: ShortcutAction) -> impl Bundl
                 children![(
                     Text::new(""),
                     TextFont {
-                        font,
-                        font_size: 13.0,
+                        font: font.into(),
+                        font_size: FontSize::Px(13.0),
                         ..default()
                     },
                     TextColor(COLOR_TEXT_MAIN),
@@ -1160,8 +1160,8 @@ fn keybind_row(font: Handle<Font>, binding: &str, description: &str) -> impl Bun
             (
                 Text::new(binding),
                 TextFont {
-                    font: font.clone(),
-                    font_size: 13.0,
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
@@ -1173,8 +1173,8 @@ fn keybind_row(font: Handle<Font>, binding: &str, description: &str) -> impl Bun
             (
                 Text::new(description),
                 TextFont {
-                    font,
-                    font_size: 13.0,
+                    font: font.into(),
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MUTED),
@@ -1201,8 +1201,8 @@ fn margin_setting_row(
             (
                 Text::new(label),
                 TextFont {
-                    font: font.clone(),
-                    font_size: 13.0,
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
@@ -1211,8 +1211,8 @@ fn margin_setting_row(
             (
                 Text::new(""),
                 TextFont {
-                    font: font.clone(),
-                    font_size: 13.0,
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
@@ -1236,8 +1236,8 @@ fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> impl Bundle 
             (
                 Text::new(""),
                 TextFont {
-                    font: font.clone(),
-                    font_size: 13.0,
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
@@ -1250,8 +1250,8 @@ fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> impl Bundle 
             (
                 Text::new(""),
                 TextFont {
-                    font: font.clone(),
-                    font_size: 13.0,
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
@@ -1285,8 +1285,8 @@ fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> impl Bundle 
                     (
                         Text::new("Pick"),
                         TextFont {
-                            font,
-                            font_size: 13.0,
+                            font: font.into(),
+                            font_size: FontSize::Px(13.0),
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MAIN),
@@ -1310,8 +1310,8 @@ fn theme_link_hover_setting_row(font: Handle<Font>) -> impl Bundle {
             (
                 Text::new("Link hover HSV value"),
                 TextFont {
-                    font: font.clone(),
-                    font_size: 13.0,
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
@@ -1328,8 +1328,8 @@ fn theme_link_hover_setting_row(font: Handle<Font>) -> impl Bundle {
             (
                 Text::new(""),
                 TextFont {
-                    font: font.clone(),
-                    font_size: 13.0,
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
@@ -1425,8 +1425,8 @@ fn theme_color_slider_row(
             (
                 Text::new(label),
                 TextFont {
-                    font: font.clone(),
-                    font_size: 12.0,
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(12.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
@@ -1462,8 +1462,8 @@ fn theme_color_slider_row(
             (
                 Text::new(""),
                 TextFont {
-                    font,
-                    font_size: 12.0,
+                    font: font.into(),
+                    font_size: FontSize::Px(12.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
@@ -1585,10 +1585,10 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
                         ),
                         (
                             Text::new(""),
-                            TextLayout::new_with_no_wrap(),
+                            TextLayout::no_wrap(),
                             TextFont {
-                                font: font.clone(),
-                                font_size: FONT_SIZE,
+                                font: font.clone().into(),
+                                font_size: FontSize::Px(FONT_SIZE),
                                 ..default()
                             },
                             LineHeight::Px(LINE_HEIGHT),

@@ -1,6 +1,4 @@
-use basscript_core::{
-    StoryIndexAppearanceRecord, StoryIndexEntityRecord, StoryIndexSceneRecord,
-};
+use basscript_core::{StoryIndexAppearanceRecord, StoryIndexEntityRecord, StoryIndexSceneRecord};
 use serde::Deserialize;
 
 const STORY_QUERY_RESULT_WIDTH_PERCENT: f32 = 61.803;
@@ -578,10 +576,10 @@ fn setup_story_query_sheet_result_spans(
                         paper
                             .spawn((
                                 Text::new(""),
-                                TextLayout::new_with_no_wrap(),
+                                TextLayout::no_wrap(),
                                 TextFont {
-                                    font: slot_font.clone(),
-                                    font_size: FONT_SIZE,
+                                    font: slot_font.clone().into(),
+                                    font_size: FontSize::Px(FONT_SIZE),
                                     ..default()
                                 },
                                 LineHeight::Px(LINE_HEIGHT),
@@ -612,8 +610,8 @@ fn setup_story_query_sheet_result_spans(
                                         text_parent.spawn((
                                             TextSpan::new(""),
                                             TextFont {
-                                                font: slot_font.clone(),
-                                                font_size: FONT_SIZE,
+                                                font: slot_font.clone().into(),
+                                                font_size: FontSize::Px(FONT_SIZE),
                                                 ..default()
                                             },
                                             LineHeight::Px(LINE_HEIGHT),
@@ -723,10 +721,10 @@ fn story_query_dropdown_option_button(
         BackgroundColor(BUTTON_NORMAL),
         children![(
             Text::new(""),
-            TextLayout::new_with_no_wrap(),
+            TextLayout::no_wrap(),
             TextFont {
-                font,
-                font_size: 10.0,
+                font: font.into(),
+                font_size: FontSize::Px(10.0),
                 ..default()
             },
             TextColor(COLOR_TEXT_MAIN),
@@ -753,10 +751,10 @@ fn story_query_control_button(
         BackgroundColor(BUTTON_NORMAL),
         children![(
             Text::new(""),
-            TextLayout::new_with_no_wrap(),
+            TextLayout::no_wrap(),
             TextFont {
-                font,
-                font_size: 11.0,
+                font: font.into(),
+                font_size: FontSize::Px(11.0),
                 ..default()
             },
             TextColor(COLOR_TEXT_MAIN),
@@ -780,10 +778,10 @@ fn story_query_static_button(
         BackgroundColor(BUTTON_NORMAL),
         children![(
             Text::new(label),
-            TextLayout::new_with_no_wrap(),
+            TextLayout::no_wrap(),
             TextFont {
-                font,
-                font_size: 11.0,
+                font: font.into(),
+                font_size: FontSize::Px(11.0),
                 ..default()
             },
             TextColor(COLOR_TEXT_MAIN),
@@ -800,10 +798,10 @@ fn story_query_text(
 ) -> impl Bundle {
     (
         Text::new(text),
-        TextLayout::new_with_no_wrap(),
+        TextLayout::no_wrap(),
         TextFont {
-            font,
-            font_size,
+            font: font.into(),
+            font_size: FontSize::Px(font_size),
             ..default()
         },
         LineHeight::Px(font_size + 2.0),
@@ -847,7 +845,11 @@ fn sync_story_query_sheet_ui(
         ),
     >,
     mut option_node_query: Query<
-        (&StoryQueryDropdownOptionNode, &mut Node, &mut BackgroundColor),
+        (
+            &StoryQueryDropdownOptionNode,
+            &mut Node,
+            &mut BackgroundColor,
+        ),
         (
             Without<StoryQuerySheetRoot>,
             Without<StoryQueryControlRow>,
@@ -977,8 +979,11 @@ fn sync_story_query_sheet_ui(
     let first_visible_page = processed_view.start_index / page_step_lines;
     let total_pages =
         processed_page_count_for_lines(&state.story_query_sheet.visual_lines, page_step_lines);
-    let page_label =
-        story_query_page_label(&state.story_query_sheet, first_visible_page, page_step_lines);
+    let page_label = story_query_page_label(
+        &state.story_query_sheet,
+        first_visible_page,
+        page_step_lines,
+    );
 
     for (paper, mut node, mut visibility, mut color, mut transform) in story_paper_query.iter_mut()
     {
@@ -1028,13 +1033,12 @@ fn sync_story_query_sheet_ui(
 
     for (root, mut node) in dropdown_root_query.iter_mut() {
         let slot = story_query_dropdown_slot(root.kind);
-        node.display = if sheet.open_dropdown == Some(root.kind)
-            && story_query_control_visible(sheet, slot)
-        {
-            Display::Flex
-        } else {
-            Display::None
-        };
+        node.display =
+            if sheet.open_dropdown == Some(root.kind) && story_query_control_visible(sheet, slot) {
+                Display::Flex
+            } else {
+                Display::None
+            };
     }
 
     for (option, mut node, mut background) in option_node_query.iter_mut() {
@@ -1175,8 +1179,9 @@ fn apply_story_query_rendered_page_styles(
 
         if line_offset >= lines_per_page {
             **text_span = String::new();
-            text_font.font = font_for_variant_with_format(fonts, FontVariant::Regular, document_format);
-            text_font.font_size = font_size;
+            text_font.font =
+                font_for_variant_with_format(fonts, FontVariant::Regular, document_format).into();
+            text_font.font_size = FontSize::Px(font_size);
             *text_line_height = LineHeight::Px(line_height);
             text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
             continue;
@@ -1188,8 +1193,9 @@ fn apply_story_query_rendered_page_styles(
             } else {
                 String::new()
             };
-            text_font.font = font_for_variant_with_format(fonts, FontVariant::Regular, document_format);
-            text_font.font_size = font_size;
+            text_font.font =
+                font_for_variant_with_format(fonts, FontVariant::Regular, document_format).into();
+            text_font.font_size = FontSize::Px(font_size);
             *text_line_height = LineHeight::Px(line_height);
             text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
             continue;
@@ -1223,8 +1229,9 @@ fn apply_story_query_rendered_page_styles(
 
         let effective_variant =
             font_variant_for_processed_fragment(style.font_variant, &fragment, document_format);
-        text_font.font = font_for_variant_with_format(fonts, effective_variant, document_format);
-        text_font.font_size = font_size * style.font_scale;
+        text_font.font =
+            font_for_variant_with_format(fonts, effective_variant, document_format).into();
+        text_font.font_size = FontSize::Px(font_size * style.font_scale);
         *text_line_height = LineHeight::Px(line_height * style.line_height_scale);
         **text_span = fragment.text;
         text_color.0 = if allow_link_color && fragment.is_link {
@@ -1263,7 +1270,11 @@ fn handle_story_query_sheet_buttons(
                 let choices = story_query_dropdown_choices(&state, *kind);
                 let start = story_query_dropdown_window_start(&state, *kind, &choices);
                 if let Some(choice) = choices.get(start + *slot_index) {
-                    apply_story_query_dropdown_choice(&mut state.story_query_sheet, *kind, choice.value);
+                    apply_story_query_dropdown_choice(
+                        &mut state.story_query_sheet,
+                        *kind,
+                        choice.value,
+                    );
                     state.story_query_sheet.open_dropdown = None;
                     state.story_query_sheet.reset_result_scroll();
                     state.story_query_sheet.result_status = "Selection changed.".to_string();
@@ -1289,7 +1300,7 @@ fn handle_story_query_sheet_link_click(
             &StoryQueryRenderedText,
             &RelativeCursorPosition,
             &ComputedNode,
-            &TextLayoutInfo,
+            &ComputedTextBlock,
         ),
         With<StoryQueryRenderedText>,
     >,
@@ -1321,9 +1332,8 @@ fn handle_story_query_sheet_link_click(
     );
     let first_visible_page = processed_view.start_index / page_step_lines;
 
-    let target = rendered_text_query
-        .iter()
-        .find_map(|(rendered_text, relative_cursor, computed, layout)| {
+    let target = rendered_text_query.iter().find_map(
+        |(rendered_text, relative_cursor, computed, text_block)| {
             if !relative_cursor.cursor_over() {
                 return None;
             }
@@ -1333,7 +1343,7 @@ fn handle_story_query_sheet_link_click(
             let local_y = (normalized.y + 0.5) * size.y;
             story_query_link_target_at_position(
                 &state.story_query_sheet,
-                layout,
+                text_block,
                 computed.inverse_scale_factor(),
                 local_x,
                 local_y,
@@ -1344,7 +1354,8 @@ fn handle_story_query_sheet_link_click(
                 document_format,
                 state.zoom,
             )
-        });
+        },
+    );
 
     if let Some(target) = target {
         state.open_story_query_link_target(target);
@@ -1382,7 +1393,10 @@ fn handle_story_query_sheet_keyboard(
 fn handle_story_query_sheet_mouse_scroll(
     mut mouse_wheels: MessageReader<MouseWheel>,
     keys: Res<ButtonInput<KeyCode>>,
-    result_panel_query: Query<(&RelativeCursorPosition, &ComputedNode), With<StoryQueryResultPanel>>,
+    result_panel_query: Query<
+        (&RelativeCursorPosition, &ComputedNode),
+        With<StoryQueryResultPanel>,
+    >,
     mut state: ResMut<EditorState>,
 ) {
     if !state.story_query_sheet.open {
@@ -1446,18 +1460,12 @@ fn handle_story_query_sheet_mouse_scroll(
 
     let mut scrolled = false;
     if horizontal_delta_px.abs() > f32::EPSILON {
-        scrolled |= apply_story_query_horizontal_scroll(
-            &mut state,
-            result_panel_size,
-            horizontal_delta_px,
-        );
+        scrolled |=
+            apply_story_query_horizontal_scroll(&mut state, result_panel_size, horizontal_delta_px);
     }
     if vertical_delta_lines.abs() > f32::EPSILON {
-        scrolled |= apply_story_query_vertical_scroll(
-            &mut state,
-            result_panel_size,
-            vertical_delta_lines,
-        );
+        scrolled |=
+            apply_story_query_vertical_scroll(&mut state, result_panel_size, vertical_delta_lines);
     }
 
     if scrolled {
@@ -1509,9 +1517,7 @@ fn story_query_control_visible(sheet: &StoryQuerySheet, slot: StoryQuerySheetTex
             sheet.query_kind,
             StoryQueryKind::DialogueBetweenCharacters | StoryQueryKind::DialogueBetweenAtScene
         ),
-        StoryQuerySheetTextSlot::Entity => {
-            sheet.query_kind == StoryQueryKind::AppearancesOfEntity
-        }
+        StoryQuerySheetTextSlot::Entity => sheet.query_kind == StoryQueryKind::AppearancesOfEntity,
         StoryQuerySheetTextSlot::Category(slot_index) => {
             sheet.query_kind == StoryQueryKind::CategoriesInScene
                 && slot_index < sheet.category_indices.len()
@@ -1584,7 +1590,8 @@ fn story_query_dropdown_choices(
             .iter()
             .enumerate()
             .filter(|(index, _)| {
-                sheet.category_indices
+                sheet
+                    .category_indices
                     .iter()
                     .enumerate()
                     .all(|(other_slot, selected)| other_slot == slot_index || selected != index)
@@ -1608,11 +1615,9 @@ fn story_query_dropdown_current_value(
         StoryQueryDropdownKind::SecondaryCharacter => sheet.character_b_index,
         StoryQueryDropdownKind::Entity => sheet.entity_index,
         StoryQueryDropdownKind::Scene => sheet.scene_index,
-        StoryQueryDropdownKind::Category(slot_index) => sheet
-            .category_indices
-            .get(slot_index)
-            .copied()
-            .unwrap_or(0),
+        StoryQueryDropdownKind::Category(slot_index) => {
+            sheet.category_indices.get(slot_index).copied().unwrap_or(0)
+        }
     }
 }
 
@@ -1630,9 +1635,11 @@ fn story_query_dropdown_window_start(
         .iter()
         .position(|choice| choice.value == current)
         .unwrap_or(0);
-    selected
-        .saturating_sub(3)
-        .min(choices.len().saturating_sub(STORY_QUERY_DROPDOWN_VISIBLE_OPTIONS))
+    selected.saturating_sub(3).min(
+        choices
+            .len()
+            .saturating_sub(STORY_QUERY_DROPDOWN_VISIBLE_OPTIONS),
+    )
 }
 
 fn apply_story_query_dropdown_choice(
@@ -1741,7 +1748,9 @@ fn apply_story_query_vertical_scroll(
         lines_per_page: layout.lines_per_page,
         spacer_lines: layout.spacer_lines,
         dialogue_double_space_newline: state.story_query_sheet.dialogue_double_space_newline,
-        non_dialogue_double_space_newline: state.story_query_sheet.non_dialogue_double_space_newline,
+        non_dialogue_double_space_newline: state
+            .story_query_sheet
+            .non_dialogue_double_space_newline,
     };
     state
         .story_query_sheet
@@ -1973,9 +1982,9 @@ impl EditorState {
         if self.story_query_sheet.characters.len() > 1
             && self.story_query_sheet.character_a_index == self.story_query_sheet.character_b_index
         {
-            self.story_query_sheet.character_b_index =
-                (self.story_query_sheet.character_a_index + 1)
-                    % self.story_query_sheet.characters.len();
+            self.story_query_sheet.character_b_index = (self.story_query_sheet.character_a_index
+                + 1)
+                % self.story_query_sheet.characters.len();
         }
         clamp_story_query_index(
             &mut self.story_query_sheet.entity_index,
@@ -2000,63 +2009,60 @@ impl EditorState {
         let database = match basscript_core::StoryIndexDatabase::open_workspace(&workspace_root) {
             Ok(report) => report.database,
             Err(error) => {
-                self.story_query_sheet
-                    .set_error("Story Query Sheet", format!("Story index unavailable: {error}"));
+                self.story_query_sheet.set_error(
+                    "Story Query Sheet",
+                    format!("Story index unavailable: {error}"),
+                );
                 return;
             }
         };
 
         let output = match self.story_query_sheet.query_kind {
             StoryQueryKind::DialogueByCharacter => {
-                let Some(character) =
-                    selected_character(&self.story_query_sheet, self.story_query_sheet.character_a_index)
-                else {
-                    self.story_query_sheet.set_error(
-                        "Dialogue",
-                        "No character entities are indexed.".to_string(),
-                    );
+                let Some(character) = selected_character(
+                    &self.story_query_sheet,
+                    self.story_query_sheet.character_a_index,
+                ) else {
+                    self.story_query_sheet
+                        .set_error("Dialogue", "No character entities are indexed.".to_string());
                     return;
                 };
                 build_dialogue_by_character_output(&database, character)
             }
             StoryQueryKind::DialogueBetweenCharacters => {
-                let Some(character_a) =
-                    selected_character(&self.story_query_sheet, self.story_query_sheet.character_a_index)
-                else {
-                    self.story_query_sheet.set_error(
-                        "Dialogue",
-                        "No character entities are indexed.".to_string(),
-                    );
+                let Some(character_a) = selected_character(
+                    &self.story_query_sheet,
+                    self.story_query_sheet.character_a_index,
+                ) else {
+                    self.story_query_sheet
+                        .set_error("Dialogue", "No character entities are indexed.".to_string());
                     return;
                 };
-                let Some(character_b) =
-                    selected_character(&self.story_query_sheet, self.story_query_sheet.character_b_index)
-                else {
-                    self.story_query_sheet.set_error(
-                        "Dialogue",
-                        "Choose a second indexed character.".to_string(),
-                    );
+                let Some(character_b) = selected_character(
+                    &self.story_query_sheet,
+                    self.story_query_sheet.character_b_index,
+                ) else {
+                    self.story_query_sheet
+                        .set_error("Dialogue", "Choose a second indexed character.".to_string());
                     return;
                 };
                 build_dialogue_between_output(&database, character_a, character_b, None)
             }
             StoryQueryKind::DialogueBetweenAtScene => {
-                let Some(character_a) =
-                    selected_character(&self.story_query_sheet, self.story_query_sheet.character_a_index)
-                else {
-                    self.story_query_sheet.set_error(
-                        "Dialogue",
-                        "No character entities are indexed.".to_string(),
-                    );
+                let Some(character_a) = selected_character(
+                    &self.story_query_sheet,
+                    self.story_query_sheet.character_a_index,
+                ) else {
+                    self.story_query_sheet
+                        .set_error("Dialogue", "No character entities are indexed.".to_string());
                     return;
                 };
-                let Some(character_b) =
-                    selected_character(&self.story_query_sheet, self.story_query_sheet.character_b_index)
-                else {
-                    self.story_query_sheet.set_error(
-                        "Dialogue",
-                        "Choose a second indexed character.".to_string(),
-                    );
+                let Some(character_b) = selected_character(
+                    &self.story_query_sheet,
+                    self.story_query_sheet.character_b_index,
+                ) else {
+                    self.story_query_sheet
+                        .set_error("Dialogue", "Choose a second indexed character.".to_string());
                     return;
                 };
                 let scene_filter = match self.selected_story_query_scene(&database) {
@@ -2146,10 +2152,8 @@ impl EditorState {
                 let Some(entity) =
                     selected_entity(&self.story_query_sheet, self.story_query_sheet.entity_index)
                 else {
-                    self.story_query_sheet.set_error(
-                        "Appearances",
-                        "No entities are indexed.".to_string(),
-                    );
+                    self.story_query_sheet
+                        .set_error("Appearances", "No entities are indexed.".to_string());
                     return;
                 };
                 build_appearances_output(&database, entity)
@@ -2176,7 +2180,9 @@ impl EditorState {
         };
 
         self.load_from_path(target.path.clone());
-        let line = target.line.min(self.document.line_count().saturating_sub(1));
+        let line = target
+            .line
+            .min(self.document.line_count().saturating_sub(1));
         self.set_cursor(Position { line, column: 0 }, true);
         self.top_line = line.saturating_sub(3);
         self.processed_top_line = self.top_line;
@@ -2263,7 +2269,8 @@ fn build_dialogue_between_output(
     if let Some(filter) = scene_filter.as_ref() {
         scenes.retain(|scene| {
             if let Some(location_label) = location_label.as_deref() {
-                scene.location_text
+                scene
+                    .location_text
                     .as_deref()
                     .map(|location| location.eq_ignore_ascii_case(location_label))
                     .unwrap_or(false)
@@ -2280,7 +2287,8 @@ fn build_dialogue_between_output(
     let filter_label = scene_filter
         .as_ref()
         .map(|scene| {
-            scene.location_text
+            scene
+                .location_text
                 .clone()
                 .unwrap_or_else(|| scene.heading_text.clone())
         })
@@ -2668,7 +2676,12 @@ fn story_taxonomy_category_for_type(
         taxonomy
             .categories
             .get(*index)
-            .map(|category| category.types.iter().any(|candidate| candidate == &entity_type))
+            .map(|category| {
+                category
+                    .types
+                    .iter()
+                    .any(|candidate| candidate == &entity_type)
+            })
             .unwrap_or(false)
     })
 }
@@ -2676,9 +2689,7 @@ fn story_taxonomy_category_for_type(
 fn selected_category_indices(sheet: &StoryQuerySheet) -> Vec<usize> {
     let mut selected = Vec::<usize>::new();
     for category_index in &sheet.category_indices {
-        if *category_index < sheet.taxonomy.categories.len()
-            && !selected.contains(category_index)
-        {
+        if *category_index < sheet.taxonomy.categories.len() && !selected.contains(category_index) {
             selected.push(*category_index);
         }
     }
@@ -2694,10 +2705,7 @@ fn selected_category_label(sheet: &StoryQuerySheet, index: usize) -> String {
         .unwrap_or_else(|| "none".to_string())
 }
 
-fn selected_character(
-    sheet: &StoryQuerySheet,
-    index: usize,
-) -> Option<&StoryIndexEntityRecord> {
+fn selected_character(sheet: &StoryQuerySheet, index: usize) -> Option<&StoryIndexEntityRecord> {
     sheet.characters.get(index)
 }
 
@@ -2898,8 +2906,7 @@ fn story_query_visual_lines(
 
         for visual_line in wrapped {
             if page_fill.entries > 0
-                && page_fill.height_units + line_height_units
-                    > lines_per_page as f32 + 0.001
+                && page_fill.height_units + line_height_units > lines_per_page as f32 + 0.001
             {
                 finish_processed_page(
                     &mut visual_lines,
@@ -3003,7 +3010,7 @@ fn story_query_link_color_for_target(
 
 fn story_query_link_target_at_position(
     sheet: &StoryQuerySheet,
-    layout: &TextLayoutInfo,
+    text_block: &ComputedTextBlock,
     inverse_scale: f32,
     local_x: f32,
     local_y: f32,
@@ -3019,18 +3026,11 @@ fn story_query_link_target_at_position(
     let line_height = (LINE_HEIGHT * zoom.max(f32::EPSILON)).max(1.0);
     let page_step_lines = page_step_lines.max(1);
     let lines_per_page = lines_per_page.max(1).min(page_step_lines);
-    let fallback_line = ((local_y / line_height)
-        .floor()
-        .max(0.0) as usize)
+    let fallback_line =
+        ((local_y / line_height).floor().max(0.0) as usize).min(lines_per_page.saturating_sub(1));
+    let line_offset = line_index_from_layout_y(text_block, local_y, lines_per_page, inverse_scale)
+        .unwrap_or(fallback_line)
         .min(lines_per_page.saturating_sub(1));
-    let line_offset = line_index_from_layout_y(
-        layout,
-        local_y,
-        lines_per_page,
-        inverse_scale,
-    )
-    .unwrap_or(fallback_line)
-    .min(lines_per_page.saturating_sub(1));
     let page_index = first_visible_page.saturating_add(slot);
     let global_index = page_index
         .saturating_mul(page_step_lines)
@@ -3038,7 +3038,7 @@ fn story_query_link_target_at_position(
     let visual_line = sheet.visual_lines.get(global_index)?;
     let fallback_column = (local_x / fallback_char_width).round().max(0.0) as usize;
     let display_column = column_from_layout_x(
-        layout,
+        text_block,
         line_offset,
         local_x,
         &visual_line.text,
@@ -3074,10 +3074,7 @@ fn story_query_entity_link(label: &str, target: &str) -> String {
     if !basscript_core::is_valid_target_key(target) {
         return label.to_string();
     }
-    let label = label
-        .replace('[', "(")
-        .replace(']', ")")
-        .replace('\n', " ");
+    let label = label.replace('[', "(").replace(']', ")").replace('\n', " ");
     format!("[{label}]({target})")
 }
 

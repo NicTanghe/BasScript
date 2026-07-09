@@ -79,6 +79,58 @@ fn main() {
             Color::srgb(0.89, 0.90, 0.91)
         }))
         .add_plugins(default_plugins)
+        // Bevy 0.18 used a small local bevy_winit patch to avoid transient
+        // below-minimum resize events desynchronizing UI layout from the window.
+        // Keep that behavior in app code so 0.19 can use upstream winit/wgpu.
+        .add_systems(First, clamp_window_resolution_to_constraints)
         .add_plugins(UiPlugin)
         .run();
+}
+
+fn clamp_window_resolution_to_constraints(mut windows: Query<&mut Window, Changed<Window>>) {
+    for mut window in &mut windows {
+        let size = constrained_window_physical_size(&window);
+
+        if size.x != window.resolution.physical_width()
+            || size.y != window.resolution.physical_height()
+        {
+            window.resolution.set_physical_resolution(size.x, size.y);
+        }
+    }
+}
+
+fn constrained_window_physical_size(window: &Window) -> UVec2 {
+    let constraints = window.resize_constraints.check_constraints();
+    let scale_factor = window.resolution.scale_factor().max(f32::EPSILON);
+    let min_width = (constraints.min_width * scale_factor).ceil().max(1.0) as u32;
+    let min_height = (constraints.min_height * scale_factor).ceil().max(1.0) as u32;
+
+    UVec2::new(
+        window.resolution.physical_width().max(min_width),
+        window.resolution.physical_height().max(min_height),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clamps_a_resize_to_the_configured_minimum() {
+        let mut window = Window {
+            resize_constraints: WindowResizeConstraints {
+                min_width: MIN_WINDOW_WIDTH,
+                min_height: MIN_WINDOW_HEIGHT,
+                ..default()
+            },
+            ..default()
+        };
+        window.resolution.set_scale_factor(1.5);
+        window.resolution.set_physical_resolution(800, 400);
+
+        assert_eq!(
+            constrained_window_physical_size(&window),
+            UVec2::new(960, 540)
+        );
+    }
 }

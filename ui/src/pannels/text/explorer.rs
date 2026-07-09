@@ -540,8 +540,8 @@ fn workspace_sidebar_bundle(font: Handle<Font>, background: Color) -> impl Bundl
             (
                 Text::new(WORKSPACE_ROOT_LABEL_EMPTY),
                 TextFont {
-                    font: font.clone(),
-                    font_size: 12.0,
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(12.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MUTED),
@@ -649,8 +649,8 @@ fn sync_workspace_sidebar(
             parent.spawn((
                 Text::new(WORKSPACE_EMPTY_RESULTS_LABEL),
                 TextFont {
-                    font: fonts.regular.clone(),
-                    font_size: 12.0,
+                    font: fonts.regular.clone().into(),
+                    font_size: FontSize::Px(12.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MUTED),
@@ -708,8 +708,8 @@ fn sync_workspace_sidebar(
                             (
                                 Text::new(fallback_marker),
                                 TextFont {
-                                    font: fonts.regular.clone(),
-                                    font_size: 12.0,
+                                    font: fonts.regular.clone().into(),
+                                    font_size: FontSize::Px(12.0),
                                     ..default()
                                 },
                                 TextColor(COLOR_TEXT_MUTED),
@@ -734,8 +734,8 @@ fn sync_workspace_sidebar(
                             (
                                 Text::new(folder_name),
                                 TextFont {
-                                    font: folder_font,
-                                    font_size: 12.0,
+                                    font: folder_font.into(),
+                                    font_size: FontSize::Px(12.0),
                                     ..default()
                                 },
                                 TextColor(COLOR_TEXT_MAIN),
@@ -788,8 +788,8 @@ fn sync_workspace_sidebar(
                         children![(
                             Text::new(file_name),
                             TextFont {
-                                font: fonts.regular.clone(),
-                                font_size: 12.0,
+                                font: fonts.regular.clone().into(),
+                                font_size: FontSize::Px(12.0),
                                 ..default()
                             },
                             TextColor(text_color),

@@ -32,8 +32,8 @@ fn command_menu_bundle(font: Handle<Font>) -> impl Bundle {
                 (
                     Text::new(":"),
                     TextFont {
-                        font: font.clone(),
-                        font_size: 13.0,
+                        font: font.clone().into(),
+                        font_size: FontSize::Px(13.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.96, 0.97, 0.99)),
@@ -42,8 +42,8 @@ fn command_menu_bundle(font: Handle<Font>) -> impl Bundle {
                 (
                     Text::new("Enter runs. Esc cancels. Commands: w, q, wq"),
                     TextFont {
-                        font,
-                        font_size: 11.0,
+                        font: font.into(),
+                        font_size: FontSize::Px(11.0),
                         ..default()
                     },
                     TextColor(Color::srgba(0.78, 0.80, 0.84, 0.92)),

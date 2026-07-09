@@ -26,22 +26,16 @@ struct CanvasRenderedTextCaret {
     node_index: usize,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct CanvasTextLayoutRow {
-    visual_line: usize,
-    source_line: usize,
-    min_byte: usize,
-    max_byte: usize,
-    top: f32,
-    bottom: f32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct CanvasTextLayoutSegment {
-    visual_line: usize,
-    source_line: usize,
-    start_byte: usize,
-    end_byte: usize,
+/// A view of Bevy's shaped text buffer in logical UI coordinates.
+///
+/// `TextLayoutInfo::glyphs` is renderer-facing in Bevy 0.19 and no longer
+/// preserves source byte ranges. `ComputedTextBlock` retains the shaped text
+/// buffer, including visual clusters, cursor geometry, selection geometry,
+/// bidi ordering, and wrapped-line boundaries.
+#[derive(Clone, Copy)]
+struct CanvasTextLayout<'a> {
+    block: &'a bevy::text::ComputedTextBlock,
+    inverse_scale: f32,
 }
 
 #[derive(Component, Clone, Debug)]
@@ -234,7 +228,7 @@ fn sync_canvas_board(
     let text_font_size = canvas_text_font_size(zoom);
     let text_line_height = canvas_text_line_height(zoom);
     for (_, mut text_font, mut line_height) in text_query.iter_mut() {
-        text_font.font_size = text_font_size;
+        text_font.font_size = FontSize::Px(text_font_size);
         *line_height = LineHeight::Px(text_line_height);
     }
 
@@ -256,7 +250,11 @@ fn sync_canvas_board(
 }
 
 fn sync_canvas_text_overlays(
-    text_layout_query: Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+    text_layout_query: Query<(
+        &CanvasRenderedNodeText,
+        &bevy::text::ComputedTextBlock,
+        &ComputedNode,
+    )>,
     mut text_selection_query: Query<
         (
             &CanvasRenderedTextSelection,
@@ -317,7 +315,13 @@ fn sync_canvas_text_overlays(
         &state,
         zoom,
     );
-    render_canvas_text_carets(&mut text_caret_query, &text_layout_query, canvas, &state, zoom);
+    render_canvas_text_carets(
+        &mut text_caret_query,
+        &text_layout_query,
+        canvas,
+        &state,
+        zoom,
+    );
 }
 
 fn spawn_canvas_edge(parent: &mut ChildSpawnerCommands, index: usize) {
@@ -420,8 +424,8 @@ fn spawn_canvas_node(
                 node_parent.spawn((
                     Text::new(url.clone()),
                     TextFont {
-                        font: fonts.markdown_regular.clone(),
-                        font_size: canvas_text_font_size(zoom),
+                        font: fonts.markdown_regular.clone().into(),
+                        font_size: FontSize::Px(canvas_text_font_size(zoom)),
                         ..default()
                     },
                     LineHeight::Px(canvas_text_line_height(zoom)),
@@ -442,8 +446,8 @@ fn spawn_canvas_node(
                 node_parent.spawn((
                     Text::new(label.clone().unwrap_or_default()),
                     TextFont {
-                        font: fonts.markdown_bold.clone(),
-                        font_size: canvas_text_font_size(zoom).max(8.0),
+                        font: fonts.markdown_bold.clone().into(),
+                        font_size: FontSize::Px(canvas_text_font_size(zoom).max(8.0)),
                         ..default()
                     },
                     LineHeight::Px(canvas_text_line_height(zoom)),
@@ -464,8 +468,8 @@ fn spawn_canvas_node(
                 node_parent.spawn((
                     Text::new(format!("Unsupported canvas node: {node_type}")),
                     TextFont {
-                        font: fonts.markdown_regular.clone(),
-                        font_size: canvas_text_font_size(zoom),
+                        font: fonts.markdown_regular.clone().into(),
+                        font_size: FontSize::Px(canvas_text_font_size(zoom)),
                         ..default()
                     },
                     LineHeight::Px(canvas_text_line_height(zoom)),
@@ -482,7 +486,7 @@ fn spawn_canvas_node(
                     CanvasRenderedNodeText { index },
                 ));
             }
-    });
+        });
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -512,28 +516,27 @@ fn spawn_canvas_text_preview(
     }
 
     let preview = canvas_text_preview(text, mode, state);
-    parent
-        .spawn((
-            Text::new(preview.text),
-            TextFont {
-                font: fonts.regular.clone(),
-                font_size: canvas_text_font_size(zoom),
-                ..default()
-            },
-            LineHeight::Px(canvas_text_line_height(zoom)),
-            TextColor(COLOR_TEXT_MAIN),
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(CANVAS_TEXT_PADDING_X),
-                top: px(CANVAS_TEXT_PADDING_Y),
-                right: px(CANVAS_TEXT_PADDING_X),
-                bottom: px(CANVAS_TEXT_PADDING_Y),
-                overflow: Overflow::clip(),
-                ..default()
-            },
-            ZIndex(1),
-            CanvasRenderedNodeText { index },
-        ));
+    parent.spawn((
+        Text::new(preview.text),
+        TextFont {
+            font: fonts.regular.clone().into(),
+            font_size: FontSize::Px(canvas_text_font_size(zoom)),
+            ..default()
+        },
+        LineHeight::Px(canvas_text_line_height(zoom)),
+        TextColor(COLOR_TEXT_MAIN),
+        Node {
+            position_type: PositionType::Absolute,
+            left: px(CANVAS_TEXT_PADDING_X),
+            top: px(CANVAS_TEXT_PADDING_Y),
+            right: px(CANVAS_TEXT_PADDING_X),
+            bottom: px(CANVAS_TEXT_PADDING_Y),
+            overflow: Overflow::clip(),
+            ..default()
+        },
+        ZIndex(1),
+        CanvasRenderedNodeText { index },
+    ));
 }
 
 fn spawn_canvas_rendered_text_preview(
@@ -549,8 +552,8 @@ fn spawn_canvas_rendered_text_preview(
         .spawn((
             Text::new(""),
             TextFont {
-                font: fonts.markdown_regular.clone(),
-                font_size,
+                font: fonts.markdown_regular.clone().into(),
+                font_size: FontSize::Px(font_size),
                 ..default()
             },
             LineHeight::Px(line_height),
@@ -576,8 +579,9 @@ fn spawn_canvas_rendered_text_preview(
                             fonts,
                             span.style.font_variant,
                             DocumentFormat::Canvas,
-                        ),
-                        font_size: font_size * span.style.font_scale,
+                        )
+                        .into(),
+                        font_size: FontSize::Px(font_size * span.style.font_scale),
                         ..default()
                     },
                     LineHeight::Px(line_height * span.style.line_height_scale),
@@ -654,7 +658,11 @@ fn render_canvas_text_selection_rects(
             Without<CanvasRenderedTextCaret>,
         ),
     >,
-    text_layout_query: &Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+    text_layout_query: &Query<(
+        &CanvasRenderedNodeText,
+        &bevy::text::ComputedTextBlock,
+        &ComputedNode,
+    )>,
     canvas: &CanvasDocument,
     state: &EditorState,
     zoom: f32,
@@ -699,7 +707,11 @@ fn render_canvas_text_carets(
             Without<CanvasRenderedTextSelection>,
         ),
     >,
-    text_layout_query: &Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+    text_layout_query: &Query<(
+        &CanvasRenderedNodeText,
+        &bevy::text::ComputedTextBlock,
+        &ComputedNode,
+    )>,
     canvas: &CanvasDocument,
     state: &EditorState,
     zoom: f32,
@@ -707,7 +719,9 @@ fn render_canvas_text_carets(
     let active_node_index = canvas_active_text_node_index(canvas, state);
     let caret_rect = active_node_index
         .filter(|_| state.caret_visible)
-        .and_then(|node_index| canvas_text_caret_rect(canvas, node_index, state, text_layout_query, zoom));
+        .and_then(|node_index| {
+            canvas_text_caret_rect(canvas, node_index, state, text_layout_query, zoom)
+        });
 
     for (caret, mut node, mut color, mut visibility, mut transform) in caret_query.iter_mut() {
         if Some(caret.node_index) != active_node_index || caret_rect.is_none() {
@@ -729,16 +743,21 @@ fn render_canvas_text_carets(
 
 fn canvas_active_text_node_index(canvas: &CanvasDocument, state: &EditorState) -> Option<usize> {
     let node_id = state.canvas_editing_node_id.as_deref()?;
-    canvas.nodes.iter().position(|node| {
-        node.id == node_id && matches!(node.kind, CanvasNodeKind::Text { .. })
-    })
+    canvas
+        .nodes
+        .iter()
+        .position(|node| node.id == node_id && matches!(node.kind, CanvasNodeKind::Text { .. }))
 }
 
 fn canvas_text_selection_rects(
     canvas: &CanvasDocument,
     node_index: usize,
     state: &EditorState,
-    text_layout_query: &Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+    text_layout_query: &Query<(
+        &CanvasRenderedNodeText,
+        &bevy::text::ComputedTextBlock,
+        &ComputedNode,
+    )>,
     zoom: f32,
 ) -> Vec<(f32, f32, f32, f32)> {
     let Some(node) = canvas.nodes.get(node_index) else {
@@ -752,7 +771,52 @@ fn canvas_text_selection_rects(
         return Vec::new();
     };
 
-    let layout = canvas_text_layout_for_node(text_layout_query, node_index);
+    let Some(layout) = canvas_text_layout_for_node(text_layout_query, node_index)
+        .filter(|layout| canvas_text_layout_matches_document(*layout, &document))
+    else {
+        return canvas_text_selection_rects_fallback(&document, start, end, zoom);
+    };
+
+    let buffer = layout.block.buffer();
+    let start_byte = canvas_text_document_byte_offset(&document, start);
+    let end_byte = canvas_text_document_byte_offset(&document, end);
+    let selection = parley::Selection::new(
+        parley::Cursor::from_byte_index(buffer, start_byte, parley::Affinity::Downstream),
+        parley::Cursor::from_byte_index(buffer, end_byte, parley::Affinity::Upstream),
+    );
+    let inverse_scale = layout.inverse_scale.max(f32::EPSILON);
+    let rects = selection
+        .geometry(buffer)
+        .into_iter()
+        .take(CANVAS_TEXT_SELECTION_RECT_CAPACITY)
+        .filter_map(|(rect, _)| {
+            let left = rect.x0 as f32 * inverse_scale;
+            let top = rect.y0 as f32 * inverse_scale;
+            let width = rect.width() as f32 * inverse_scale;
+            let height = rect.height() as f32 * inverse_scale;
+            (left.is_finite() && top.is_finite() && width.is_finite() && height.is_finite())
+                .then_some((
+                    CANVAS_TEXT_PADDING_X + left,
+                    CANVAS_TEXT_PADDING_Y + top,
+                    width.max(1.0),
+                    height.max(1.0),
+                ))
+        })
+        .collect::<Vec<_>>();
+
+    if rects.is_empty() {
+        canvas_text_selection_rects_fallback(&document, start, end, zoom)
+    } else {
+        rects
+    }
+}
+
+fn canvas_text_selection_rects_fallback(
+    document: &Document,
+    start: Position,
+    end: Position,
+    zoom: f32,
+) -> Vec<(f32, f32, f32, f32)> {
     let fallback_char_width = canvas_text_char_width(zoom);
     let fallback_line_height = canvas_text_line_height(zoom);
     let mut rects = Vec::new();
@@ -776,69 +840,9 @@ fn canvas_text_selection_rects(
             continue;
         }
 
-        let line_text = document.line(line).unwrap_or_default();
-        let display_len = line_text.chars().count();
-        let start_byte = char_to_byte_index(line_text, line_start.min(display_len));
-        let end_byte = char_to_byte_index(line_text, line_end.min(display_len));
-        if let Some((layout, inverse_scale)) = layout {
-            let segments =
-                canvas_text_layout_segments_for_line(layout, &document, line, inverse_scale);
-            if !segments.is_empty() {
-                for segment in segments {
-                    if rects.len() >= CANVAS_TEXT_SELECTION_RECT_CAPACITY {
-                        break;
-                    }
-
-                    let segment_start = start_byte.max(segment.start_byte);
-                    let segment_end = end_byte.min(segment.end_byte);
-                    if segment_end <= segment_start {
-                        continue;
-                    }
-
-                    let start_layout_byte =
-                        canvas_text_segment_layout_byte(segment, segment_start);
-                    let end_layout_byte = canvas_text_segment_layout_byte(segment, segment_end);
-                    let left_x = canvas_caret_x_from_layout(
-                        layout,
-                        segment,
-                        line_text,
-                        start_layout_byte,
-                        inverse_scale,
-                        fallback_char_width,
-                    )
-                    .unwrap_or(start_layout_byte as f32 * fallback_char_width);
-                    let right_x = canvas_caret_x_from_layout(
-                        layout,
-                        segment,
-                        line_text,
-                        end_layout_byte,
-                        inverse_scale,
-                        fallback_char_width,
-                    )
-                    .unwrap_or(end_layout_byte as f32 * fallback_char_width);
-                    let line_top = canvas_text_visual_line_top(
-                        layout,
-                        segment.visual_line,
-                        inverse_scale,
-                    )
-                        .unwrap_or(segment.visual_line as f32 * fallback_line_height);
-
-                    rects.push((
-                        CANVAS_TEXT_PADDING_X + left_x.min(right_x),
-                        CANVAS_TEXT_PADDING_Y
-                            + (line_top + caret_vertical_offset(fallback_line_height)).max(0.0),
-                        (right_x - left_x).abs().max(1.0),
-                        fallback_line_height.max(1.0),
-                    ));
-                }
-                continue;
-            }
-        }
-
-        let left_x = line_start.min(display_len) as f32 * fallback_char_width;
-        let right_x = line_end.min(display_len) as f32 * fallback_char_width;
+        let left_x = line_start as f32 * fallback_char_width;
+        let right_x = line_end as f32 * fallback_char_width;
         let line_top = line as f32 * fallback_line_height;
-
         rects.push((
             CANVAS_TEXT_PADDING_X + left_x.min(right_x),
             CANVAS_TEXT_PADDING_Y
@@ -855,7 +859,11 @@ fn canvas_text_caret_rect(
     canvas: &CanvasDocument,
     node_index: usize,
     state: &EditorState,
-    text_layout_query: &Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+    text_layout_query: &Query<(
+        &CanvasRenderedNodeText,
+        &bevy::text::ComputedTextBlock,
+        &ComputedNode,
+    )>,
     zoom: f32,
 ) -> Option<(f32, f32, f32, f32)> {
     let node = canvas.nodes.get(node_index)?;
@@ -864,464 +872,124 @@ fn canvas_text_caret_rect(
     };
     let document = Document::from_text(text);
     let cursor = document.clamp_position(state.canvas_text_cursor.position);
-    let line_text = document.line(cursor.line).unwrap_or_default();
-    let display_len = line_text.chars().count();
-    let byte_index = char_to_byte_index(line_text, cursor.column.min(display_len));
     let fallback_char_width = canvas_text_char_width(zoom);
     let fallback_line_height = canvas_text_line_height(zoom);
-    let mut caret_x = cursor.column as f32 * fallback_char_width;
-    let mut caret_top = cursor.line as f32 * fallback_line_height;
 
-    if let Some((layout, inverse_scale)) = canvas_text_layout_for_node(text_layout_query, node_index)
+    if let Some(layout) = canvas_text_layout_for_node(text_layout_query, node_index)
+        .filter(|layout| canvas_text_layout_matches_document(*layout, &document))
     {
-        if let Some(segment) =
-            canvas_text_layout_segment_for_position(
-                layout,
-                &document,
-                cursor.line,
-                byte_index,
-                inverse_scale,
-            )
-        {
-            let layout_byte = canvas_text_segment_layout_byte(segment, byte_index);
-            caret_x = canvas_caret_x_from_layout(
-                layout,
-                segment,
-                line_text,
-                layout_byte,
-                inverse_scale,
-                fallback_char_width,
-            )
-            .unwrap_or(caret_x);
-            caret_top = canvas_text_visual_line_top(layout, segment.visual_line, inverse_scale)
-                .unwrap_or(caret_top);
+        let inverse_scale = layout.inverse_scale.max(f32::EPSILON);
+        let requested_width = caret_width_for_state(state, fallback_char_width);
+        let buffer = layout.block.buffer();
+        let byte_index = canvas_text_document_byte_offset(&document, cursor);
+        let cursor =
+            parley::Cursor::from_byte_index(buffer, byte_index, parley::Affinity::Downstream);
+        let rect = cursor.geometry(buffer, requested_width / inverse_scale);
+        let left = rect.x0 as f32 * inverse_scale;
+        let top = rect.y0 as f32 * inverse_scale;
+        let width = rect.width() as f32 * inverse_scale;
+        let height = rect.height() as f32 * inverse_scale;
+        if left.is_finite() && top.is_finite() && width.is_finite() && height.is_finite() {
+            return Some((
+                CANVAS_TEXT_PADDING_X + (left + caret_x_offset_for_state(state)).max(0.0),
+                CANVAS_TEXT_PADDING_Y + top.max(0.0),
+                width.max(1.0),
+                height.max(1.0),
+            ));
         }
     }
 
     Some((
-        CANVAS_TEXT_PADDING_X + (caret_x + caret_x_offset_for_state(state)).max(0.0),
-        CANVAS_TEXT_PADDING_Y + (caret_top + caret_vertical_offset(fallback_line_height)).max(0.0),
+        CANVAS_TEXT_PADDING_X
+            + (cursor.column as f32 * fallback_char_width + caret_x_offset_for_state(state))
+                .max(0.0),
+        CANVAS_TEXT_PADDING_Y
+            + (cursor.line as f32 * fallback_line_height
+                + caret_vertical_offset(fallback_line_height))
+            .max(0.0),
         caret_width_for_state(state, fallback_char_width),
         fallback_line_height.max(1.0),
     ))
 }
 
 fn canvas_text_layout_for_node<'a>(
-    text_layout_query: &'a Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+    text_layout_query: &'a Query<(
+        &CanvasRenderedNodeText,
+        &bevy::text::ComputedTextBlock,
+        &ComputedNode,
+    )>,
     node_index: usize,
-) -> Option<(&'a TextLayoutInfo, f32)> {
+) -> Option<CanvasTextLayout<'a>> {
     text_layout_query
         .iter()
         .find(|(node_text, _, _)| node_text.index == node_index)
-        .map(|(_, layout, computed)| (layout, computed.inverse_scale_factor()))
-}
-
-fn canvas_text_layout_visual_line_count(layout: &TextLayoutInfo, inverse_scale: f32) -> usize {
-    canvas_text_visual_row_bounds(layout, inverse_scale)
-        .len()
-        .max(1)
-}
-
-fn canvas_text_visual_line_from_y(
-    layout: &TextLayoutInfo,
-    y: f32,
-    inverse_scale: f32,
-) -> Option<usize> {
-    let rows = canvas_text_visual_row_bounds(layout, inverse_scale);
-    rows.iter()
-        .min_by(|(_, top_a, bottom_a), (_, top_b, bottom_b)| {
-            let center_a = (*top_a + *bottom_a) * 0.5;
-            let center_b = (*top_b + *bottom_b) * 0.5;
-            (center_a - y)
-                .abs()
-                .partial_cmp(&(center_b - y).abs())
-                .unwrap_or(std::cmp::Ordering::Equal)
+        .map(|(_, block, computed)| CanvasTextLayout {
+            block,
+            inverse_scale: computed.inverse_scale_factor(),
         })
-        .map(|(visual_line, _, _)| *visual_line)
 }
 
-fn canvas_text_visual_line_top(
-    layout: &TextLayoutInfo,
-    visual_line: usize,
-    inverse_scale: f32,
-) -> Option<f32> {
-    canvas_text_layout_rows(layout, inverse_scale)
-        .into_iter()
-        .find(|row| row.visual_line == visual_line)
-        .map(|row| row.top)
-        .or_else(|| {
-            canvas_text_visual_row_bounds(layout, inverse_scale)
-                .into_iter()
-                .find(|(row, _, _)| *row == visual_line)
-                .map(|(_, top, _)| top)
-        })
+fn canvas_text_layout_matches_document(layout: CanvasTextLayout<'_>, document: &Document) -> bool {
+    if layout.block.needs_rerender(false, false) {
+        return false;
+    }
+
+    let buffer_len = layout
+        .block
+        .buffer()
+        .lines()
+        .map(|line| line.text_range().end)
+        .max()
+        .unwrap_or_default();
+    buffer_len == document.to_text().len()
+}
+
+fn canvas_text_document_byte_offset(document: &Document, position: Position) -> usize {
+    let position = document.clamp_position(position);
+    let preceding_bytes = (0..position.line)
+        .map(|line| document.line(line).map_or(0, str::len).saturating_add(1))
+        .sum::<usize>();
+    let line_text = document.line(position.line).unwrap_or_default();
+    preceding_bytes + char_to_byte_index(line_text, position.column)
+}
+
+fn canvas_text_position_from_document_byte(document: &Document, byte_index: usize) -> Position {
+    let mut line_start = 0usize;
+    for line in 0..document.line_count() {
+        let line_text = document.line(line).unwrap_or_default();
+        let line_end = line_start.saturating_add(line_text.len());
+        if byte_index <= line_end {
+            let line_byte = byte_index.saturating_sub(line_start).min(line_text.len());
+            return Position {
+                line,
+                column: byte_to_char_index(line_text, line_byte),
+            };
+        }
+
+        if line + 1 == document.line_count() {
+            return Position {
+                line,
+                column: line_text.chars().count(),
+            };
+        }
+        line_start = line_end.saturating_add(1);
+    }
+
+    Position::default()
 }
 
 fn canvas_text_position_from_layout(
     document: &Document,
-    layout: &TextLayoutInfo,
-    visual_line: usize,
+    layout: CanvasTextLayout<'_>,
     x: f32,
-    inverse_scale: f32,
-    fallback_char_width: f32,
+    y: f32,
 ) -> Option<Position> {
-    for line in 0..document.line_count() {
-        let line_text = document.line(line).unwrap_or_default();
-        let Some(segment) = canvas_text_layout_segments_for_line(layout, document, line, inverse_scale)
-            .into_iter()
-            .find(|segment| segment.visual_line == visual_line)
-        else {
-            continue;
-        };
-
-        let layout_byte = canvas_byte_from_layout_x(
-            layout,
-            segment,
-            x,
-            line_text,
-            inverse_scale,
-            fallback_char_width,
-        )
-        .unwrap_or_else(|| (x / fallback_char_width).round().max(0.0) as usize);
-        let document_byte = canvas_text_segment_document_byte(segment, layout_byte);
-
-        return Some(Position {
-            line,
-            column: byte_to_char_index(line_text, document_byte).min(document.line_len_chars(line)),
-        });
-    }
-
-    None
-}
-
-fn canvas_text_layout_segment_for_position(
-    layout: &TextLayoutInfo,
-    document: &Document,
-    line: usize,
-    byte_index: usize,
-    inverse_scale: f32,
-) -> Option<CanvasTextLayoutSegment> {
-    let segments = canvas_text_layout_segments_for_line(layout, document, line, inverse_scale);
-    segments
-        .iter()
-        .rev()
-        .find(|segment| byte_index >= segment.start_byte)
-        .copied()
-        .or_else(|| segments.first().copied())
-}
-
-fn canvas_text_layout_segments_for_line(
-    layout: &TextLayoutInfo,
-    document: &Document,
-    target_line: usize,
-    inverse_scale: f32,
-) -> Vec<CanvasTextLayoutSegment> {
-    let Some(line_text) = document.line(target_line) else {
-        return Vec::new();
-    };
-    let line_len = line_text.len();
-    if line_len == 0 {
-        return Vec::new();
-    }
-
-    let mut rows = canvas_text_layout_rows(layout, inverse_scale)
-        .into_iter()
-        .filter(|row| row.source_line == target_line)
-        .collect::<Vec<_>>();
-    rows.sort_by_key(|row| row.visual_line);
-
-    let row_starts = rows
-        .iter()
-        .map(|row| row.min_byte.min(line_len))
-        .collect::<Vec<_>>();
-
-    rows.into_iter()
-        .enumerate()
-        .filter_map(|(index, row)| {
-            let start_byte = if index == 0 {
-                0
-            } else {
-                row_starts[index].min(line_len)
-            };
-            let end_byte = row_starts
-                .get(index.saturating_add(1))
-                .copied()
-                .unwrap_or(line_len)
-                .max(start_byte)
-                .min(line_len);
-            (end_byte > start_byte).then_some(CanvasTextLayoutSegment {
-                visual_line: row.visual_line,
-                source_line: target_line,
-                start_byte,
-                end_byte,
-            })
-        })
-        .collect()
-}
-
-fn canvas_text_layout_rows(layout: &TextLayoutInfo, inverse_scale: f32) -> Vec<CanvasTextLayoutRow> {
-    let row_bounds = canvas_text_visual_row_bounds(layout, inverse_scale);
-    let mut rows = BTreeMap::<usize, (usize, usize, usize, f32, f32)>::new();
-    for glyph in &layout.glyphs {
-        let Some(visual_line) = canvas_glyph_visual_line(&row_bounds, glyph, inverse_scale) else {
-            continue;
-        };
-        let start = glyph.byte_index;
-        let end = glyph.byte_index.saturating_add(glyph.byte_length);
-        let top = glyph.position.y * inverse_scale;
-        let bottom = (glyph.position.y + glyph.size.y) * inverse_scale;
-        let entry = rows
-            .entry(visual_line)
-            .or_insert((glyph.line_index, start, end, top, bottom));
-        entry.0 = entry.0.min(glyph.line_index);
-        entry.1 = entry.1.min(start);
-        entry.2 = entry.2.max(end);
-        entry.3 = entry.3.min(top);
-        entry.4 = entry.4.max(bottom);
-    }
-
-    rows.into_iter()
-        .map(
-            |(visual_line, (source_line, min_byte, max_byte, top, bottom))| {
-                CanvasTextLayoutRow {
-            visual_line,
-                    source_line,
-            min_byte,
-            max_byte,
-                    top,
-                    bottom,
-                }
-            },
-        )
-        .collect()
-}
-
-fn canvas_text_segment_layout_byte(segment: CanvasTextLayoutSegment, document_byte: usize) -> usize {
-    document_byte.clamp(segment.start_byte, segment.end_byte)
-}
-
-fn canvas_text_segment_document_byte(segment: CanvasTextLayoutSegment, layout_byte: usize) -> usize {
-    layout_byte.clamp(segment.start_byte, segment.end_byte)
-}
-
-fn canvas_byte_from_layout_x(
-    layout: &TextLayoutInfo,
-    segment: CanvasTextLayoutSegment,
-    x: f32,
-    line_text: &str,
-    inverse_scale: f32,
-    fallback_char_width: f32,
-) -> Option<usize> {
-    let boundaries = canvas_line_boundaries(
-        layout,
-        segment,
-        line_text,
-        inverse_scale,
-        fallback_char_width,
-    );
-    let (best_byte, _) = boundaries.iter().min_by(|(_, ax), (_, bx)| {
-        (*ax - x)
-            .abs()
-            .partial_cmp(&(*bx - x).abs())
-            .unwrap_or(std::cmp::Ordering::Equal)
-    })?;
-    Some(*best_byte)
-}
-
-fn canvas_caret_x_from_layout(
-    layout: &TextLayoutInfo,
-    segment: CanvasTextLayoutSegment,
-    line_text: &str,
-    byte_index: usize,
-    inverse_scale: f32,
-    fallback_char_width: f32,
-) -> Option<f32> {
-    let boundaries = canvas_line_boundaries(
-        layout,
-        segment,
-        line_text,
-        inverse_scale,
-        fallback_char_width,
-    );
-    boundaries
-        .iter()
-        .find(|(byte, _)| *byte >= byte_index)
-        .map(|(_, x)| *x)
-        .or_else(|| boundaries.last().map(|(_, x)| *x))
-}
-
-fn canvas_line_boundaries(
-    layout: &TextLayoutInfo,
-    segment: CanvasTextLayoutSegment,
-    line_text: &str,
-    inverse_scale: f32,
-    fallback_char_width: f32,
-) -> Vec<(usize, f32)> {
-    let line_len = line_text.len();
-    let row_bounds = canvas_text_visual_row_bounds(layout, inverse_scale);
-    let mut glyphs = layout
-        .glyphs
-        .iter()
-        .filter(|glyph| {
-            glyph.line_index == segment.source_line
-                && canvas_glyph_visual_line(&row_bounds, glyph, inverse_scale)
-                    == Some(segment.visual_line)
-        })
-        .collect::<Vec<_>>();
-
-    if glyphs.is_empty() {
-        let mut boundaries = Vec::with_capacity(line_len.saturating_add(1));
-        for local_byte in 0..=line_len {
-            boundaries.push((local_byte, local_byte as f32 * fallback_char_width));
-        }
-        return boundaries;
-    }
-
-    glyphs.sort_by_key(|glyph| (glyph.byte_index, glyph.byte_length));
-    let mut step_candidates = glyphs
-        .windows(2)
-        .filter_map(|window| {
-            let left = window[0];
-            let right = window[1];
-            let byte_gap = right.byte_index.saturating_sub(left.byte_index);
-            if byte_gap == 0 {
-                return None;
-            }
-            let step = (right.position.x - left.position.x) * inverse_scale / byte_gap as f32;
-            (step.is_finite() && step.abs() > 0.1).then_some(step)
-        })
-        .collect::<Vec<_>>();
-
-    step_candidates.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let byte_step = step_candidates
-        .get(step_candidates.len().saturating_sub(1) / 2)
-        .copied()
-        .unwrap_or(fallback_char_width);
-
-    let mut anchors = BTreeMap::<usize, Vec<f32>>::new();
-
-    for glyph in glyphs {
-        let start = glyph.byte_index.min(line_len);
-        let end = glyph
-            .byte_index
-            .saturating_add(glyph.byte_length)
-            .min(line_len);
-        let span_bytes = end.saturating_sub(start).max(1);
-        let half_width = byte_step * span_bytes as f32 * 0.5;
-        let center_x = glyph.position.x * inverse_scale;
-        let left = center_x - half_width;
-        let right = center_x + half_width;
-
-        anchors.entry(start).or_default().push(left);
-        anchors.entry(end).or_default().push(right);
-    }
-
-    let mut known = anchors
-        .into_iter()
-        .map(|(byte_index, xs)| {
-            let sum = xs.iter().copied().sum::<f32>();
-            (byte_index, sum / xs.len() as f32)
-        })
-        .collect::<Vec<_>>();
-
-    known.sort_by_key(|(byte_index, _)| *byte_index);
-
-    let first = known[0];
-    let last = known[known.len().saturating_sub(1)];
-    let mut boundaries = Vec::with_capacity(line_len.saturating_add(1));
-    let mut segment = 0usize;
-
-    for local_byte in 0..=line_len {
-        let byte_index = local_byte;
-        while segment + 1 < known.len() && known[segment + 1].0 <= byte_index {
-            segment += 1;
-        }
-
-        let x = if byte_index <= first.0 {
-            first.1 - first.0.saturating_sub(byte_index) as f32 * byte_step
-        } else if byte_index >= last.0 {
-            last.1 + byte_index.saturating_sub(last.0) as f32 * byte_step
-        } else {
-            let (left_byte, left_x) = known[segment];
-            let (right_byte, right_x) = known[segment + 1];
-            let gap = right_byte.saturating_sub(left_byte).max(1);
-            let t = byte_index.saturating_sub(left_byte) as f32 / gap as f32;
-            left_x + (right_x - left_x) * t
-        };
-
-        boundaries.push((byte_index, x));
-    }
-
-    boundaries
-}
-
-fn canvas_text_visual_row_bounds(
-    layout: &TextLayoutInfo,
-    inverse_scale: f32,
-) -> Vec<(usize, f32, f32)> {
-    let mut bounds = layout
-        .run_geometry
-        .iter()
-        .map(|run| (run.bounds.min.y, run.bounds.max.y))
-        .filter(|(top, bottom)| top.is_finite() && bottom.is_finite())
-        .collect::<Vec<_>>();
-
-    if bounds.is_empty() {
-        bounds = layout
-            .glyphs
-            .iter()
-            .map(|glyph| {
-                let top = glyph.position.y * inverse_scale;
-                let bottom = (glyph.position.y + glyph.size.y) * inverse_scale;
-                (top, bottom)
-            })
-            .filter(|(top, bottom)| top.is_finite() && bottom.is_finite())
-            .collect();
-    }
-
-    bounds.sort_by(|(top_a, _), (top_b, _)| {
-        top_a
-            .partial_cmp(top_b)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    let mut merged = Vec::<(f32, f32)>::new();
-    for (top, bottom) in bounds {
-        if let Some((last_top, last_bottom)) = merged.last_mut()
-            && (top - *last_top).abs() <= 0.5
-        {
-            *last_top = (*last_top).min(top);
-            *last_bottom = (*last_bottom).max(bottom);
-            continue;
-        }
-
-        merged.push((top, bottom.max(top + 1.0)));
-    }
-
-    merged
-        .into_iter()
-        .enumerate()
-        .map(|(index, (top, bottom))| (index, top, bottom))
-        .collect()
-}
-
-fn canvas_glyph_visual_line(
-    row_bounds: &[(usize, f32, f32)],
-    glyph: &bevy::text::PositionedGlyph,
-    inverse_scale: f32,
-) -> Option<usize> {
-    let glyph_y = glyph.position.y * inverse_scale;
-    row_bounds
-        .iter()
-        .min_by(|(_, top_a, bottom_a), (_, top_b, bottom_b)| {
-            let center_a = (*top_a + *bottom_a) * 0.5;
-            let center_b = (*top_b + *bottom_b) * 0.5;
-            (center_a - glyph_y)
-                .abs()
-                .partial_cmp(&(center_b - glyph_y).abs())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|(visual_line, _, _)| *visual_line)
+    canvas_text_layout_matches_document(layout, document).then(|| {
+        let inverse_scale = layout.inverse_scale.max(f32::EPSILON);
+        let cursor =
+            parley::Cursor::from_point(layout.block.buffer(), x / inverse_scale, y / inverse_scale);
+        canvas_text_position_from_document_byte(document, cursor.index())
+    })
 }
 
 fn spawn_canvas_image_or_placeholder(
@@ -1367,8 +1035,8 @@ fn spawn_canvas_image_or_placeholder(
                 parent.spawn((
                     Text::new(canvas_image_error_text("Image failed to load", target)),
                     TextFont {
-                        font: fonts.markdown_regular.clone(),
-                        font_size: canvas_text_font_size(zoom),
+                        font: fonts.markdown_regular.clone().into(),
+                        font_size: FontSize::Px(canvas_text_font_size(zoom)),
                         ..default()
                     },
                     LineHeight::Px(canvas_text_line_height(zoom)),
@@ -1407,8 +1075,8 @@ fn spawn_canvas_image_error(
     parent.spawn((
         Text::new(canvas_image_error_text(message, target)),
         TextFont {
-            font: fonts.markdown_regular.clone(),
-            font_size: canvas_text_font_size(zoom),
+            font: fonts.markdown_regular.clone().into(),
+            font_size: FontSize::Px(canvas_text_font_size(zoom)),
             ..default()
         },
         LineHeight::Px(canvas_text_line_height(zoom)),
@@ -1427,7 +1095,10 @@ fn spawn_canvas_image_error(
 }
 
 fn canvas_image_load_failed(asset_server: &AssetServer, handle: &Handle<Image>) -> bool {
-    matches!(asset_server.get_load_state(handle), Some(LoadState::Failed(_)))
+    matches!(
+        asset_server.get_load_state(handle),
+        Some(LoadState::Failed(_))
+    )
 }
 
 fn canvas_image_error_text(message: &str, target: &str) -> String {
@@ -1449,7 +1120,10 @@ fn remote_image_target_seems_loadable(target: &str) -> bool {
         return true;
     }
     let without_fragment = trimmed.split('#').next().unwrap_or(trimmed);
-    let without_query = without_fragment.split('?').next().unwrap_or(without_fragment);
+    let without_query = without_fragment
+        .split('?')
+        .next()
+        .unwrap_or(without_fragment);
     let lower = without_query.to_ascii_lowercase();
     matches!(
         Path::new(&lower).extension().and_then(|ext| ext.to_str()),
@@ -1487,7 +1161,10 @@ fn canvas_first_html_image_src(text: &str) -> Option<String> {
 fn canvas_first_obsidian_image_target(text: &str) -> Option<String> {
     let start = text.find("![[")? + 3;
     let rest = text.get(start..)?;
-    let end = rest.find("]]").or_else(|| rest.find(']')).unwrap_or(rest.len());
+    let end = rest
+        .find("]]")
+        .or_else(|| rest.find(']'))
+        .unwrap_or(rest.len());
     let target = rest.get(..end)?;
     Some(target.split('|').next().unwrap_or(target).trim().to_owned())
 }
@@ -1644,9 +1321,7 @@ fn canvas_text_preview(
                 .collect::<Vec<_>>()
                 .join("\n"),
         },
-        CanvasTextRenderMode::Plain => CanvasTextPreview {
-            text: normalized,
-        },
+        CanvasTextRenderMode::Plain => CanvasTextPreview { text: normalized },
         CanvasTextRenderMode::PlainInteractive => CanvasTextPreview { text: normalized },
     }
 }

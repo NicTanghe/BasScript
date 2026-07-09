@@ -59,9 +59,9 @@ fn render_editor(
         ),
         Without<PanelText>,
     >,
-    text_layout_query: Query<(&PanelText, &TextLayoutInfo)>,
+    text_layout_query: Query<(&PanelText, &ComputedTextBlock)>,
     processed_text_layout_query: Query<
-        (&ProcessedPaperText, &TextLayoutInfo, &ComputedNode),
+        (&ProcessedPaperText, &ComputedTextBlock, &ComputedNode),
         (
             Without<PanelText>,
             Without<PanelPaper>,
@@ -362,8 +362,9 @@ fn render_editor(
                     &fonts,
                     FontVariant::Regular,
                     state.document_format,
-                );
-                text_font.font_size = plain_font_size;
+                )
+                .into();
+                text_font.font_size = FontSize::Px(plain_font_size);
                 *line_height_comp = LineHeight::Px(plain_line_height);
                 **text = plain_view.clone();
                 node.left = px(plain_origin_x);
@@ -374,7 +375,7 @@ fn render_editor(
                 transform.translation = Val2::ZERO;
             }
             PanelKind::Processed => {
-                text_font.font_size = processed_font_size;
+                text_font.font_size = FontSize::Px(processed_font_size);
                 *line_height_comp = LineHeight::Px(processed_line_height);
                 **text = String::new();
                 node.left = px(0.0);

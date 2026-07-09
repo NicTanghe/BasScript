@@ -44,8 +44,8 @@ fn workspace_prompt_bundle(font: Handle<Font>) -> impl Bundle {
                 (
                     Text::new(""),
                     TextFont {
-                        font: font.clone(),
-                        font_size: 14.0,
+                        font: font.clone().into(),
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(COLOR_TEXT_MAIN),
@@ -66,8 +66,8 @@ fn workspace_prompt_bundle(font: Handle<Font>) -> impl Bundle {
                     children![(
                         Text::new(""),
                         TextFont {
-                            font: font.clone(),
-                            font_size: 12.0,
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(12.0),
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MAIN),
@@ -77,8 +77,8 @@ fn workspace_prompt_bundle(font: Handle<Font>) -> impl Bundle {
                 (
                     Text::new(""),
                     TextFont {
-                        font,
-                        font_size: 11.0,
+                        font: font.into(),
+                        font_size: FontSize::Px(11.0),
                         ..default()
                     },
                     TextColor(COLOR_TEXT_MUTED),

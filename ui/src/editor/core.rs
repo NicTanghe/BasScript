@@ -21,10 +21,11 @@ use bevy::{
     },
     log::{info, warn},
     prelude::*,
-    text::{LineHeight, TextLayoutInfo},
+    text::{ComputedTextBlock, LineHeight},
     ui::{RelativeCursorPosition, UiGlobalTransform, UiTransform, Val2},
     window::{PrimaryWindow, RawHandleWrapper},
 };
+use parley::{Affinity, Cursor as ParleyCursor};
 use rfd::FileDialog;
 
 const FONT_PATH: &str = "fonts/Courier Prime/Courier Prime.ttf";
@@ -154,7 +155,7 @@ impl Plugin for UiPlugin {
             .init_resource::<PanelSplitterDragState>()
             .init_resource::<EditorImageCache>()
             .init_state::<UiScreenState>()
-            .insert_non_send_resource(DialogMainThreadMarker)
+            .insert_non_send(DialogMainThreadMarker)
             .add_systems(
                 Startup,
                 (
@@ -200,12 +201,11 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 Update,
-                handle_settings_buttons
-                    .run_if(
-                        in_state(UiScreenState::Settings)
-                            .or(in_state(UiScreenState::Keybinds))
-                            .or(in_state(UiScreenState::Theme)),
-                    ),
+                handle_settings_buttons.run_if(
+                    in_state(UiScreenState::Settings)
+                        .or_else(in_state(UiScreenState::Keybinds))
+                        .or_else(in_state(UiScreenState::Theme)),
+                ),
             )
             .add_systems(
                 Update,
@@ -768,9 +768,7 @@ fn parse_binding_spec(spec: &str) -> Option<ShortcutBinding> {
             }
             "CTRL" | "CONTROL" => modifier = ShortcutModifier::Ctrl,
             "ALT" | "OPTION" => modifier = ShortcutModifier::Alt,
-            "SUPER" | "CMD" | "COMMAND" | "WIN" | "WINDOWS" => {
-                modifier = ShortcutModifier::Super
-            }
+            "SUPER" | "CMD" | "COMMAND" | "WIN" | "WINDOWS" => modifier = ShortcutModifier::Super,
             "SPACE" => modifier = ShortcutModifier::Space,
             _ => return None,
         }
@@ -1120,12 +1118,16 @@ enum WorkspaceSelectedRow {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum WorkspacePrompt {
-    Create { input: String },
+    Create {
+        input: String,
+    },
     Rename {
         target: WorkspaceSelectedRow,
         input: String,
     },
-    Delete { target: WorkspaceSelectedRow },
+    Delete {
+        target: WorkspaceSelectedRow,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1282,19 +1284,13 @@ struct CachedProcessedImage {
 
 #[derive(Clone)]
 enum CachedProcessedImageResult {
-    Loaded {
-        handle: Handle<Image>,
-        size: UVec2,
-    },
+    Loaded { handle: Handle<Image>, size: UVec2 },
     Failed,
 }
 
 #[derive(Clone)]
 enum ProcessedImageLookup {
-    Loaded {
-        handle: Handle<Image>,
-        size: UVec2,
-    },
+    Loaded { handle: Handle<Image>, size: UVec2 },
     Failed,
 }
 
@@ -1528,12 +1524,7 @@ impl ThemeSettings {
 
     fn selection_background_color(&self) -> Color {
         let rgba = self.selection_background_clamped();
-        Color::srgba(
-            rgba.x,
-            rgba.y,
-            rgba.z,
-            rgba.w,
-        )
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 
     fn link_fallback_clamped(&self) -> Vec4 {
@@ -2099,7 +2090,10 @@ impl EditorState {
         }
 
         self.selection_anchor = anchor;
-        if self.selection_anchor.is_some_and(|start| start == self.cursor.position) {
+        if self
+            .selection_anchor
+            .is_some_and(|start| start == self.cursor.position)
+        {
             self.selection_anchor = None;
         }
 
@@ -2191,7 +2185,8 @@ impl EditorState {
                 self.reset_blink();
             }
             Err(error) => {
-                self.status_message = format!("Load failed for {}: {error}", status_path_label(&path));
+                self.status_message =
+                    format!("Load failed for {}: {error}", status_path_label(&path));
             }
         }
     }

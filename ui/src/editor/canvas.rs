@@ -21,12 +21,17 @@ struct CanvasDragState {
 }
 
 enum CanvasDragMode {
-    Pan { button: CanvasPanButton },
+    Pan {
+        button: CanvasPanButton,
+    },
     MoveNode {
         node_id: String,
         undo_snapshot: Option<EditorHistorySnapshot>,
     },
-    SelectText { node_id: String, anchor: Position },
+    SelectText {
+        node_id: String,
+        anchor: Position,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,14 +116,19 @@ impl EditorState {
 
     fn canvas_node_index_at_world(&self, world: Vec2) -> Option<usize> {
         let canvas = self.canvas_document.as_ref()?;
-        canvas.nodes.iter().enumerate().rev().find_map(|(index, node)| {
-            let size = canvas_node_size(node.width, node.height);
-            (world.x >= node.x
-                && world.x <= node.x + size.x
-                && world.y >= node.y
-                && world.y <= node.y + size.y)
-                .then_some(index)
-        })
+        canvas
+            .nodes
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, node)| {
+                let size = canvas_node_size(node.width, node.height);
+                (world.x >= node.x
+                    && world.x <= node.x + size.x
+                    && world.y >= node.y
+                    && world.y <= node.y + size.y)
+                    .then_some(index)
+            })
     }
 
     fn move_canvas_node_by_delta(&mut self, node_id: &str, delta: Vec2) -> bool {
@@ -162,7 +172,8 @@ impl EditorState {
         let previous_anchor = self.canvas_text_selection_anchor;
         if changed_node {
             if let Some(text) = self.canvas_text_node_content(&node_id) {
-                self.canvas_text_cursor.set_position(canvas_text_end_position(&text));
+                self.canvas_text_cursor
+                    .set_position(canvas_text_end_position(&text));
                 self.canvas_text_selection_anchor = None;
             }
         }
@@ -320,7 +331,7 @@ fn canvas_text_position_from_world(
     text: &str,
     world_pos: Vec2,
     zoom: f32,
-    layout: Option<(&TextLayoutInfo, f32)>,
+    layout: Option<CanvasTextLayout<'_>>,
 ) -> Position {
     let zoom = zoom.max(CANVAS_ZOOM_MIN);
     let local_screen = (world_pos - Vec2::new(node.x, node.y)) * zoom;
@@ -331,19 +342,11 @@ fn canvas_text_position_from_world(
     let char_width = canvas_text_char_width(zoom).max(1.0);
     let fallback_line =
         ((text_y / line_height).floor() as usize).min(document.line_count().saturating_sub(1));
-    let fallback_column = ((text_x / char_width).round() as usize)
-        .min(document.line_len_chars(fallback_line));
-    if let Some((layout, inverse_scale)) = layout {
-        let visual_line =
-            canvas_text_visual_line_from_y(layout, text_y, inverse_scale).unwrap_or(fallback_line);
-        if let Some(position) = canvas_text_position_from_layout(
-            &document,
-            layout,
-            visual_line,
-            text_x,
-            inverse_scale,
-            char_width,
-        ) {
+    let fallback_column =
+        ((text_x / char_width).round() as usize).min(document.line_len_chars(fallback_line));
+    if let Some(layout) = layout {
+        if let Some(position) = canvas_text_position_from_layout(&document, layout, text_x, text_y)
+        {
             return position;
         }
     }
@@ -356,8 +359,12 @@ fn canvas_text_position_from_world(
 
 fn active_canvas_text_layout<'a>(
     state: &EditorState,
-    text_layout_query: &'a Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
-) -> Option<(&'a TextLayoutInfo, f32)> {
+    text_layout_query: &'a Query<(
+        &CanvasRenderedNodeText,
+        &bevy::text::ComputedTextBlock,
+        &ComputedNode,
+    )>,
+) -> Option<CanvasTextLayout<'a>> {
     let node_index = state.active_canvas_text_node_index()?;
     canvas_text_layout_for_node(text_layout_query, node_index)
 }
@@ -367,7 +374,7 @@ fn move_canvas_text_cursor_by_key(
     document: &Document,
     key: KeyCode,
     extend_selection: bool,
-    layout: Option<(&TextLayoutInfo, f32)>,
+    layout: Option<CanvasTextLayout<'_>>,
     zoom: f32,
 ) -> bool {
     let current = document.clamp_position(state.canvas_text_cursor.position);
@@ -375,13 +382,13 @@ fn move_canvas_text_cursor_by_key(
         KeyCode::ArrowLeft => document.move_left(current),
         KeyCode::ArrowRight => document.move_right(current),
         KeyCode::ArrowUp => canvas_text_visual_arrow_position(document, current, key, layout, zoom)
-            .unwrap_or_else(|| document.move_up(current, state.canvas_text_cursor.preferred_column)),
-        KeyCode::ArrowDown => {
-            canvas_text_visual_arrow_position(document, current, key, layout, zoom)
-                .unwrap_or_else(|| {
-                    document.move_down(current, state.canvas_text_cursor.preferred_column)
-                })
-        }
+            .unwrap_or_else(|| {
+                document.move_up(current, state.canvas_text_cursor.preferred_column)
+            }),
+        KeyCode::ArrowDown => canvas_text_visual_arrow_position(
+            document, current, key, layout, zoom,
+        )
+        .unwrap_or_else(|| document.move_down(current, state.canvas_text_cursor.preferred_column)),
         KeyCode::Home => Position {
             line: current.line,
             column: 0,
@@ -401,50 +408,49 @@ fn canvas_text_visual_arrow_position(
     document: &Document,
     current: Position,
     key: KeyCode,
-    layout: Option<(&TextLayoutInfo, f32)>,
-    zoom: f32,
+    layout: Option<CanvasTextLayout<'_>>,
+    _zoom: f32,
 ) -> Option<Position> {
-    let (layout, inverse_scale) = layout?;
-    let line_text = document.line(current.line)?;
-    let display_len = line_text.chars().count();
-    let byte_index = char_to_byte_index(line_text, current.column.min(display_len));
-    let segment = canvas_text_layout_segment_for_position(
-        layout,
-        document,
-        current.line,
-        byte_index,
-        inverse_scale,
-    )?;
-    let visual_line_count = canvas_text_layout_visual_line_count(layout, inverse_scale);
-    let target_visual_line = match key {
-        KeyCode::ArrowUp => segment.visual_line.checked_sub(1)?,
-        KeyCode::ArrowDown => {
-            let next = segment.visual_line.saturating_add(1);
-            (next < visual_line_count).then_some(next)?
-        }
+    let layout = layout.filter(|layout| canvas_text_layout_matches_document(*layout, document))?;
+    let buffer = layout.block.buffer();
+    let byte_index = canvas_text_document_byte_offset(document, current);
+    let cursor = parley::Cursor::from_byte_index(buffer, byte_index, parley::Affinity::Downstream);
+    let cursor_y = cursor.geometry(buffer, 0.0).y0 as f32;
+    let visual_line = buffer
+        .lines()
+        .enumerate()
+        .min_by(|(_, left), (_, right)| {
+            let left_metrics = left.metrics();
+            let right_metrics = right.metrics();
+            let left_center = (left_metrics.block_min_coord + left_metrics.block_max_coord) * 0.5;
+            let right_center =
+                (right_metrics.block_min_coord + right_metrics.block_max_coord) * 0.5;
+            (left_center - cursor_y)
+                .abs()
+                .partial_cmp(&(right_center - cursor_y).abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(index, _)| index)?;
+    match key {
+        KeyCode::ArrowUp if visual_line == 0 => return None,
+        KeyCode::ArrowDown if visual_line + 1 >= buffer.len() => return None,
+        KeyCode::ArrowUp | KeyCode::ArrowDown => {}
+        _ => return None,
+    }
+
+    let selection =
+        parley::Selection::from_byte_index(buffer, cursor.index(), parley::Affinity::Downstream);
+    let moved = match key {
+        KeyCode::ArrowUp => selection.move_lines(buffer, -1, false),
+        KeyCode::ArrowDown => selection.move_lines(buffer, 1, false),
         _ => return None,
     };
-    let fallback_char_width = canvas_text_char_width(zoom);
-    let layout_byte = canvas_text_segment_layout_byte(segment, byte_index);
-    let current_x = canvas_caret_x_from_layout(
-        layout,
-        segment,
-        line_text,
-        layout_byte,
-        inverse_scale,
-        fallback_char_width,
+    Some(
+        document.clamp_position(canvas_text_position_from_document_byte(
+            document,
+            moved.focus().index(),
+        )),
     )
-    .unwrap_or(current.column as f32 * fallback_char_width);
-
-    canvas_text_position_from_layout(
-        document,
-        layout,
-        target_visual_line,
-        current_x,
-        inverse_scale,
-        fallback_char_width,
-    )
-    .map(|position| document.clamp_position(position))
 }
 
 fn update_canvas_text_drag_selection(
@@ -452,7 +458,7 @@ fn update_canvas_text_drag_selection(
     node_id: &str,
     anchor: Position,
     world_pos: Vec2,
-    layout: Option<(&TextLayoutInfo, f32)>,
+    layout: Option<CanvasTextLayout<'_>>,
 ) -> bool {
     let Some((current, document)) = state.canvas_document.as_ref().and_then(|canvas| {
         canvas
@@ -539,7 +545,11 @@ fn handle_canvas_drag_input(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
-    text_layout_query: Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+    text_layout_query: Query<(
+        &CanvasRenderedNodeText,
+        &bevy::text::ComputedTextBlock,
+        &ComputedNode,
+    )>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut drag_state: ResMut<CanvasDragState>,
     mut state: ResMut<EditorState>,
@@ -556,10 +566,7 @@ fn handle_canvas_drag_input(
         return;
     }
 
-    let cursor_position = window_query
-        .iter()
-        .next()
-        .and_then(Window::cursor_position);
+    let cursor_position = window_query.iter().next().and_then(Window::cursor_position);
     let Some(cursor_position) = cursor_position else {
         return;
     };
@@ -636,7 +643,11 @@ fn start_canvas_drag_if_requested(
     mouse_buttons: &ButtonInput<MouseButton>,
     keys: &ButtonInput<KeyCode>,
     panel_query: &Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
-    text_layout_query: &Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+    text_layout_query: &Query<(
+        &CanvasRenderedNodeText,
+        &bevy::text::ComputedTextBlock,
+        &ComputedNode,
+    )>,
     drag_state: &mut CanvasDragState,
     state: &mut EditorState,
     cursor_position: Vec2,
@@ -674,7 +685,9 @@ fn start_canvas_drag_if_requested(
         return;
     }
 
-    if !ctrl_pressed && !keys.pressed(KeyCode::Space) && mouse_buttons.just_pressed(MouseButton::Left)
+    if !ctrl_pressed
+        && !keys.pressed(KeyCode::Space)
+        && mouse_buttons.just_pressed(MouseButton::Left)
     {
         let Some(panel_pos) = panel_context.processed_cursor_pos else {
             state.clear_canvas_text_edit();
@@ -719,7 +732,12 @@ fn start_canvas_drag_if_requested(
     }
 
     if keys.pressed(KeyCode::Space) && mouse_buttons.just_pressed(MouseButton::Left) {
-        start_canvas_pan_drag(drag_state, state, cursor_position, CanvasPanButton::SpaceLeft);
+        start_canvas_pan_drag(
+            drag_state,
+            state,
+            cursor_position,
+            CanvasPanButton::SpaceLeft,
+        );
         return;
     }
 
@@ -762,7 +780,11 @@ fn handle_canvas_text_edit_input(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     capture: Res<LinkAutocompleteInputCapture>,
-    text_layout_query: Query<(&CanvasRenderedNodeText, &TextLayoutInfo, &ComputedNode)>,
+    text_layout_query: Query<(
+        &CanvasRenderedNodeText,
+        &bevy::text::ComputedTextBlock,
+        &ComputedNode,
+    )>,
     mut navigation_repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
 ) {

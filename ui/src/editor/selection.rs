@@ -40,10 +40,15 @@ fn handle_mouse_selection(
     mut mouse_selection: ResMut<MouseSelectionState>,
     panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
     metadata_query: Query<&RelativeCursorPosition, With<MarkdownMetadataPanelRoot>>,
-    text_layout_query: Query<(&PanelText, &TextLayoutInfo)>,
+    text_layout_query: Query<(&PanelText, &ComputedTextBlock)>,
     processed_text_layout_query: Query<
-        (&ProcessedPaperText, &TextLayoutInfo, &ComputedNode),
-        (Without<PanelText>, Without<PanelPaper>, Without<PanelCaret>, Without<PanelCanvas>),
+        (&ProcessedPaperText, &ComputedTextBlock, &ComputedNode),
+        (
+            Without<PanelText>,
+            Without<PanelPaper>,
+            Without<PanelCaret>,
+            Without<PanelCanvas>,
+        ),
     >,
     mut state: ResMut<EditorState>,
 ) {
@@ -248,34 +253,38 @@ fn handle_mouse_selection(
             let (line_in_page, display_column) = processed_text_layout_query
                 .iter()
                 .find(|(paper_text, _, _)| paper_text.slot == slot)
-                .map_or((fallback_line_in_page, fallback_column), |(_, layout, text_computed)| {
-                    let inverse_scale = text_computed.inverse_scale_factor();
-                    let line_in_page = line_index_from_layout_y(
-                        layout,
-                        local_y,
-                        processed_lines_per_page.max(1),
-                        inverse_scale,
-                    )
-                    .unwrap_or(fallback_line_in_page)
-                    .min(processed_lines_per_page.saturating_sub(1));
+                .map_or(
+                    (fallback_line_in_page, fallback_column),
+                    |(_, text_block, text_computed)| {
+                        let inverse_scale = text_computed.inverse_scale_factor();
+                        let line_in_page = line_index_from_layout_y(
+                            text_block,
+                            local_y,
+                            processed_lines_per_page.max(1),
+                            inverse_scale,
+                        )
+                        .unwrap_or(fallback_line_in_page)
+                        .min(processed_lines_per_page.saturating_sub(1));
 
-                    let global_for_line = page_index
-                        .saturating_mul(processed_step_lines)
-                        .saturating_add(line_in_page)
-                        .min(processed_all_lines.len().saturating_sub(1));
-                    let display_line =
-                        processed_all_lines.get(global_for_line).map_or("", |line| line.text.as_str());
-                    let display_column = column_from_layout_x(
-                        layout,
-                        line_in_page,
-                        local_x,
-                        display_line,
-                        inverse_scale,
-                        processed_char_width,
-                    )
-                    .unwrap_or(fallback_column);
-                    (line_in_page, display_column)
-                });
+                        let global_for_line = page_index
+                            .saturating_mul(processed_step_lines)
+                            .saturating_add(line_in_page)
+                            .min(processed_all_lines.len().saturating_sub(1));
+                        let display_line = processed_all_lines
+                            .get(global_for_line)
+                            .map_or("", |line| line.text.as_str());
+                        let display_column = column_from_layout_x(
+                            text_block,
+                            line_in_page,
+                            local_x,
+                            display_line,
+                            inverse_scale,
+                            processed_char_width,
+                        )
+                        .unwrap_or(fallback_column);
+                        (line_in_page, display_column)
+                    },
+                );
 
             let global_index = page_index
                 .saturating_mul(processed_step_lines)
@@ -301,8 +310,8 @@ fn handle_mouse_selection(
         let local_y = (panel_y - plain_origin_y).max(0.0);
         let panel_line_count = plain_lines.len().max(1);
         let line_offset = plain_layout
-            .and_then(|layout| {
-                line_index_from_layout_y(layout, local_y, panel_line_count, inverse_scale)
+            .and_then(|text_block| {
+                line_index_from_layout_y(text_block, local_y, panel_line_count, inverse_scale)
             })
             .unwrap_or_else(|| {
                 ((local_y / plain_line_height).floor().max(0.0) as usize)
@@ -317,9 +326,9 @@ fn handle_mouse_selection(
             .get(visible_offset)
             .map_or("", |line| line.as_str());
         let raw_column = plain_layout
-            .and_then(|layout| {
+            .and_then(|text_block| {
                 column_from_layout_x(
-                    layout,
+                    text_block,
                     visible_offset,
                     local_x,
                     display_line,
@@ -373,8 +382,13 @@ fn handle_mouse_selection(
 fn sync_hovered_processed_link(
     panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
     processed_text_layout_query: Query<
-        (&ProcessedPaperText, &TextLayoutInfo, &ComputedNode),
-        (Without<PanelText>, Without<PanelPaper>, Without<PanelCaret>, Without<PanelCanvas>),
+        (&ProcessedPaperText, &ComputedTextBlock, &ComputedNode),
+        (
+            Without<PanelText>,
+            Without<PanelPaper>,
+            Without<PanelCaret>,
+            Without<PanelCanvas>,
+        ),
     >,
     mut state: ResMut<EditorState>,
 ) {
@@ -383,18 +397,20 @@ fn sync_hovered_processed_link(
         return;
     }
 
-    state.hovered_processed_link = hovered_processed_link_at_cursor(
-        &panel_query,
-        &processed_text_layout_query,
-        &mut state,
-    );
+    state.hovered_processed_link =
+        hovered_processed_link_at_cursor(&panel_query, &processed_text_layout_query, &mut state);
 }
 
 fn hovered_processed_link_at_cursor(
     panel_query: &Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
     processed_text_layout_query: &Query<
-        (&ProcessedPaperText, &TextLayoutInfo, &ComputedNode),
-        (Without<PanelText>, Without<PanelPaper>, Without<PanelCaret>, Without<PanelCanvas>),
+        (&ProcessedPaperText, &ComputedTextBlock, &ComputedNode),
+        (
+            Without<PanelText>,
+            Without<PanelPaper>,
+            Without<PanelCaret>,
+            Without<PanelCanvas>,
+        ),
     >,
     state: &mut EditorState,
 ) -> Option<HoveredProcessedLink> {
@@ -415,9 +431,13 @@ fn hovered_processed_link_at_cursor(
     let Some(processed_panel_size) = processed_panel_size else {
         return None;
     };
-    let Some((_, relative_cursor, computed)) = panel_query.iter().find(|(panel, relative_cursor, _)| {
-        panel.kind == PanelKind::Processed && state.panel_visible(panel.kind) && relative_cursor.cursor_over()
-    }) else {
+    let Some((_, relative_cursor, computed)) =
+        panel_query.iter().find(|(panel, relative_cursor, _)| {
+            panel.kind == PanelKind::Processed
+                && state.panel_visible(panel.kind)
+                && relative_cursor.cursor_over()
+        })
+    else {
         return None;
     };
     let Some(normalized) = relative_cursor.normalized else {
@@ -510,34 +530,38 @@ fn hovered_processed_link_at_cursor(
     let (line_in_page, display_column) = processed_text_layout_query
         .iter()
         .find(|(paper_text, _, _)| paper_text.slot == slot)
-        .map_or((fallback_line_in_page, fallback_column), |(_, layout, text_computed)| {
-            let inverse_scale = text_computed.inverse_scale_factor();
-            let line_in_page = line_index_from_layout_y(
-                layout,
-                local_y,
-                processed_lines_per_page.max(1),
-                inverse_scale,
-            )
-            .unwrap_or(fallback_line_in_page)
-            .min(processed_lines_per_page.saturating_sub(1));
+        .map_or(
+            (fallback_line_in_page, fallback_column),
+            |(_, text_block, text_computed)| {
+                let inverse_scale = text_computed.inverse_scale_factor();
+                let line_in_page = line_index_from_layout_y(
+                    text_block,
+                    local_y,
+                    processed_lines_per_page.max(1),
+                    inverse_scale,
+                )
+                .unwrap_or(fallback_line_in_page)
+                .min(processed_lines_per_page.saturating_sub(1));
 
-            let global_for_line = page_index
-                .saturating_mul(processed_step_lines)
-                .saturating_add(line_in_page)
-                .min(processed_all_lines.len().saturating_sub(1));
-            let display_line =
-                processed_all_lines.get(global_for_line).map_or("", |line| line.text.as_str());
-            let display_column = column_from_layout_x(
-                layout,
-                line_in_page,
-                local_x,
-                display_line,
-                inverse_scale,
-                processed_char_width,
-            )
-            .unwrap_or(fallback_column);
-            (line_in_page, display_column)
-        });
+                let global_for_line = page_index
+                    .saturating_mul(processed_step_lines)
+                    .saturating_add(line_in_page)
+                    .min(processed_all_lines.len().saturating_sub(1));
+                let display_line = processed_all_lines
+                    .get(global_for_line)
+                    .map_or("", |line| line.text.as_str());
+                let display_column = column_from_layout_x(
+                    text_block,
+                    line_in_page,
+                    local_x,
+                    display_line,
+                    inverse_scale,
+                    processed_char_width,
+                )
+                .unwrap_or(fallback_column);
+                (line_in_page, display_column)
+            },
+        );
 
     let global_index = page_index
         .saturating_mul(processed_step_lines)
@@ -573,7 +597,7 @@ fn render_selection_rects(
     >,
     state: &EditorState,
     plain_lines: &[String],
-    plain_layout: Option<&TextLayoutInfo>,
+    plain_layout: Option<&ComputedTextBlock>,
     plain_inverse_scale: f32,
     plain_origin_x: f32,
     plain_origin_y: f32,
@@ -584,8 +608,13 @@ fn render_selection_rects(
     processed_page_step_lines: usize,
     processed_lines_per_page: usize,
     processed_text_layout_query: &Query<
-        (&ProcessedPaperText, &TextLayoutInfo, &ComputedNode),
-        (Without<PanelText>, Without<PanelPaper>, Without<PanelCaret>, Without<PanelCanvas>),
+        (&ProcessedPaperText, &ComputedTextBlock, &ComputedNode),
+        (
+            Without<PanelText>,
+            Without<PanelPaper>,
+            Without<PanelCaret>,
+            Without<PanelCanvas>,
+        ),
     >,
     processed_geometry: &ProcessedPageGeometry,
     processed_page_step_pixels: f32,
@@ -598,8 +627,8 @@ fn render_selection_rects(
     let mut processed_rects = Vec::<(f32, f32, f32, f32)>::new();
     if let Some((start, end)) = state.selection_bounds() {
         let visible_first_line = state.top_line;
-        let visible_last_line = visible_first_line
-            .saturating_add(plain_lines.len().saturating_sub(1));
+        let visible_last_line =
+            visible_first_line.saturating_add(plain_lines.len().saturating_sub(1));
         let range_start_line = start.line.max(visible_first_line);
         let range_end_line = end.line.min(visible_last_line);
 
@@ -633,9 +662,9 @@ fn render_selection_rects(
                 let start_byte = char_to_byte_index(display_line, line_start.min(display_len));
                 let end_byte = char_to_byte_index(display_line, line_end.min(display_len));
                 let left_x = plain_layout
-                    .and_then(|layout| {
+                    .and_then(|text_block| {
                         caret_x_from_layout(
-                            layout,
+                            text_block,
                             visible_offset,
                             display_line,
                             start_byte,
@@ -645,9 +674,9 @@ fn render_selection_rects(
                     })
                     .unwrap_or(line_start as f32 * plain_char_width);
                 let right_x = plain_layout
-                    .and_then(|layout| {
+                    .and_then(|text_block| {
                         caret_x_from_layout(
-                            layout,
+                            text_block,
                             visible_offset,
                             display_line,
                             end_byte,
@@ -657,8 +686,8 @@ fn render_selection_rects(
                     })
                     .unwrap_or(line_end as f32 * plain_char_width);
                 let line_top = plain_layout
-                    .and_then(|layout| {
-                        line_top_from_layout(layout, visible_offset, plain_inverse_scale)
+                    .and_then(|text_block| {
+                        line_top_from_layout(text_block, visible_offset, plain_inverse_scale)
                     })
                     .unwrap_or(visible_offset as f32 * plain_line_height);
 
@@ -744,13 +773,13 @@ fn render_selection_rects(
             let mut line_top = line_in_page as f32 * processed_line_height;
             let mut line_height = processed_line_height;
 
-            if let Some((_, layout, text_computed)) = processed_text_layout_query
+            if let Some((_, text_block, text_computed)) = processed_text_layout_query
                 .iter()
                 .find(|(paper_text, _, _)| paper_text.slot == slot)
             {
                 let inverse_scale = text_computed.inverse_scale_factor();
                 left_x = caret_x_from_layout(
-                    layout,
+                    text_block,
                     line_in_page,
                     line_text,
                     start_byte,
@@ -759,7 +788,7 @@ fn render_selection_rects(
                 )
                 .unwrap_or(left_x);
                 right_x = caret_x_from_layout(
-                    layout,
+                    text_block,
                     line_in_page,
                     line_text,
                     end_byte,
@@ -767,18 +796,15 @@ fn render_selection_rects(
                     processed_char_width,
                 )
                 .unwrap_or(right_x);
-                line_top = line_top_from_layout(layout, line_in_page, inverse_scale).unwrap_or(line_top);
-                if let Some((_, top, bottom)) = layout_line_bounds(layout, inverse_scale)
-                    .into_iter()
-                    .find(|(index, _, _)| *index == line_in_page)
-                {
-                    line_height = (bottom - top).max(1.0);
-                }
+                line_top = line_top_from_layout(text_block, line_in_page, inverse_scale)
+                    .unwrap_or(line_top);
+                line_height = line_height_from_layout(text_block, line_in_page, inverse_scale)
+                    .unwrap_or(line_height);
             }
 
             processed_rects.push((
                 text_left + left_x.min(right_x),
-                text_top + line_top - line_height * 0.5,
+                text_top + line_top,
                 (right_x - left_x).abs().max(1.0),
                 line_height.max(1.0),
             ));
