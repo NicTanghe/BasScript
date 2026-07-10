@@ -437,7 +437,7 @@ struct ProcessedLinkColorToggleSpring {
     initialized: bool,
     phase: ProcessedLinkColorTogglePhase,
     compression_distance: f32,
-    previous_writable_right: f32,
+    previous_page_right: f32,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

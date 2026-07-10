@@ -1879,15 +1879,15 @@ fn sync_processed_link_color_toggle(
         };
 
         let geometry = processed_page_geometry(panel_size, &state);
-        let writable_right = geometry.text_left + geometry.text_width
+        let page_right = geometry.paper_left + geometry.paper_width
             - state.processed_horizontal_scroll;
         let toggle_width = (computed.size().x * computed.inverse_scale_factor()).max(116.0);
         let base_x = (panel_size.x - toggle_width - 10.0).max(0.0);
-        let writable_border_offset = writable_right - base_x;
-        let touching_page = writable_right >= base_x;
+        let page_border_offset = page_right - base_x;
+        let touching_page = page_right >= base_x;
         let contact_started = spring.initialized && touching_page && !spring.touching_page;
         let impact_speed = if spring.initialized && dt > f32::EPSILON {
-            ((writable_right - spring.previous_writable_right) / dt).max(0.0)
+            ((page_right - spring.previous_page_right) / dt).max(0.0)
         } else {
             0.0
         };
@@ -1901,7 +1901,16 @@ fn sync_processed_link_color_toggle(
                 ProcessedLinkColorTogglePhase::Idle
             };
         } else if !touching_page {
-            spring.phase = ProcessedLinkColorTogglePhase::Idle;
+            let returning_below_page =
+                spring.phase == ProcessedLinkColorTogglePhase::ReturningUnderPage;
+            if !returning_below_page
+                || link_toggle_has_cleared_page_border(
+                    spring.offset_x,
+                    page_border_offset,
+                )
+            {
+                spring.phase = ProcessedLinkColorTogglePhase::Idle;
+            }
         } else if contact_started {
             spring.compression_distance = link_toggle_compression_for_impact(impact_speed);
             spring.phase = ProcessedLinkColorTogglePhase::Compressing;
@@ -1918,7 +1927,7 @@ fn sync_processed_link_color_toggle(
             }
             ProcessedLinkColorTogglePhase::Compressing => {
                 let compression_target = link_toggle_compression_target(
-                    writable_border_offset,
+                    page_border_offset,
                     spring.compression_distance,
                 );
                 (spring.offset_x, spring.velocity_x) = step_link_toggle_spring(
@@ -1929,24 +1938,27 @@ fn sync_processed_link_color_toggle(
                     13.0,
                     dt,
                 );
-                // The writable boundary may continue moving during impact.
+                // The paper boundary may continue moving during impact.
                 // Never allow the visible overlap to exceed its bounded
                 // compression distance.
                 if spring.offset_x < compression_target {
                     spring.offset_x = compression_target;
                 }
-                if spring.offset_x <= compression_target + 0.5 {
+                if spring.offset_x <= compression_target + 0.5
+                    || (spring.velocity_x >= 0.0
+                        && spring.offset_x < page_border_offset)
+                {
                     spring.velocity_x = (420.0 + impact_speed * 0.32).clamp(420.0, 1_000.0);
                     spring.phase = ProcessedLinkColorTogglePhase::Rebounding;
                 }
             }
             ProcessedLinkColorTogglePhase::Rebounding => {
                 let rebound_target = link_toggle_rebound_target(
-                    writable_border_offset,
+                    page_border_offset,
                     spring.compression_distance,
                 );
                 let compression_limit = link_toggle_compression_target(
-                    writable_border_offset,
+                    page_border_offset,
                     spring.compression_distance,
                 );
                 (spring.offset_x, spring.velocity_x) = step_link_toggle_spring(
@@ -1961,7 +1973,12 @@ fn sync_processed_link_color_toggle(
                     spring.offset_x = compression_limit;
                     spring.velocity_x = spring.velocity_x.max(0.0);
                 }
-                if spring.offset_x >= rebound_target {
+                if link_toggle_rebound_has_reached_apex(
+                    spring.offset_x,
+                    spring.velocity_x,
+                    rebound_target,
+                    page_border_offset,
+                ) {
                     // Change layer at the outward rebound apex, preserving the
                     // remaining velocity for the under-page settling spring.
                     spring.phase = ProcessedLinkColorTogglePhase::ReturningUnderPage;
@@ -1975,9 +1992,20 @@ fn sync_processed_link_color_toggle(
                 );
             }
         }
+        if spring.phase == ProcessedLinkColorTogglePhase::Idle
+            && spring.offset_x < page_border_offset
+        {
+            // When scrolling back, keep the above-page control on the safe
+            // side of the live paper border instead of letting its return
+            // spring phase through the page.
+            spring.offset_x = page_border_offset;
+            if spring.velocity_x < 0.0 {
+                spring.velocity_x *= -0.35;
+            }
+        }
         spring.touching_page = touching_page;
         spring.initialized = true;
-        spring.previous_writable_right = writable_right;
+        spring.previous_page_right = page_right;
         node.left = px(base_x + spring.offset_x);
 
         *z_index = if spring.phase == ProcessedLinkColorTogglePhase::ReturningUnderPage {
@@ -2011,6 +2039,19 @@ fn link_toggle_compression_target(border_offset: f32, compression_distance: f32)
 
 fn link_toggle_rebound_target(border_offset: f32, compression_distance: f32) -> f32 {
     border_offset + (compression_distance.clamp(0.0, 20.0) * 2.0).min(40.0)
+}
+
+fn link_toggle_rebound_has_reached_apex(
+    offset: f32,
+    velocity: f32,
+    rebound_target: f32,
+    border_offset: f32,
+) -> bool {
+    offset >= rebound_target - 0.5 || (velocity <= 0.0 && offset > border_offset)
+}
+
+fn link_toggle_has_cleared_page_border(offset: f32, border_offset: f32) -> bool {
+    offset >= border_offset
 }
 
 fn step_link_toggle_spring(

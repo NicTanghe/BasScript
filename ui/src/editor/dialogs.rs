@@ -240,7 +240,7 @@ mod modifier_key_tests {
     }
 
     #[test]
-    fn link_toggle_motion_targets_follow_the_writable_border() {
+    fn link_toggle_motion_targets_follow_the_page_border() {
         let compression = 14.0;
         let first_border = 6.0;
         let moved_border = 31.0;
@@ -255,6 +255,25 @@ mod modifier_key_tests {
                 - link_toggle_rebound_target(first_border, compression),
             moved_border - first_border
         );
+    }
+
+    #[test]
+    fn link_toggle_rebound_finishes_at_its_apex_without_stalling() {
+        assert!(link_toggle_rebound_has_reached_apex(
+            27.0, -0.1, 30.0, 4.0
+        ));
+        assert!(link_toggle_rebound_has_reached_apex(
+            29.6, 12.0, 30.0, 4.0
+        ));
+        assert!(!link_toggle_rebound_has_reached_apex(
+            18.0, 12.0, 30.0, 4.0
+        ));
+    }
+
+    #[test]
+    fn link_toggle_waits_below_page_until_it_clears_live_border() {
+        assert!(!link_toggle_has_cleared_page_border(-12.0, -5.0));
+        assert!(link_toggle_has_cleared_page_border(-4.0, -5.0));
     }
 
     #[test]
