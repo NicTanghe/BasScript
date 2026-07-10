@@ -233,29 +233,41 @@ mod modifier_key_tests {
     }
 
     #[test]
-    fn link_toggle_spring_bounces_once_and_stays_within_eight_pixels() {
-        let (first_offset, first_velocity) =
-            step_link_toggle_contact_bounce(0.0, 0.0, true, 1.0 / 60.0);
-        let (next_offset, _) =
-            step_link_toggle_contact_bounce(first_offset, first_velocity, false, 1.0 / 60.0);
+    fn link_toggle_ejection_is_fast_and_guaranteed_to_clear_its_width() {
+        let target = 128.0;
+        let mut offset = 0.0;
+        let mut velocity = 0.0;
+        for _ in 0..8 {
+            (offset, velocity) =
+                step_link_toggle_ejection(offset, velocity, target, 1.0 / 60.0);
+        }
 
-        assert!(first_offset > 0.0);
-        assert!((0.0..=8.0).contains(&first_offset));
-        assert!((0.0..=8.0).contains(&next_offset));
+        assert!(offset >= target);
     }
 
     #[test]
-    fn link_toggle_moves_below_page_only_after_contact_bounce_finishes() {
-        assert!(!link_toggle_should_render_under_page(true, true, 0.0, 0.0));
-        assert!(!link_toggle_should_render_under_page(
-            true, false, 2.0, -10.0
-        ));
-        assert!(link_toggle_should_render_under_page(
-            true, false, 0.0, 0.0
-        ));
-        assert!(!link_toggle_should_render_under_page(
-            false, false, 0.0, 0.0
-        ));
+    fn link_toggle_return_preserves_momentum_for_a_tangible_overshoot() {
+        let clearance = 128.0;
+        let (offset, velocity) =
+            step_link_toggle_return(clearance, 1_400.0, 1.0 / 30.0);
+
+        assert!(offset > clearance);
+        assert!(velocity > 0.0);
+    }
+
+    #[test]
+    fn link_toggle_return_oscillates_across_rest_before_settling() {
+        let mut offset = 128.0;
+        let mut velocity = 1_400.0;
+        let mut crossed_rest = false;
+        for _ in 0..240 {
+            (offset, velocity) = step_link_toggle_return(offset, velocity, 1.0 / 60.0);
+            crossed_rest |= offset < 0.0;
+        }
+
+        assert!(crossed_rest);
+        assert!(offset.abs() < 0.1);
+        assert!(velocity.abs() < 1.0);
     }
 }
 

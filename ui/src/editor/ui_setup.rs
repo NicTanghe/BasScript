@@ -1888,24 +1888,58 @@ fn sync_processed_link_color_toggle(
 
         node.display = Display::Flex;
         node.top = px(10.0);
-        (spring.offset_x, spring.velocity_x) = step_link_toggle_contact_bounce(
-            spring.offset_x,
-            spring.velocity_x,
-            contact_started,
-            dt,
-        );
+        if !spring.initialized {
+            spring.phase = if touching_page {
+                ProcessedLinkColorTogglePhase::ReturningUnderPage
+            } else {
+                ProcessedLinkColorTogglePhase::Idle
+            };
+        } else if !touching_page {
+            spring.phase = ProcessedLinkColorTogglePhase::Idle;
+        } else if contact_started {
+            spring.phase = ProcessedLinkColorTogglePhase::Ejecting;
+            spring.velocity_x = spring.velocity_x.max(1_400.0);
+        }
+
+        let exit_offset = toggle_width + 12.0;
+        match spring.phase {
+            ProcessedLinkColorTogglePhase::Idle => {
+                (spring.offset_x, spring.velocity_x) = step_link_toggle_return(
+                    spring.offset_x,
+                    spring.velocity_x,
+                    dt,
+                );
+            }
+            ProcessedLinkColorTogglePhase::Ejecting => {
+                (spring.offset_x, spring.velocity_x) = step_link_toggle_ejection(
+                    spring.offset_x,
+                    spring.velocity_x,
+                    exit_offset,
+                    dt,
+                );
+                if spring.offset_x >= exit_offset {
+                    // Preserve outward momentum after clearing the pane. The
+                    // under-page return spring uses it for a visible overshoot
+                    // and naturally reverses direction.
+                    spring.phase = ProcessedLinkColorTogglePhase::ReturningUnderPage;
+                }
+            }
+            ProcessedLinkColorTogglePhase::ReturningUnderPage => {
+                (spring.offset_x, spring.velocity_x) = step_link_toggle_return(
+                    spring.offset_x,
+                    spring.velocity_x,
+                    dt,
+                );
+            }
+        }
         spring.touching_page = touching_page;
         spring.initialized = true;
         node.left = px(base_x + spring.offset_x);
 
-        *z_index = if link_toggle_should_render_under_page(
-            touching_page,
-            contact_started,
-            spring.offset_x,
-            spring.velocity_x,
-        ) {
-            // Once the one-shot bounce settles, let the paper and its clipped
-            // contents render over the toggle until they separate again.
+        *z_index = if spring.phase == ProcessedLinkColorTogglePhase::ReturningUnderPage {
+            // The layer changes only after ejection has moved the entire
+            // control beyond the clipped pane edge. It then returns smoothly
+            // underneath the page, so no visible teleport is possible.
             ZIndex(0)
         } else {
             ZIndex(20)
@@ -1924,38 +1958,37 @@ fn sync_processed_link_color_toggle(
     }
 }
 
-fn link_toggle_should_render_under_page(
-    touching_page: bool,
-    contact_started: bool,
+fn step_link_toggle_ejection(
     offset: f32,
     velocity: f32,
-) -> bool {
-    touching_page && !contact_started && offset <= 0.05 && velocity.abs() <= 0.05
-}
-
-fn step_link_toggle_contact_bounce(
-    offset: f32,
-    velocity: f32,
-    contact_started: bool,
+    target: f32,
     dt: f32,
 ) -> (f32, f32) {
     let dt = dt.clamp(0.0, 1.0 / 30.0);
-    let velocity = if contact_started { 150.0 } else { velocity };
-    let acceleration = -offset * 210.0 - velocity * 20.0;
+    let acceleration = (target - offset) * 260.0 - velocity * 18.0;
+    let next_velocity = (velocity + acceleration * dt).max(1_400.0);
+    let next_offset = offset + next_velocity * dt;
+
+    (next_offset, next_velocity)
+}
+
+fn step_link_toggle_return(offset: f32, velocity: f32, dt: f32) -> (f32, f32) {
+    let dt = dt.clamp(0.0, 1.0 / 30.0);
+    // Deliberately under-damped: the control overshoots its resting point,
+    // reverses, and settles through progressively smaller oscillations.
+    let acceleration = -offset * 130.0 - velocity * 8.0;
     let mut next_velocity = velocity + acceleration * dt;
     let mut next_offset = offset + next_velocity * dt;
 
-    if next_offset > 8.0 {
-        next_offset = 8.0;
-        if next_velocity > 0.0 {
-            next_velocity *= -0.35;
+    // Keep extreme frame spikes bounded without removing the spring rebound.
+    if next_offset < -24.0 {
+        next_offset = -24.0;
+        if next_velocity < 0.0 {
+            next_velocity *= -0.42;
         }
-    } else if next_offset < 0.0 {
-        next_offset = 0.0;
-        next_velocity = 0.0;
     }
 
-    if next_offset < 0.05 && next_velocity.abs() < 0.05 {
+    if next_offset.abs() < 0.08 && next_velocity.abs() < 0.8 {
         (0.0, 0.0)
     } else {
         (next_offset, next_velocity)

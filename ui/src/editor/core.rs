@@ -435,6 +435,15 @@ struct ProcessedLinkColorToggleSpring {
     velocity_x: f32,
     touching_page: bool,
     initialized: bool,
+    phase: ProcessedLinkColorTogglePhase,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum ProcessedLinkColorTogglePhase {
+    #[default]
+    Idle,
+    Ejecting,
+    ReturningUnderPage,
 }
 
 #[derive(Component)]
