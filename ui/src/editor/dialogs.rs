@@ -193,6 +193,44 @@ mod modifier_key_tests {
         let binding = KeybindSettings::default().binding(ShortcutAction::ToggleTopMenu);
         assert!(shortcut_just_pressed(&keys, binding));
     }
+
+    #[test]
+    fn processed_link_color_modes_cycle_through_hovered() {
+        assert_eq!(
+            ProcessedLinkColorMode::Colored.next(),
+            ProcessedLinkColorMode::Hovered
+        );
+        assert_eq!(
+            ProcessedLinkColorMode::Hovered.next(),
+            ProcessedLinkColorMode::Plain
+        );
+        assert_eq!(
+            ProcessedLinkColorMode::Plain.next(),
+            ProcessedLinkColorMode::Colored
+        );
+    }
+
+    #[test]
+    fn processed_link_color_mode_loads_hovered_and_legacy_plain() {
+        let defaults = PersistentUiState::default();
+        let hovered = persistent_ui_state_from_ron(
+            "(\nprocessed_link_color_mode: \"hovered\",\n)",
+            &defaults,
+        );
+        let legacy_plain = persistent_ui_state_from_ron(
+            "(\nprocessed_link_colors_enabled: false,\n)",
+            &defaults,
+        );
+
+        assert_eq!(
+            hovered.processed_link_color_mode,
+            ProcessedLinkColorMode::Hovered
+        );
+        assert_eq!(
+            legacy_plain.processed_link_color_mode,
+            ProcessedLinkColorMode::Plain
+        );
+    }
 }
 
 fn handle_window_shortcuts(

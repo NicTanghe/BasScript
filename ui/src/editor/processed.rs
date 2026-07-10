@@ -1997,10 +1997,7 @@ fn apply_processed_styles(
         let next_line_height = LineHeight::Px(
             line_height * processed_visual_line_height_units(state, visual_line),
         );
-        let next_color = if state.processed_link_colors_enabled
-            && allow_link_color
-            && fragment.is_link
-        {
+        let next_color = if allow_link_color && fragment.is_link {
             let hovered = state
                 .hovered_processed_link
                 .as_ref()
@@ -2011,10 +2008,15 @@ fn apply_processed_styles(
                             && raw_end > hovered.raw_start_column
                     })
                 });
-            if hovered {
-                state.hovered_processed_link_color_for_target(fragment.link_target.as_deref())
-            } else {
-                state.processed_link_color_for_target(fragment.link_target.as_deref())
+            match state.processed_link_color_mode {
+                ProcessedLinkColorMode::Colored if hovered => state
+                    .hovered_processed_link_color_for_target(fragment.link_target.as_deref()),
+                ProcessedLinkColorMode::Colored => {
+                    state.processed_link_color_for_target(fragment.link_target.as_deref())
+                }
+                ProcessedLinkColorMode::Hovered if hovered => state
+                    .hovered_processed_link_color_for_target(fragment.link_target.as_deref()),
+                ProcessedLinkColorMode::Hovered | ProcessedLinkColorMode::Plain => style.color,
             }
         } else {
             style.color

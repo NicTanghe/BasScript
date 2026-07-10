@@ -355,6 +355,44 @@ enum DisplayMode {
     ProcessedRawCurrentLine,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProcessedLinkColorMode {
+    Colored,
+    Hovered,
+    Plain,
+}
+
+impl ProcessedLinkColorMode {
+    fn next(self) -> Self {
+        match self {
+            Self::Colored => Self::Hovered,
+            Self::Hovered => Self::Plain,
+            Self::Plain => Self::Colored,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Colored => "colored",
+            Self::Hovered => "hovered",
+            Self::Plain => "plain",
+        }
+    }
+
+    fn settings_value(self) -> &'static str {
+        self.label()
+    }
+
+    fn from_settings_value(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "colored" => Some(Self::Colored),
+            "hovered" => Some(Self::Hovered),
+            "plain" => Some(Self::Plain),
+            _ => None,
+        }
+    }
+}
+
 impl DisplayMode {
     fn label(self) -> &'static str {
         match self {
@@ -1249,7 +1287,7 @@ struct EditorState {
     story_query_sheet: StoryQuerySheet,
     workspace_sidebar_visible: bool,
     top_menu_collapsed: bool,
-    processed_link_colors_enabled: bool,
+    processed_link_color_mode: ProcessedLinkColorMode,
     processed_glass: bool,
     explorer_glass: bool,
     settings_glass: bool,
@@ -1451,7 +1489,7 @@ impl Default for PersistentSettings {
 struct PersistentUiState {
     workspace_sidebar_visible: bool,
     top_menu_collapsed: bool,
-    processed_link_colors_enabled: bool,
+    processed_link_color_mode: ProcessedLinkColorMode,
 }
 
 impl Default for PersistentUiState {
@@ -1459,7 +1497,7 @@ impl Default for PersistentUiState {
         Self {
             workspace_sidebar_visible: true,
             top_menu_collapsed: false,
-            processed_link_colors_enabled: true,
+            processed_link_color_mode: ProcessedLinkColorMode::Colored,
         }
     }
 }
@@ -1880,7 +1918,7 @@ impl FromWorld for EditorState {
             story_query_sheet: StoryQuerySheet::default(),
             workspace_sidebar_visible: ui_state.workspace_sidebar_visible,
             top_menu_collapsed: ui_state.top_menu_collapsed,
-            processed_link_colors_enabled: ui_state.processed_link_colors_enabled,
+            processed_link_color_mode: ui_state.processed_link_color_mode,
             processed_glass: theme_settings.processed_glass,
             explorer_glass: theme_settings.explorer_glass,
             settings_glass: theme_settings.settings_glass,

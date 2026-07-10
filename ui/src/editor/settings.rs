@@ -229,11 +229,11 @@ fn save_persistent_ui_state(ui_state: &PersistentUiState) -> io::Result<()> {
         "(\n\
          \tworkspace_sidebar_visible: {},\n\
          \ttop_menu_collapsed: {},\n\
-         \tprocessed_link_colors_enabled: {},\n\
+         \tprocessed_link_color_mode: \"{}\",\n\
          )\n",
         ui_state.workspace_sidebar_visible,
         ui_state.top_menu_collapsed,
-        ui_state.processed_link_colors_enabled,
+        ui_state.processed_link_color_mode.settings_value(),
     );
 
     fs::write(&path, contents)?;
@@ -476,13 +476,24 @@ fn persistent_ui_state_from_ron(
         .unwrap_or(defaults.workspace_sidebar_visible);
     let top_menu_collapsed =
         parse_ron_bool(contents, "top_menu_collapsed").unwrap_or(defaults.top_menu_collapsed);
-    let processed_link_colors_enabled = parse_ron_bool(contents, "processed_link_colors_enabled")
-        .unwrap_or(defaults.processed_link_colors_enabled);
+    let processed_link_color_mode = parse_ron_string(contents, "processed_link_color_mode")
+        .as_deref()
+        .and_then(ProcessedLinkColorMode::from_settings_value)
+        .or_else(|| {
+            parse_ron_bool(contents, "processed_link_colors_enabled").map(|enabled| {
+                if enabled {
+                    ProcessedLinkColorMode::Colored
+                } else {
+                    ProcessedLinkColorMode::Plain
+                }
+            })
+        })
+        .unwrap_or(defaults.processed_link_color_mode);
 
     PersistentUiState {
         workspace_sidebar_visible,
         top_menu_collapsed,
-        processed_link_colors_enabled,
+        processed_link_color_mode,
     }
 }
 
@@ -674,7 +685,7 @@ fn persistent_ui_state_from_state(state: &EditorState) -> PersistentUiState {
     PersistentUiState {
         workspace_sidebar_visible: state.workspace_sidebar_visible,
         top_menu_collapsed: state.top_menu_collapsed,
-        processed_link_colors_enabled: state.processed_link_colors_enabled,
+        processed_link_color_mode: state.processed_link_color_mode,
     }
 }
 

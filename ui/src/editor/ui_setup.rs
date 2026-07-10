@@ -1833,14 +1833,10 @@ fn handle_processed_link_color_toggle(
             continue;
         }
 
-        state.processed_link_colors_enabled = !state.processed_link_colors_enabled;
+        state.processed_link_color_mode = state.processed_link_color_mode.next();
         state.status_message = format!(
             "Rendered link colors: {}",
-            if state.processed_link_colors_enabled {
-                "ON"
-            } else {
-                "OFF"
-            }
+            state.processed_link_color_mode.label()
         );
         if let Err(error) = save_editor_ui_state(&state) {
             state.status_message = format!("UI state save failed: {error}");
@@ -1863,10 +1859,10 @@ fn sync_processed_link_color_toggle(
         };
     }
 
-    let label = if state.processed_link_colors_enabled {
-        "Links: colored"
-    } else {
-        "Links: plain"
+    let label = match state.processed_link_color_mode {
+        ProcessedLinkColorMode::Colored => "Links: colored",
+        ProcessedLinkColorMode::Hovered => "Links: hovered",
+        ProcessedLinkColorMode::Plain => "Links: plain",
     };
     for mut text in label_query.iter_mut() {
         if text.as_str() != label {
