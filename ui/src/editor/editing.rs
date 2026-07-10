@@ -265,6 +265,12 @@ fn handle_navigation_input(
     let mut moved = false;
 
     if shortcut_modifier_pressed(&keys) {
+        if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::SplitView)) {
+            state.set_display_mode(DisplayMode::Split);
+            state.status_message = format!("View mode: {}", state.display_mode.label());
+            return;
+        }
+
         if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::PlainView)) {
             state.set_display_mode(DisplayMode::Plain);
             state.status_message = format!("View mode: {}", state.display_mode.label());

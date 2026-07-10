@@ -229,9 +229,11 @@ fn save_persistent_ui_state(ui_state: &PersistentUiState) -> io::Result<()> {
         "(\n\
          \tworkspace_sidebar_visible: {},\n\
          \ttop_menu_collapsed: {},\n\
+         \tprocessed_link_colors_enabled: {},\n\
          )\n",
         ui_state.workspace_sidebar_visible,
-        ui_state.top_menu_collapsed
+        ui_state.top_menu_collapsed,
+        ui_state.processed_link_colors_enabled,
     );
 
     fs::write(&path, contents)?;
@@ -474,10 +476,13 @@ fn persistent_ui_state_from_ron(
         .unwrap_or(defaults.workspace_sidebar_visible);
     let top_menu_collapsed =
         parse_ron_bool(contents, "top_menu_collapsed").unwrap_or(defaults.top_menu_collapsed);
+    let processed_link_colors_enabled = parse_ron_bool(contents, "processed_link_colors_enabled")
+        .unwrap_or(defaults.processed_link_colors_enabled);
 
     PersistentUiState {
         workspace_sidebar_visible,
         top_menu_collapsed,
+        processed_link_colors_enabled,
     }
 }
 
@@ -669,6 +674,7 @@ fn persistent_ui_state_from_state(state: &EditorState) -> PersistentUiState {
     PersistentUiState {
         workspace_sidebar_visible: state.workspace_sidebar_visible,
         top_menu_collapsed: state.top_menu_collapsed,
+        processed_link_colors_enabled: state.processed_link_colors_enabled,
     }
 }
 

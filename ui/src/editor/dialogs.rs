@@ -174,6 +174,25 @@ mod modifier_key_tests {
             &keybinds
         ));
     }
+
+    #[test]
+    fn dual_panel_view_defaults_to_platform_four() {
+        let binding = KeybindSettings::default().binding(ShortcutAction::SplitView);
+
+        assert_eq!(binding.key, KeyCode::Digit4);
+        assert!(!binding.shift);
+        assert_eq!(binding.modifier, ShortcutModifier::Platform);
+    }
+
+    #[test]
+    fn control_b_matches_the_default_top_menu_binding() {
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::ControlLeft);
+        keys.press(KeyCode::KeyB);
+
+        let binding = KeybindSettings::default().binding(ShortcutAction::ToggleTopMenu);
+        assert!(shortcut_just_pressed(&keys, binding));
+    }
 }
 
 fn handle_window_shortcuts(

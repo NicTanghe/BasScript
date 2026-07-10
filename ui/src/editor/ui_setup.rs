@@ -195,79 +195,92 @@ fn setup(
                     width: percent(100.0),
                     height: percent(100.0),
                     display: Display::None,
-                    flex_direction: FlexDirection::Column,
-                    row_gap: px(12.0),
-                    padding: UiRect::axes(px(18.0), px(16.0)),
                     ..default()
                 },
                 BackgroundColor(state.app_bg_color),
                 SettingsScreenRoot,
-                children![
-                    (
-                        Text::new("Settings"),
-                        TextFont {
-                            font: font.clone().into(),
-                            font_size: FontSize::Px(22.0),
+                children![(
+                    Node {
+                        width: percent(100.0),
+                        height: percent(100.0),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Start,
+                        overflow: Overflow::scroll_y(),
+                        ..default()
+                    },
+                    ScrollPosition::default(),
+                    RelativeCursorPosition::default(),
+                    SettingsMenuScrollArea {
+                        screen: UiScreenState::Settings,
+                    },
+                    children![(
+                        Node {
+                            width: percent(100.0),
+                            max_width: px(760.0),
+                            flex_shrink: 0.0,
+                            flex_direction: FlexDirection::Column,
+                            row_gap: px(12.0),
+                            padding: UiRect::axes(px(18.0), px(16.0)),
                             ..default()
                         },
-                        TextColor(COLOR_TEXT_MAIN),
-                    ),
-                    (
-                        Text::new("Processed page margins and formatting options."),
-                        TextFont {
-                            font: font.clone().into(),
-                            font_size: FontSize::Px(13.0),
-                            ..default()
+                        SettingsMenuScrollContent {
+                            screen: UiScreenState::Settings,
                         },
-                        TextColor(COLOR_TEXT_MUTED),
-                    ),
-                    settings_toggle_button(
-                        font.clone(),
-                        SettingsAction::DialogueDoubleSpaceNewline,
-                    ),
-                    settings_toggle_button(
-                        font.clone(),
-                        SettingsAction::NonDialogueDoubleSpaceNewline,
-                    ),
-                    settings_toggle_button(font.clone(), SettingsAction::ToggleVimMode),
-                    settings_toggle_button(font.clone(), SettingsAction::ShowSystemTitlebar),
-                    margin_setting_row(
-                        font.clone(),
-                        "Left margin (pt)",
-                        MarginEdge::Left,
-                        SettingsAction::MarginLeftDecrease,
-                        SettingsAction::MarginLeftIncrease,
-                    ),
-                    margin_setting_row(
-                        font.clone(),
-                        "Right margin (pt)",
-                        MarginEdge::Right,
-                        SettingsAction::MarginRightDecrease,
-                        SettingsAction::MarginRightIncrease,
-                    ),
-                    margin_setting_row(
-                        font.clone(),
-                        "Top margin (pt)",
-                        MarginEdge::Top,
-                        SettingsAction::MarginTopDecrease,
-                        SettingsAction::MarginTopIncrease,
-                    ),
-                    margin_setting_row(
-                        font.clone(),
-                        "Bottom margin (pt)",
-                        MarginEdge::Bottom,
-                        SettingsAction::MarginBottomDecrease,
-                        SettingsAction::MarginBottomIncrease,
-                    ),
-                    settings_action_button(font.clone(), "Theme", SettingsAction::OpenTheme),
-                    settings_action_button(
-                        font.clone(),
-                        "Link colors",
-                        SettingsAction::OpenLinkColors,
-                    ),
-                    settings_action_button(font.clone(), "Keybinds", SettingsAction::OpenKeybinds),
-                    settings_action_button(font.clone(), "Back to editor", SettingsAction::BackToEditor),
-                ],
+                        children![
+                            settings_screen_heading(
+                                font.clone(),
+                                "Settings",
+                                "Processed page margins and formatting options.",
+                            ),
+                            settings_toggle_button(
+                                font.clone(),
+                                SettingsAction::DialogueDoubleSpaceNewline,
+                            ),
+                            settings_toggle_button(
+                                font.clone(),
+                                SettingsAction::NonDialogueDoubleSpaceNewline,
+                            ),
+                            settings_toggle_button(font.clone(), SettingsAction::ToggleVimMode),
+                            settings_toggle_button(font.clone(), SettingsAction::ShowSystemTitlebar),
+                            margin_setting_row(
+                                font.clone(),
+                                "Left margin (pt)",
+                                MarginEdge::Left,
+                                SettingsAction::MarginLeftDecrease,
+                                SettingsAction::MarginLeftIncrease,
+                            ),
+                            margin_setting_row(
+                                font.clone(),
+                                "Right margin (pt)",
+                                MarginEdge::Right,
+                                SettingsAction::MarginRightDecrease,
+                                SettingsAction::MarginRightIncrease,
+                            ),
+                            margin_setting_row(
+                                font.clone(),
+                                "Top margin (pt)",
+                                MarginEdge::Top,
+                                SettingsAction::MarginTopDecrease,
+                                SettingsAction::MarginTopIncrease,
+                            ),
+                            margin_setting_row(
+                                font.clone(),
+                                "Bottom margin (pt)",
+                                MarginEdge::Bottom,
+                                SettingsAction::MarginBottomDecrease,
+                                SettingsAction::MarginBottomIncrease,
+                            ),
+                            settings_action_button(font.clone(), "Theme", SettingsAction::OpenTheme),
+                            settings_action_button(
+                                font.clone(),
+                                "Link colors",
+                                SettingsAction::OpenLinkColors,
+                            ),
+                            settings_action_button(font.clone(), "Keybinds", SettingsAction::OpenKeybinds),
+                            settings_action_button(font.clone(), "Back to editor", SettingsAction::BackToEditor),
+                        ],
+                    )],
+                )],
             ));
 
             root.spawn((
@@ -275,125 +288,114 @@ fn setup(
                     width: percent(100.0),
                     height: percent(100.0),
                     display: Display::None,
-                    flex_direction: FlexDirection::Column,
-                    row_gap: px(10.0),
-                    padding: UiRect::axes(px(18.0), px(16.0)),
                     ..default()
                 },
                 BackgroundColor(state.app_bg_color),
                 KeybindsScreenRoot,
-                children![
-                    (
-                        Text::new("Keybinds"),
-                        TextFont {
-                            font: font.clone().into(),
-                            font_size: FontSize::Px(22.0),
-                            ..default()
-                        },
-                        TextColor(COLOR_TEXT_MAIN),
-                    ),
-                    (
-                        Text::new("Keyboard shortcuts and mouse controls."),
-                        TextFont {
-                            font: font.clone().into(),
-                            font_size: FontSize::Px(13.0),
-                            ..default()
-                        },
-                        TextColor(COLOR_TEXT_MUTED),
-                    ),
-                    (
-                        Text::new("Keyboard"),
-                        TextFont {
-                            font: font.clone().into(),
-                            font_size: FontSize::Px(16.0),
-                            ..default()
-                        },
-                        TextColor(COLOR_TEXT_MAIN),
-                    ),
-                    (
-                        Text::new("Click a binding button, then press a key. Hold Ctrl, Alt, Super/Cmd, or Space to choose that modifier."),
-                        TextFont {
-                            font: font.clone().into(),
-                            font_size: FontSize::Px(12.0),
-                            ..default()
-                        },
-                        TextColor(COLOR_TEXT_MUTED),
-                    ),
-                    keybind_setting_row(font.clone(), ShortcutAction::OpenWorkspace),
-                    keybind_setting_row(font.clone(), ShortcutAction::Save),
-                    keybind_setting_row(font.clone(), ShortcutAction::SaveAs),
-                    keybind_setting_row(font.clone(), ShortcutAction::Undo),
-                    keybind_setting_row(font.clone(), ShortcutAction::Redo),
-                    keybind_setting_row(font.clone(), ShortcutAction::ZoomIn),
-                    keybind_setting_row(font.clone(), ShortcutAction::ZoomOut),
-                    keybind_row(font.clone(), "Cmd/Ctrl+Mouse wheel", "Zoom"),
-                    keybind_setting_row(font.clone(), ShortcutAction::PlainView),
-                    keybind_setting_row(font.clone(), ShortcutAction::ProcessedView),
-                    keybind_setting_row(
-                        font.clone(),
-                        ShortcutAction::ProcessedRawCurrentLineView,
-                    ),
-                    keybind_setting_row(font.clone(), ShortcutAction::ToggleExplorer),
-                    keybind_setting_row(font.clone(), ShortcutAction::ToggleTopMenu),
-                    keybind_row(font.clone(), "Explorer: j / k", "Move selected row"),
-                    keybind_row(font.clone(), "Explorer: Enter / o / l", "Open selected row"),
-                    keybind_row(font.clone(), "Explorer: n", "New file or folder"),
-                    keybind_row(font.clone(), "Explorer: r", "Rename selected row"),
-                    keybind_row(font.clone(), "Explorer: d", "Delete selected row"),
-                    keybind_row(font.clone(), "Explorer: Shift+R", "Refresh workspace tree"),
-                    keybind_row(font.clone(), "Explorer: q / Esc", "Leave explorer focus"),
-                    keybind_row(font.clone(), "Arrow keys", "Move cursor"),
-                    keybind_row(font.clone(), "Home / End", "Move to line start/end"),
-                    keybind_row(font.clone(), "Page Up / Page Down", "Move by viewport"),
-                    keybind_row(font.clone(), "Escape", "Cancel middle-click autoscroll"),
-                    keybind_row(font.clone(), "Vim: Esc / i / a", "Normal / insert / append"),
-                    keybind_row(font.clone(), "Vim: h j k l", "Move left / down / up / right"),
-                    keybind_row(font.clone(), "Vim: v / V", "Visual / visual line mode"),
-                    keybind_row(font.clone(), "Vim: yy / y", "Yank line / visual selection"),
-                    keybind_row(font.clone(), "Vim: p", "Paste Vim register"),
-                    keybind_row(font.clone(), "Vim: dd / d", "Delete line / visual selection"),
-                    keybind_row(font.clone(), "Vim: :", "Open command menu"),
-                    (
-                        Text::new("Mouse"),
-                        TextFont {
-                            font: font.clone().into(),
-                            font_size: FontSize::Px(16.0),
-                            ..default()
-                        },
-                        TextColor(COLOR_TEXT_MAIN),
-                    ),
-                    keybind_row(font.clone(), "Mouse wheel", "Scroll active pane vertically"),
-                    keybind_row(font.clone(), "Shift+Mouse wheel", "Scroll active pane horizontally"),
-                    keybind_row(font.clone(), "Ctrl+Left drag", "Scroll text; move canvas card"),
-                    keybind_row(font.clone(), "Space+Left drag", "Pan canvas"),
-                    keybind_row(
-                        font.clone(),
-                        "Middle drag",
-                        "Pan canvas; autoscroll text panes",
-                    ),
-                    keybind_row(font.clone(), "Left click", "Place cursor"),
-                    keybind_row(font.clone(), "Right click", "Cancel middle-click autoscroll"),
-                    (
+                children![(
                         Node {
-                            flex_direction: FlexDirection::Row,
-                            column_gap: px(8.0),
-                            margin: UiRect::top(px(8.0)),
+                            width: percent(100.0),
+                            height: percent(100.0),
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::Start,
+                            overflow: Overflow::scroll_y(),
                             ..default()
                         },
-                        children![
-                            settings_action_button(
-                                font.clone(),
-                                "Back to settings",
-                                SettingsAction::BackToSettings,
-                            ),
-                            settings_action_button(
-                                font.clone(),
-                                "Back to editor",
-                                SettingsAction::BackToEditor,
-                            ),
-                        ],
-                    ),
-                ],
+                        ScrollPosition::default(),
+                        RelativeCursorPosition::default(),
+                        SettingsMenuScrollArea {
+                            screen: UiScreenState::Keybinds,
+                        },
+                        children![(
+                            Node {
+                                width: percent(100.0),
+                                max_width: px(760.0),
+                                flex_shrink: 0.0,
+                                flex_direction: FlexDirection::Column,
+                                row_gap: px(8.0),
+                                padding: UiRect::new(px(18.0), px(18.0), px(16.0), px(24.0)),
+                                ..default()
+                            },
+                            SettingsMenuScrollContent {
+                                screen: UiScreenState::Keybinds,
+                            },
+                            children![
+                                settings_screen_heading(
+                                    font.clone(),
+                                    "Keybinds",
+                                    "Customize shortcuts and review editor controls.",
+                                ),
+                                (
+                                    Node {
+                                        flex_direction: FlexDirection::Row,
+                                        column_gap: px(8.0),
+                                        margin: UiRect::bottom(px(8.0)),
+                                        ..default()
+                                    },
+                                    children![
+                                        settings_action_button(
+                                            font.clone(),
+                                            "Back to settings",
+                                            SettingsAction::BackToSettings,
+                                        ),
+                                        settings_action_button(
+                                            font.clone(),
+                                            "Back to editor",
+                                            SettingsAction::BackToEditor,
+                                        ),
+                                    ],
+                                ),
+                                keybind_help_card(font.clone()),
+                                keybind_section_heading(font.clone(), "Editable shortcuts"),
+                                keybind_setting_row(font.clone(), ShortcutAction::OpenWorkspace),
+                                keybind_setting_row(font.clone(), ShortcutAction::Save),
+                                keybind_setting_row(font.clone(), ShortcutAction::SaveAs),
+                                keybind_setting_row(font.clone(), ShortcutAction::Undo),
+                                keybind_setting_row(font.clone(), ShortcutAction::Redo),
+                                keybind_setting_row(font.clone(), ShortcutAction::ZoomIn),
+                                keybind_setting_row(font.clone(), ShortcutAction::ZoomOut),
+                                keybind_setting_row(font.clone(), ShortcutAction::PlainView),
+                                keybind_setting_row(font.clone(), ShortcutAction::ProcessedView),
+                                keybind_setting_row(
+                                    font.clone(),
+                                    ShortcutAction::ProcessedRawCurrentLineView,
+                                ),
+                                keybind_setting_row(font.clone(), ShortcutAction::SplitView),
+                                keybind_setting_row(font.clone(), ShortcutAction::ToggleExplorer),
+                                keybind_setting_row(font.clone(), ShortcutAction::ToggleTopMenu),
+                                keybind_section_heading(font.clone(), "Editor navigation"),
+                                keybind_row(font.clone(), "Cmd/Ctrl + mouse wheel", "Zoom"),
+                                keybind_row(font.clone(), "Arrow keys", "Move cursor"),
+                                keybind_row(font.clone(), "Home / End", "Move to line start/end"),
+                                keybind_row(font.clone(), "Page Up / Page Down", "Move by viewport"),
+                                keybind_row(font.clone(), "Escape", "Cancel autoscroll"),
+                                keybind_section_heading(font.clone(), "Explorer"),
+                                keybind_row(font.clone(), "j / k", "Move selected row"),
+                                keybind_row(font.clone(), "Enter / o / l", "Open selected row"),
+                                keybind_row(font.clone(), "n", "New file or folder"),
+                                keybind_row(font.clone(), "r", "Rename selected row"),
+                                keybind_row(font.clone(), "d", "Delete selected row"),
+                                keybind_row(font.clone(), "Shift+R", "Refresh workspace tree"),
+                                keybind_row(font.clone(), "q / Esc", "Leave explorer focus"),
+                                keybind_section_heading(font.clone(), "Vim mode"),
+                                keybind_row(font.clone(), "Esc / i / a", "Normal / insert / append"),
+                                keybind_row(font.clone(), "h j k l", "Move left / down / up / right"),
+                                keybind_row(font.clone(), "v / V", "Visual / visual line mode"),
+                                keybind_row(font.clone(), "yy / y", "Yank line / visual selection"),
+                                keybind_row(font.clone(), "p", "Paste Vim register"),
+                                keybind_row(font.clone(), "dd / d", "Delete line / visual selection"),
+                                keybind_row(font.clone(), ":", "Open command menu"),
+                                keybind_section_heading(font.clone(), "Mouse"),
+                                keybind_row(font.clone(), "Mouse wheel", "Scroll active pane vertically"),
+                                keybind_row(font.clone(), "Shift + wheel", "Scroll active pane horizontally"),
+                                keybind_row(font.clone(), "Ctrl + left drag", "Scroll text; move canvas card"),
+                                keybind_row(font.clone(), "Space + left drag", "Pan canvas"),
+                                keybind_row(font.clone(), "Middle drag", "Pan canvas; autoscroll text panes"),
+                                keybind_row(font.clone(), "Left click", "Place cursor"),
+                                keybind_row(font.clone(), "Right click", "Cancel middle-click autoscroll"),
+                            ],
+                        )],
+                )],
             ));
 
             root.spawn((
@@ -1100,11 +1102,16 @@ fn settings_action_button(font: Handle<Font>, label: &str, action: SettingsActio
 fn keybind_setting_row(font: Handle<Font>, action: ShortcutAction) -> impl Bundle {
     (
         Node {
+            width: percent(100.0),
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
+            justify_content: JustifyContent::SpaceBetween,
             column_gap: px(10.0),
+            padding: UiRect::axes(px(10.0), px(7.0)),
+            border_radius: BorderRadius::all(px(4.0)),
             ..default()
         },
+        BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.30)),
         children![
             (
                 Text::new(shortcut_action_description(action)),
@@ -1115,7 +1122,8 @@ fn keybind_setting_row(font: Handle<Font>, action: ShortcutAction) -> impl Bundl
                 },
                 TextColor(COLOR_TEXT_MUTED),
                 Node {
-                    width: px(260.0),
+                    flex_grow: 1.0,
+                    min_width: px(180.0),
                     ..default()
                 },
             ),
@@ -1143,11 +1151,50 @@ fn keybind_setting_row(font: Handle<Font>, action: ShortcutAction) -> impl Bundl
     )
 }
 
+fn settings_screen_heading(
+    font: Handle<Font>,
+    title: &str,
+    description: &str,
+) -> impl Bundle {
+    (
+        Node {
+            width: percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(4.0),
+            margin: UiRect::bottom(px(6.0)),
+            ..default()
+        },
+        children![
+            (
+                Text::new(title),
+                TextFont {
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(22.0),
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MAIN),
+            ),
+            (
+                Text::new(description),
+                TextFont {
+                    font: font.into(),
+                    font_size: FontSize::Px(13.0),
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MUTED),
+            ),
+        ],
+    )
+}
+
 fn keybind_row(font: Handle<Font>, binding: &str, description: &str) -> impl Bundle {
     (
         Node {
+            width: percent(100.0),
             flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
             column_gap: px(10.0),
+            padding: UiRect::axes(px(10.0), px(4.0)),
             ..default()
         },
         children![
@@ -1160,7 +1207,7 @@ fn keybind_row(font: Handle<Font>, binding: &str, description: &str) -> impl Bun
                 },
                 TextColor(COLOR_TEXT_MAIN),
                 Node {
-                    width: px(220.0),
+                    width: px(210.0),
                     ..default()
                 },
             ),
@@ -1169,6 +1216,58 @@ fn keybind_row(font: Handle<Font>, binding: &str, description: &str) -> impl Bun
                 TextFont {
                     font: font.into(),
                     font_size: FontSize::Px(13.0),
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MUTED),
+            ),
+        ],
+    )
+}
+
+fn keybind_section_heading(font: Handle<Font>, label: &str) -> impl Bundle {
+    (
+        Text::new(label),
+        TextFont {
+            font: font.into(),
+            font_size: FontSize::Px(16.0),
+            ..default()
+        },
+        TextColor(COLOR_TEXT_MAIN),
+        Node {
+            width: percent(100.0),
+            margin: UiRect::new(px(0.0), px(0.0), px(12.0), px(2.0)),
+            ..default()
+        },
+    )
+}
+
+fn keybind_help_card(font: Handle<Font>) -> impl Bundle {
+    (
+        Node {
+            width: percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(4.0),
+            padding: UiRect::all(px(12.0)),
+            margin: UiRect::bottom(px(8.0)),
+            border_radius: BorderRadius::all(px(5.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.42)),
+        children![
+            (
+                Text::new("Changing a shortcut"),
+                TextFont {
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(13.0),
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MAIN),
+            ),
+            (
+                Text::new("Click a binding, then press a key. Hold Ctrl, Alt, Super/Cmd, or Space to choose its modifier. Esc cancels capture or closes this screen."),
+                TextFont {
+                    font: font.into(),
+                    font_size: FontSize::Px(12.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MUTED),
@@ -1525,18 +1624,19 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
                 BackgroundColor(body_color),
                 RelativeCursorPosition::default(),
                 PanelBody { kind },
-                children![(
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: px(0.0),
-                        top: px(0.0),
-                        width: percent(100.0),
-                        height: percent(100.0),
-                        ..default()
-                    },
-                    UiTransform::default(),
-                    PanelCanvas { kind },
-                    children![
+                children![
+                    (
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: px(0.0),
+                            top: px(0.0),
+                            width: percent(100.0),
+                            height: percent(100.0),
+                            ..default()
+                        },
+                        UiTransform::default(),
+                        PanelCanvas { kind },
+                        children![
                         (
                             Node {
                                 position_type: PositionType::Absolute,
@@ -1597,10 +1697,44 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
                             ZIndex(3),
                             PanelText { kind },
                         )
-                    ],
-                )],
+                        ],
+                    ),
+                    processed_link_color_toggle_bundle(font.clone(), kind),
+                ],
             )
         ],
+    )
+}
+
+fn processed_link_color_toggle_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
+    (
+        Button,
+        ProcessedLinkColorToggle { kind },
+        Node {
+            position_type: PositionType::Absolute,
+            right: px(10.0),
+            top: px(10.0),
+            display: if kind == PanelKind::Processed {
+                Display::Flex
+            } else {
+                Display::None
+            },
+            padding: UiRect::axes(px(9.0), px(5.0)),
+            border_radius: BorderRadius::all(px(4.0)),
+            ..default()
+        },
+        BackgroundColor(BUTTON_NORMAL),
+        ZIndex(20),
+        children![(
+            Text::new("Links: colored"),
+            TextFont {
+                font: font.into(),
+                font_size: FontSize::Px(12.0),
+                ..default()
+            },
+            TextColor(COLOR_TEXT_MAIN),
+            ProcessedLinkColorToggleLabel,
+        )],
     )
 }
 
@@ -1673,6 +1807,7 @@ fn style_toolbar_buttons(
                 With<StoryQuerySheetAction>,
                 With<KeybindRebindButton>,
                 With<ThemeColorPickerButton>,
+                With<ProcessedLinkColorToggle>,
             )>,
         ),
     >,
@@ -1683,6 +1818,60 @@ fn style_toolbar_buttons(
             Interaction::Hovered => BUTTON_HOVER,
             Interaction::None => BUTTON_NORMAL,
         };
+    }
+}
+
+fn handle_processed_link_color_toggle(
+    interaction_query: Query<
+        (&Interaction, &ProcessedLinkColorToggle),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut state: ResMut<EditorState>,
+) {
+    for (interaction, toggle) in interaction_query.iter() {
+        if *interaction != Interaction::Pressed || toggle.kind != PanelKind::Processed {
+            continue;
+        }
+
+        state.processed_link_colors_enabled = !state.processed_link_colors_enabled;
+        state.status_message = format!(
+            "Rendered link colors: {}",
+            if state.processed_link_colors_enabled {
+                "ON"
+            } else {
+                "OFF"
+            }
+        );
+        if let Err(error) = save_editor_ui_state(&state) {
+            state.status_message = format!("UI state save failed: {error}");
+        }
+    }
+}
+
+fn sync_processed_link_color_toggle(
+    state: Res<EditorState>,
+    mut toggle_query: Query<(&ProcessedLinkColorToggle, &mut Node)>,
+    mut label_query: Query<&mut Text, With<ProcessedLinkColorToggleLabel>>,
+) {
+    for (toggle, mut node) in toggle_query.iter_mut() {
+        node.display = if toggle.kind == PanelKind::Processed
+            && state.document_format != DocumentFormat::Canvas
+        {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
+    let label = if state.processed_link_colors_enabled {
+        "Links: colored"
+    } else {
+        "Links: plain"
+    };
+    for mut text in label_query.iter_mut() {
+        if text.as_str() != label {
+            **text = label.to_string();
+        }
     }
 }
 
@@ -2018,6 +2207,189 @@ fn handle_keybind_buttons(
             "Press a key for {}. Hold Ctrl, Alt, Super/Cmd, or Space to choose that modifier. Esc cancels.",
             shortcut_action_label(button.action)
         );
+    }
+}
+
+fn settings_menu_max_scroll(viewport: &ComputedNode, content: &ComputedNode) -> f32 {
+    let viewport_height = viewport.size().y * viewport.inverse_scale_factor();
+    let content_height = content.size().y * content.inverse_scale_factor();
+    (content_height - viewport_height).max(0.0)
+}
+
+fn reset_settings_menu_scroll_on_open(
+    screen_state: Res<State<UiScreenState>>,
+    mut previous_screen: Local<Option<UiScreenState>>,
+    mut scroll_query: Query<(&SettingsMenuScrollArea, &mut ScrollPosition)>,
+) {
+    let screen = *screen_state.get();
+    if *previous_screen == Some(screen) {
+        return;
+    }
+    *previous_screen = Some(screen);
+
+    for (area, mut scroll_position) in scroll_query.iter_mut() {
+        if area.screen == screen {
+            scroll_position.x = 0.0;
+            scroll_position.y = 0.0;
+        }
+    }
+}
+
+fn handle_settings_menu_mouse_scroll(
+    mut mouse_wheels: MessageReader<MouseWheel>,
+    screen_state: Res<State<UiScreenState>>,
+    mut scroll_query: Query<
+        (
+            &SettingsMenuScrollArea,
+            &RelativeCursorPosition,
+            &ComputedNode,
+            &mut ScrollPosition,
+        ),
+    >,
+    content_query: Query<(&SettingsMenuScrollContent, &ComputedNode)>,
+) {
+    let screen = *screen_state.get();
+    let Some((_, relative_cursor, viewport, mut scroll_position)) = scroll_query
+        .iter_mut()
+        .find(|(area, _, _, _)| area.screen == screen)
+    else {
+        return;
+    };
+    if !relative_cursor.cursor_over() {
+        return;
+    }
+    let Some((_, content)) = content_query
+        .iter()
+        .find(|(content, _)| content.screen == screen)
+    else {
+        return;
+    };
+
+    let mut delta_y = 0.0_f32;
+    for wheel in mouse_wheels.read() {
+        delta_y += match wheel.unit {
+            MouseScrollUnit::Line => -wheel.y * 36.0,
+            MouseScrollUnit::Pixel => -wheel.y,
+        };
+    }
+    if delta_y.abs() <= f32::EPSILON {
+        return;
+    }
+
+    let max_scroll = settings_menu_max_scroll(viewport, content);
+    scroll_position.y = (scroll_position.y + delta_y).clamp(0.0, max_scroll);
+    scroll_position.x = 0.0;
+}
+
+fn handle_keybind_screen_navigation(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<EditorState>,
+    mut next_screen_state: ResMut<NextState<UiScreenState>>,
+    mut scroll_query: Query<(
+        &SettingsMenuScrollArea,
+        &ComputedNode,
+        &mut ScrollPosition,
+    )>,
+    content_query: Query<(&SettingsMenuScrollContent, &ComputedNode)>,
+) {
+    if state.pending_keybind_capture.is_some() {
+        return;
+    }
+
+    if keys.just_pressed(KeyCode::Escape) {
+        next_screen_state.set(UiScreenState::Settings);
+        state.status_message = "Closed keybinds.".to_string();
+        return;
+    }
+
+    let Some((_, viewport, mut scroll_position)) = scroll_query
+        .iter_mut()
+        .find(|(area, _, _)| area.screen == UiScreenState::Keybinds)
+    else {
+        return;
+    };
+    let Some((_, content)) = content_query
+        .iter()
+        .find(|(content, _)| content.screen == UiScreenState::Keybinds)
+    else {
+        return;
+    };
+    let max_scroll = settings_menu_max_scroll(viewport, content);
+    let page_step = (viewport.size().y * viewport.inverse_scale_factor() * 0.85).max(80.0);
+
+    let next_y = if keys.just_pressed(KeyCode::Home) {
+        Some(0.0)
+    } else if keys.just_pressed(KeyCode::End) {
+        Some(max_scroll)
+    } else if keys.just_pressed(KeyCode::PageUp) {
+        Some(scroll_position.y - page_step)
+    } else if keys.just_pressed(KeyCode::PageDown) {
+        Some(scroll_position.y + page_step)
+    } else if keys.just_pressed(KeyCode::ArrowUp) {
+        Some(scroll_position.y - 36.0)
+    } else if keys.just_pressed(KeyCode::ArrowDown) {
+        Some(scroll_position.y + 36.0)
+    } else {
+        None
+    };
+
+    if let Some(next_y) = next_y {
+        scroll_position.y = next_y.clamp(0.0, max_scroll);
+        scroll_position.x = 0.0;
+    }
+}
+
+fn handle_settings_screen_navigation(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<EditorState>,
+    mut next_screen_state: ResMut<NextState<UiScreenState>>,
+    mut scroll_query: Query<(
+        &SettingsMenuScrollArea,
+        &ComputedNode,
+        &mut ScrollPosition,
+    )>,
+    content_query: Query<(&SettingsMenuScrollContent, &ComputedNode)>,
+) {
+    if keys.just_pressed(KeyCode::Escape) {
+        next_screen_state.set(UiScreenState::Editor);
+        state.status_message = "Closed settings.".to_string();
+        return;
+    }
+
+    let Some((_, viewport, mut scroll_position)) = scroll_query
+        .iter_mut()
+        .find(|(area, _, _)| area.screen == UiScreenState::Settings)
+    else {
+        return;
+    };
+    let Some((_, content)) = content_query
+        .iter()
+        .find(|(content, _)| content.screen == UiScreenState::Settings)
+    else {
+        return;
+    };
+    let max_scroll = settings_menu_max_scroll(viewport, content);
+    let page_step = (viewport.size().y * viewport.inverse_scale_factor() * 0.85).max(80.0);
+
+    let next_y = if keys.just_pressed(KeyCode::Home) {
+        Some(0.0)
+    } else if keys.just_pressed(KeyCode::End) {
+        Some(max_scroll)
+    } else if keys.just_pressed(KeyCode::PageUp) {
+        Some(scroll_position.y - page_step)
+    } else if keys.just_pressed(KeyCode::PageDown) {
+        Some(scroll_position.y + page_step)
+    } else if keys.just_pressed(KeyCode::ArrowUp) {
+        Some(scroll_position.y - 36.0)
+    } else if keys.just_pressed(KeyCode::ArrowDown) {
+        Some(scroll_position.y + 36.0)
+    } else {
+        None
+    };
+
+    if let Some(next_y) = next_y {
+        scroll_position.y = next_y.clamp(0.0, max_scroll);
+        scroll_position.x = 0.0;
     }
 }
 

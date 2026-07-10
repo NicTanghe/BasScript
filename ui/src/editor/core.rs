@@ -169,6 +169,7 @@ impl Plugin for UiPlugin {
                 Update,
                 (
                     style_toolbar_buttons,
+                    sync_processed_link_color_toggle,
                     style_workspace_file_entry_text,
                     sync_workspace_prompt_ui,
                     handle_window_shortcuts,
@@ -181,6 +182,7 @@ impl Plugin for UiPlugin {
                     sync_command_menu_ui,
                     sync_story_query_sheet_ui,
                     sync_settings_ui,
+                    reset_settings_menu_scroll_on_open,
                     sync_theme_picker_ui,
                     sync_workspace_sidebar,
                     sync_workspace_selected_row_scroll.after(sync_workspace_sidebar),
@@ -190,6 +192,7 @@ impl Plugin for UiPlugin {
                 Update,
                 (
                     handle_toolbar_buttons,
+                    handle_processed_link_color_toggle,
                     handle_workspace_file_buttons,
                     handle_workspace_folder_buttons,
                     handle_markdown_metadata_buttons,
@@ -201,10 +204,21 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 Update,
-                handle_settings_buttons.run_if(
-                    in_state(UiScreenState::Settings)
-                        .or_else(in_state(UiScreenState::Keybinds))
-                        .or_else(in_state(UiScreenState::Theme)),
+                (
+                    handle_settings_buttons,
+                    handle_settings_screen_navigation
+                        .run_if(in_state(UiScreenState::Settings)),
+                )
+                    .run_if(
+                        in_state(UiScreenState::Settings)
+                            .or_else(in_state(UiScreenState::Keybinds))
+                            .or_else(in_state(UiScreenState::Theme)),
+                    ),
+            )
+            .add_systems(
+                Update,
+                handle_settings_menu_mouse_scroll.run_if(
+                    in_state(UiScreenState::Settings).or_else(in_state(UiScreenState::Keybinds)),
                 ),
             )
             .add_systems(
@@ -217,7 +231,11 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 Update,
-                (handle_keybind_buttons, capture_keybind_input)
+                (
+                    handle_keybind_buttons,
+                    handle_keybind_screen_navigation.before(capture_keybind_input),
+                    capture_keybind_input,
+                )
                     .run_if(in_state(UiScreenState::Keybinds)),
             )
             .add_systems(
@@ -368,6 +386,14 @@ struct PanelBody {
     kind: PanelKind,
 }
 
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+struct ProcessedLinkColorToggle {
+    kind: PanelKind,
+}
+
+#[derive(Component)]
+struct ProcessedLinkColorToggleLabel;
+
 #[derive(Component)]
 struct EditorBodyRow;
 
@@ -487,11 +513,12 @@ enum ShortcutAction {
     PlainView,
     ProcessedView,
     ProcessedRawCurrentLineView,
+    SplitView,
     ToggleExplorer,
     ToggleTopMenu,
 }
 
-const SHORTCUT_ACTIONS: [ShortcutAction; 12] = [
+const SHORTCUT_ACTIONS: [ShortcutAction; 13] = [
     ShortcutAction::OpenWorkspace,
     ShortcutAction::Save,
     ShortcutAction::SaveAs,
@@ -502,6 +529,7 @@ const SHORTCUT_ACTIONS: [ShortcutAction; 12] = [
     ShortcutAction::PlainView,
     ShortcutAction::ProcessedView,
     ShortcutAction::ProcessedRawCurrentLineView,
+    ShortcutAction::SplitView,
     ShortcutAction::ToggleExplorer,
     ShortcutAction::ToggleTopMenu,
 ];
@@ -534,6 +562,7 @@ struct KeybindSettings {
     plain_view: ShortcutBinding,
     processed_view: ShortcutBinding,
     processed_raw_current_line_view: ShortcutBinding,
+    split_view: ShortcutBinding,
     toggle_explorer: ShortcutBinding,
     toggle_top_menu: ShortcutBinding,
 }
@@ -551,6 +580,7 @@ impl Default for KeybindSettings {
             plain_view: ShortcutBinding::platform(KeyCode::Digit3, false),
             processed_view: ShortcutBinding::platform(KeyCode::Digit2, false),
             processed_raw_current_line_view: ShortcutBinding::platform(KeyCode::Digit1, false),
+            split_view: ShortcutBinding::platform(KeyCode::Digit4, false),
             toggle_explorer: ShortcutBinding::platform(KeyCode::KeyE, false),
             toggle_top_menu: ShortcutBinding::platform(KeyCode::KeyB, false),
         }
@@ -580,6 +610,7 @@ impl KeybindSettings {
             ShortcutAction::PlainView => self.plain_view,
             ShortcutAction::ProcessedView => self.processed_view,
             ShortcutAction::ProcessedRawCurrentLineView => self.processed_raw_current_line_view,
+            ShortcutAction::SplitView => self.split_view,
             ShortcutAction::ToggleExplorer => self.toggle_explorer,
             ShortcutAction::ToggleTopMenu => self.toggle_top_menu,
         }
@@ -599,6 +630,7 @@ impl KeybindSettings {
             ShortcutAction::ProcessedRawCurrentLineView => {
                 self.processed_raw_current_line_view = binding
             }
+            ShortcutAction::SplitView => self.split_view = binding,
             ShortcutAction::ToggleExplorer => self.toggle_explorer = binding,
             ShortcutAction::ToggleTopMenu => self.toggle_top_menu = binding,
         }
@@ -617,6 +649,7 @@ fn shortcut_action_label(action: ShortcutAction) -> &'static str {
         ShortcutAction::PlainView => "Plain View Mode",
         ShortcutAction::ProcessedView => "Processed View Mode",
         ShortcutAction::ProcessedRawCurrentLineView => "Processed + Raw Current Line Mode",
+        ShortcutAction::SplitView => "Dual Panel View Mode",
         ShortcutAction::ToggleExplorer => "Toggle Explorer",
         ShortcutAction::ToggleTopMenu => "Toggle Top Menu",
     }
@@ -634,6 +667,7 @@ fn shortcut_action_description(action: ShortcutAction) -> &'static str {
         ShortcutAction::PlainView => "Plain view mode",
         ShortcutAction::ProcessedView => "Processed view mode",
         ShortcutAction::ProcessedRawCurrentLineView => "Processed + raw current line mode",
+        ShortcutAction::SplitView => "Dual panel view mode",
         ShortcutAction::ToggleExplorer => "Toggle explorer",
         ShortcutAction::ToggleTopMenu => "Toggle top menu",
     }
@@ -651,6 +685,7 @@ fn shortcut_action_settings_key(action: ShortcutAction) -> &'static str {
         ShortcutAction::PlainView => "plain_view",
         ShortcutAction::ProcessedView => "processed_view",
         ShortcutAction::ProcessedRawCurrentLineView => "processed_raw_current_line_view",
+        ShortcutAction::SplitView => "split_view",
         ShortcutAction::ToggleExplorer => "toggle_explorer",
         ShortcutAction::ToggleTopMenu => "toggle_top_menu",
     }
@@ -875,6 +910,16 @@ struct SettingsScreenRoot;
 
 #[derive(Component)]
 struct KeybindsScreenRoot;
+
+#[derive(Component)]
+struct SettingsMenuScrollArea {
+    screen: UiScreenState,
+}
+
+#[derive(Component)]
+struct SettingsMenuScrollContent {
+    screen: UiScreenState,
+}
 
 #[derive(Component)]
 struct ThemeScreenRoot;
@@ -1204,6 +1249,7 @@ struct EditorState {
     story_query_sheet: StoryQuerySheet,
     workspace_sidebar_visible: bool,
     top_menu_collapsed: bool,
+    processed_link_colors_enabled: bool,
     processed_glass: bool,
     explorer_glass: bool,
     settings_glass: bool,
@@ -1405,6 +1451,7 @@ impl Default for PersistentSettings {
 struct PersistentUiState {
     workspace_sidebar_visible: bool,
     top_menu_collapsed: bool,
+    processed_link_colors_enabled: bool,
 }
 
 impl Default for PersistentUiState {
@@ -1412,6 +1459,7 @@ impl Default for PersistentUiState {
         Self {
             workspace_sidebar_visible: true,
             top_menu_collapsed: false,
+            processed_link_colors_enabled: true,
         }
     }
 }
@@ -1832,6 +1880,7 @@ impl FromWorld for EditorState {
             story_query_sheet: StoryQuerySheet::default(),
             workspace_sidebar_visible: ui_state.workspace_sidebar_visible,
             top_menu_collapsed: ui_state.top_menu_collapsed,
+            processed_link_colors_enabled: ui_state.processed_link_colors_enabled,
             processed_glass: theme_settings.processed_glass,
             explorer_glass: theme_settings.explorer_glass,
             settings_glass: theme_settings.settings_glass,

@@ -1997,7 +1997,10 @@ fn apply_processed_styles(
         let next_line_height = LineHeight::Px(
             line_height * processed_visual_line_height_units(state, visual_line),
         );
-        let next_color = if allow_link_color && fragment.is_link {
+        let next_color = if state.processed_link_colors_enabled
+            && allow_link_color
+            && fragment.is_link
+        {
             let hovered = state
                 .hovered_processed_link
                 .as_ref()

@@ -40,6 +40,10 @@ fn handle_mouse_selection(
     mut mouse_selection: ResMut<MouseSelectionState>,
     panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
     metadata_query: Query<&RelativeCursorPosition, With<MarkdownMetadataPanelRoot>>,
+    processed_link_color_toggle_query: Query<
+        &Interaction,
+        With<ProcessedLinkColorToggle>,
+    >,
     text_layout_query: Query<(&PanelText, &ComputedTextBlock)>,
     processed_text_layout_query: Query<
         (&ProcessedPaperText, &ComputedTextBlock, &ComputedNode),
@@ -61,6 +65,13 @@ fn handle_mouse_selection(
         return;
     }
     if markdown_metadata_hovered(&metadata_query) {
+        mouse_selection.active = false;
+        return;
+    }
+    if processed_link_color_toggle_query
+        .iter()
+        .any(|interaction| *interaction != Interaction::None)
+    {
         mouse_selection.active = false;
         return;
     }

@@ -9,6 +9,7 @@
 	plain_view: "Ctrl+3",
 	processed_view: "Ctrl+2",
 	processed_raw_current_line_view: "Ctrl+1",
+	split_view: "Ctrl+4",
 	toggle_explorer: "Space+E",
 	toggle_top_menu: "Mod+B",
 )
