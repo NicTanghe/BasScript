@@ -233,32 +233,52 @@ mod modifier_key_tests {
     }
 
     #[test]
-    fn link_toggle_ejection_is_fast_and_guaranteed_to_clear_its_width() {
-        let target = 128.0;
-        let mut offset = 0.0;
-        let mut velocity = 0.0;
-        for _ in 0..8 {
+    fn link_toggle_compression_scales_with_speed_but_stays_bounded() {
+        assert_eq!(link_toggle_compression_for_impact(0.0), 8.0);
+        assert!(link_toggle_compression_for_impact(400.0) > 8.0);
+        assert_eq!(link_toggle_compression_for_impact(10_000.0), 20.0);
+    }
+
+    #[test]
+    fn link_toggle_motion_targets_follow_the_writable_border() {
+        let compression = 14.0;
+        let first_border = 6.0;
+        let moved_border = 31.0;
+
+        assert_eq!(
+            link_toggle_compression_target(moved_border, compression)
+                - link_toggle_compression_target(first_border, compression),
+            moved_border - first_border
+        );
+        assert_eq!(
+            link_toggle_rebound_target(moved_border, compression)
+                - link_toggle_rebound_target(first_border, compression),
+            moved_border - first_border
+        );
+    }
+
+    #[test]
+    fn link_toggle_rebound_moves_right_by_twice_the_compression() {
+        let compression = 20.0;
+        let border = 12.0;
+        let target = link_toggle_rebound_target(border, compression);
+        let mut offset = link_toggle_compression_target(border, compression);
+        let mut velocity = 700.0;
+        for _ in 0..30 {
             (offset, velocity) =
-                step_link_toggle_ejection(offset, velocity, target, 1.0 / 60.0);
+                step_link_toggle_spring(offset, velocity, target, 190.0, 10.0, 1.0 / 60.0);
+            if offset >= target {
+                break;
+            }
         }
 
         assert!(offset >= target);
     }
 
     #[test]
-    fn link_toggle_return_preserves_momentum_for_a_tangible_overshoot() {
-        let clearance = 128.0;
-        let (offset, velocity) =
-            step_link_toggle_return(clearance, 1_400.0, 1.0 / 30.0);
-
-        assert!(offset > clearance);
-        assert!(velocity > 0.0);
-    }
-
-    #[test]
     fn link_toggle_return_oscillates_across_rest_before_settling() {
-        let mut offset = 128.0;
-        let mut velocity = 1_400.0;
+        let mut offset = 40.0;
+        let mut velocity = 700.0;
         let mut crossed_rest = false;
         for _ in 0..240 {
             (offset, velocity) = step_link_toggle_return(offset, velocity, 1.0 / 60.0);

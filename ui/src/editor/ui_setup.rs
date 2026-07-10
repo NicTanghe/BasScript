@@ -1879,12 +1879,18 @@ fn sync_processed_link_color_toggle(
         };
 
         let geometry = processed_page_geometry(panel_size, &state);
-        let paper_right = geometry.paper_left + geometry.paper_width
+        let writable_right = geometry.text_left + geometry.text_width
             - state.processed_horizontal_scroll;
         let toggle_width = (computed.size().x * computed.inverse_scale_factor()).max(116.0);
         let base_x = (panel_size.x - toggle_width - 10.0).max(0.0);
-        let touching_page = paper_right + 8.0 >= base_x;
+        let writable_border_offset = writable_right - base_x;
+        let touching_page = writable_right >= base_x;
         let contact_started = spring.initialized && touching_page && !spring.touching_page;
+        let impact_speed = if spring.initialized && dt > f32::EPSILON {
+            ((writable_right - spring.previous_writable_right) / dt).max(0.0)
+        } else {
+            0.0
+        };
 
         node.display = Display::Flex;
         node.top = px(10.0);
@@ -1897,11 +1903,11 @@ fn sync_processed_link_color_toggle(
         } else if !touching_page {
             spring.phase = ProcessedLinkColorTogglePhase::Idle;
         } else if contact_started {
-            spring.phase = ProcessedLinkColorTogglePhase::Ejecting;
-            spring.velocity_x = spring.velocity_x.max(1_400.0);
+            spring.compression_distance = link_toggle_compression_for_impact(impact_speed);
+            spring.phase = ProcessedLinkColorTogglePhase::Compressing;
+            spring.velocity_x = -impact_speed.clamp(260.0, 900.0);
         }
 
-        let exit_offset = toggle_width + 12.0;
         match spring.phase {
             ProcessedLinkColorTogglePhase::Idle => {
                 (spring.offset_x, spring.velocity_x) = step_link_toggle_return(
@@ -1910,17 +1916,54 @@ fn sync_processed_link_color_toggle(
                     dt,
                 );
             }
-            ProcessedLinkColorTogglePhase::Ejecting => {
-                (spring.offset_x, spring.velocity_x) = step_link_toggle_ejection(
+            ProcessedLinkColorTogglePhase::Compressing => {
+                let compression_target = link_toggle_compression_target(
+                    writable_border_offset,
+                    spring.compression_distance,
+                );
+                (spring.offset_x, spring.velocity_x) = step_link_toggle_spring(
                     spring.offset_x,
                     spring.velocity_x,
-                    exit_offset,
+                    compression_target,
+                    240.0,
+                    13.0,
                     dt,
                 );
-                if spring.offset_x >= exit_offset {
-                    // Preserve outward momentum after clearing the pane. The
-                    // under-page return spring uses it for a visible overshoot
-                    // and naturally reverses direction.
+                // The writable boundary may continue moving during impact.
+                // Never allow the visible overlap to exceed its bounded
+                // compression distance.
+                if spring.offset_x < compression_target {
+                    spring.offset_x = compression_target;
+                }
+                if spring.offset_x <= compression_target + 0.5 {
+                    spring.velocity_x = (420.0 + impact_speed * 0.32).clamp(420.0, 1_000.0);
+                    spring.phase = ProcessedLinkColorTogglePhase::Rebounding;
+                }
+            }
+            ProcessedLinkColorTogglePhase::Rebounding => {
+                let rebound_target = link_toggle_rebound_target(
+                    writable_border_offset,
+                    spring.compression_distance,
+                );
+                let compression_limit = link_toggle_compression_target(
+                    writable_border_offset,
+                    spring.compression_distance,
+                );
+                (spring.offset_x, spring.velocity_x) = step_link_toggle_spring(
+                    spring.offset_x,
+                    spring.velocity_x,
+                    rebound_target,
+                    190.0,
+                    10.0,
+                    dt,
+                );
+                if spring.offset_x < compression_limit {
+                    spring.offset_x = compression_limit;
+                    spring.velocity_x = spring.velocity_x.max(0.0);
+                }
+                if spring.offset_x >= rebound_target {
+                    // Change layer at the outward rebound apex, preserving the
+                    // remaining velocity for the under-page settling spring.
                     spring.phase = ProcessedLinkColorTogglePhase::ReturningUnderPage;
                 }
             }
@@ -1934,12 +1977,12 @@ fn sync_processed_link_color_toggle(
         }
         spring.touching_page = touching_page;
         spring.initialized = true;
+        spring.previous_writable_right = writable_right;
         node.left = px(base_x + spring.offset_x);
 
         *z_index = if spring.phase == ProcessedLinkColorTogglePhase::ReturningUnderPage {
-            // The layer changes only after ejection has moved the entire
-            // control beyond the clipped pane edge. It then returns smoothly
-            // underneath the page, so no visible teleport is possible.
+            // The layer changes at the bounded outward rebound apex, then the
+            // control settles underneath the page.
             ZIndex(0)
         } else {
             ZIndex(20)
@@ -1958,27 +2001,37 @@ fn sync_processed_link_color_toggle(
     }
 }
 
-fn step_link_toggle_ejection(
+fn link_toggle_compression_for_impact(impact_speed: f32) -> f32 {
+    (8.0 + impact_speed.max(0.0) * 0.015).clamp(8.0, 20.0)
+}
+
+fn link_toggle_compression_target(border_offset: f32, compression_distance: f32) -> f32 {
+    border_offset - compression_distance.clamp(0.0, 20.0)
+}
+
+fn link_toggle_rebound_target(border_offset: f32, compression_distance: f32) -> f32 {
+    border_offset + (compression_distance.clamp(0.0, 20.0) * 2.0).min(40.0)
+}
+
+fn step_link_toggle_spring(
     offset: f32,
     velocity: f32,
     target: f32,
+    stiffness: f32,
+    damping: f32,
     dt: f32,
 ) -> (f32, f32) {
     let dt = dt.clamp(0.0, 1.0 / 30.0);
-    let acceleration = (target - offset) * 260.0 - velocity * 18.0;
-    let next_velocity = (velocity + acceleration * dt).max(1_400.0);
+    let acceleration = (target - offset) * stiffness - velocity * damping;
+    let next_velocity = velocity + acceleration * dt;
     let next_offset = offset + next_velocity * dt;
 
     (next_offset, next_velocity)
 }
 
 fn step_link_toggle_return(offset: f32, velocity: f32, dt: f32) -> (f32, f32) {
-    let dt = dt.clamp(0.0, 1.0 / 30.0);
-    // Deliberately under-damped: the control overshoots its resting point,
-    // reverses, and settles through progressively smaller oscillations.
-    let acceleration = -offset * 130.0 - velocity * 8.0;
-    let mut next_velocity = velocity + acceleration * dt;
-    let mut next_offset = offset + next_velocity * dt;
+    let (mut next_offset, mut next_velocity) =
+        step_link_toggle_spring(offset, velocity, 0.0, 130.0, 8.0, dt);
 
     // Keep extreme frame spikes bounded without removing the spring rebound.
     if next_offset < -24.0 {
