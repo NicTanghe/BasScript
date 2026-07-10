@@ -423,11 +423,12 @@ fn spawn_canvas_node(
             CanvasNodeKind::Link { url } => {
                 node_parent.spawn((
                     Text::new(url.clone()),
-                    TextFont {
-                        font: fonts.markdown_regular.clone().into(),
-                        font_size: FontSize::Px(canvas_text_font_size(zoom)),
-                        ..default()
-                    },
+                    text_font_for_variant(
+                        fonts,
+                        FontVariant::Regular,
+                        DocumentFormat::Canvas,
+                        canvas_text_font_size(zoom),
+                    ),
                     LineHeight::Px(canvas_text_line_height(zoom)),
                     TextColor(COLOR_TEXT_MUTED),
                     Node {
@@ -445,11 +446,12 @@ fn spawn_canvas_node(
             CanvasNodeKind::Group { label } => {
                 node_parent.spawn((
                     Text::new(label.clone().unwrap_or_default()),
-                    TextFont {
-                        font: fonts.markdown_bold.clone().into(),
-                        font_size: FontSize::Px(canvas_text_font_size(zoom).max(8.0)),
-                        ..default()
-                    },
+                    text_font_for_variant(
+                        fonts,
+                        FontVariant::Bold,
+                        DocumentFormat::Canvas,
+                        canvas_text_font_size(zoom).max(8.0),
+                    ),
                     LineHeight::Px(canvas_text_line_height(zoom)),
                     TextColor(COLOR_TEXT_MUTED),
                     Node {
@@ -467,11 +469,12 @@ fn spawn_canvas_node(
             CanvasNodeKind::Unknown { node_type } => {
                 node_parent.spawn((
                     Text::new(format!("Unsupported canvas node: {node_type}")),
-                    TextFont {
-                        font: fonts.markdown_regular.clone().into(),
-                        font_size: FontSize::Px(canvas_text_font_size(zoom)),
-                        ..default()
-                    },
+                    text_font_for_variant(
+                        fonts,
+                        FontVariant::Regular,
+                        DocumentFormat::Canvas,
+                        canvas_text_font_size(zoom),
+                    ),
                     LineHeight::Px(canvas_text_line_height(zoom)),
                     TextColor(COLOR_TEXT_MUTED),
                     Node {
@@ -551,11 +554,12 @@ fn spawn_canvas_rendered_text_preview(
     parent
         .spawn((
             Text::new(""),
-            TextFont {
-                font: fonts.markdown_regular.clone().into(),
-                font_size: FontSize::Px(font_size),
-                ..default()
-            },
+            text_font_for_variant(
+                fonts,
+                FontVariant::Regular,
+                DocumentFormat::Canvas,
+                font_size,
+            ),
             LineHeight::Px(line_height),
             TextColor(COLOR_TEXT_MAIN),
             Node {
@@ -574,16 +578,12 @@ fn spawn_canvas_rendered_text_preview(
             for span in canvas_rendered_text_spans(text) {
                 text_parent.spawn((
                     TextSpan::new(span.text),
-                    TextFont {
-                        font: font_for_variant_with_format(
-                            fonts,
-                            span.style.font_variant,
-                            DocumentFormat::Canvas,
-                        )
-                        .into(),
-                        font_size: FontSize::Px(font_size * span.style.font_scale),
-                        ..default()
-                    },
+                    text_font_for_variant(
+                        fonts,
+                        span.style.font_variant,
+                        DocumentFormat::Canvas,
+                        font_size * span.style.font_scale,
+                    ),
                     LineHeight::Px(line_height * span.style.line_height_scale),
                     TextColor(span.style.color),
                 ));

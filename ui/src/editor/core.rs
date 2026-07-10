@@ -21,7 +21,7 @@ use bevy::{
     },
     log::{info, warn},
     prelude::*,
-    text::{ComputedTextBlock, LineHeight},
+    text::{ComputedTextBlock, FontStyle, FontWeight, LineHeight},
     ui::{RelativeCursorPosition, UiGlobalTransform, UiTransform, Val2},
     window::{PrimaryWindow, RawHandleWrapper},
 };
@@ -34,8 +34,8 @@ const FONT_ITALIC_PATH: &str = "fonts/Courier Prime/Courier Prime Italic.ttf";
 const FONT_BOLD_ITALIC_PATH: &str = "fonts/Courier Prime/Courier Prime Bold Italic.ttf";
 const FONT_MARKDOWN_PATH: &str = "fonts/SegoeUIVF.ttf";
 const FONT_MARKDOWN_BOLD_PATH: &str = "fonts/SegoeUIVF.ttf";
-const FONT_MARKDOWN_ITALIC_PATH: &str = "fonts/SegoeUIVF.ttf";
-const FONT_MARKDOWN_BOLD_ITALIC_PATH: &str = "fonts/SegoeUIVF.ttf";
+const FONT_MARKDOWN_ITALIC_PATH: &str = "fonts/segoe-ui-4/Segoe UI Italic.ttf";
+const FONT_MARKDOWN_BOLD_ITALIC_PATH: &str = "fonts/segoe-ui-4/Segoe UI Bold Italic.ttf";
 const DEFAULT_LOAD_PATH: &str = "docs/humanDOC.md";
 const DEFAULT_SAVE_PATH: &str = "scripts/session.fountain";
 const EDITOR_SETTINGS_PATH: &str = "settings/editor_settings.ron";
@@ -1647,6 +1647,49 @@ enum FontVariant {
     Bold,
     Italic,
     BoldItalic,
+}
+
+fn text_font_attributes_for_variant(variant: FontVariant) -> (FontWeight, FontStyle) {
+    match variant {
+        FontVariant::Regular => (FontWeight::NORMAL, FontStyle::Normal),
+        FontVariant::Bold => (FontWeight::BOLD, FontStyle::Normal),
+        FontVariant::Italic => (FontWeight::NORMAL, FontStyle::Italic),
+        FontVariant::BoldItalic => (FontWeight::BOLD, FontStyle::Italic),
+    }
+}
+
+fn apply_font_variant_to_text_font(
+    text_font: &mut TextFont,
+    fonts: &EditorFonts,
+    variant: FontVariant,
+    format: DocumentFormat,
+) {
+    let next_font = font_for_variant_with_format(fonts, variant, format).into();
+    if text_font.font != next_font {
+        text_font.font = next_font;
+    }
+
+    let (next_weight, next_style) = text_font_attributes_for_variant(variant);
+    if text_font.weight != next_weight {
+        text_font.weight = next_weight;
+    }
+    if text_font.style != next_style {
+        text_font.style = next_style;
+    }
+}
+
+fn text_font_for_variant(
+    fonts: &EditorFonts,
+    variant: FontVariant,
+    format: DocumentFormat,
+    font_size: f32,
+) -> TextFont {
+    let mut text_font = TextFont {
+        font_size: FontSize::Px(font_size),
+        ..default()
+    };
+    apply_font_variant_to_text_font(&mut text_font, fonts, variant, format);
+    text_font
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

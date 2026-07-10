@@ -1179,8 +1179,12 @@ fn apply_story_query_rendered_page_styles(
 
         if line_offset >= lines_per_page {
             **text_span = String::new();
-            text_font.font =
-                font_for_variant_with_format(fonts, FontVariant::Regular, document_format).into();
+            apply_font_variant_to_text_font(
+                &mut text_font,
+                fonts,
+                FontVariant::Regular,
+                document_format,
+            );
             text_font.font_size = FontSize::Px(font_size);
             *text_line_height = LineHeight::Px(line_height);
             text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
@@ -1193,8 +1197,12 @@ fn apply_story_query_rendered_page_styles(
             } else {
                 String::new()
             };
-            text_font.font =
-                font_for_variant_with_format(fonts, FontVariant::Regular, document_format).into();
+            apply_font_variant_to_text_font(
+                &mut text_font,
+                fonts,
+                FontVariant::Regular,
+                document_format,
+            );
             text_font.font_size = FontSize::Px(font_size);
             *text_line_height = LineHeight::Px(line_height);
             text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
@@ -1219,6 +1227,12 @@ fn apply_story_query_rendered_page_styles(
         let Some(mut fragment) = processed_visual_fragment_for_part(visual_line, span.part_index)
         else {
             **text_span = String::new();
+            apply_font_variant_to_text_font(
+                &mut text_font,
+                fonts,
+                FontVariant::Regular,
+                document_format,
+            );
             text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
             continue;
         };
@@ -1229,8 +1243,7 @@ fn apply_story_query_rendered_page_styles(
 
         let effective_variant =
             font_variant_for_processed_fragment(style.font_variant, &fragment, document_format);
-        text_font.font =
-            font_for_variant_with_format(fonts, effective_variant, document_format).into();
+        apply_font_variant_to_text_font(&mut text_font, fonts, effective_variant, document_format);
         text_font.font_size = FontSize::Px(font_size * style.font_scale);
         *text_line_height = LineHeight::Px(line_height * style.line_height_scale);
         **text_span = fragment.text;

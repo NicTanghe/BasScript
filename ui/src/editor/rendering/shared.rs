@@ -416,12 +416,12 @@ fn render_editor(
     {
         match panel_text.kind {
             PanelKind::Plain => {
-                text_font.font = font_for_variant_with_format(
+                apply_font_variant_to_text_font(
+                    &mut text_font,
                     &fonts,
                     FontVariant::Regular,
                     state.document_format,
-                )
-                .into();
+                );
                 text_font.font_size = FontSize::Px(plain_font_size);
                 *line_height_comp = LineHeight::Px(plain_line_height);
                 **text = plain_view.clone();

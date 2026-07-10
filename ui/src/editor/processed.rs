@@ -1764,6 +1764,63 @@ mod processed_markdown_inline_tests {
     }
 
     #[test]
+    fn maps_font_variants_to_text_attributes() {
+        assert_eq!(
+            text_font_attributes_for_variant(FontVariant::Regular),
+            (FontWeight::NORMAL, FontStyle::Normal)
+        );
+        assert_eq!(
+            text_font_attributes_for_variant(FontVariant::Bold),
+            (FontWeight::BOLD, FontStyle::Normal)
+        );
+        assert_eq!(
+            text_font_attributes_for_variant(FontVariant::Italic),
+            (FontWeight::NORMAL, FontStyle::Italic)
+        );
+        assert_eq!(
+            text_font_attributes_for_variant(FontVariant::BoldItalic),
+            (FontWeight::BOLD, FontStyle::Italic)
+        );
+    }
+
+    #[test]
+    fn resets_text_attributes_when_reusing_a_processed_span() {
+        let fonts = EditorFonts {
+            regular: Handle::default(),
+            bold: Handle::default(),
+            italic: Handle::default(),
+            bold_italic: Handle::default(),
+            markdown_regular: Handle::default(),
+            markdown_bold: Handle::default(),
+            markdown_italic: Handle::default(),
+            markdown_bold_italic: Handle::default(),
+        };
+        let mut text_font = TextFont {
+            weight: FontWeight::BOLD,
+            style: FontStyle::Italic,
+            ..default()
+        };
+
+        apply_font_variant_to_text_font(
+            &mut text_font,
+            &fonts,
+            FontVariant::Regular,
+            DocumentFormat::Markdown,
+        );
+        assert_eq!(text_font.weight, FontWeight::NORMAL);
+        assert_eq!(text_font.style, FontStyle::Normal);
+
+        apply_font_variant_to_text_font(
+            &mut text_font,
+            &fonts,
+            FontVariant::BoldItalic,
+            DocumentFormat::Markdown,
+        );
+        assert_eq!(text_font.weight, FontWeight::BOLD);
+        assert_eq!(text_font.style, FontStyle::Italic);
+    }
+
+    #[test]
     fn finish_processed_page_pads_to_fixed_page_step() {
         let mut lines = Vec::<ProcessedVisualLine>::new();
         push_page_spacers(&mut lines, 7, 2);
@@ -1874,10 +1931,12 @@ fn apply_processed_styles(
             if !text_span.is_empty() {
                 text_span.clear();
             }
-            let next_font = fonts.regular.clone().into();
-            if text_font.font != next_font {
-                text_font.font = next_font;
-            }
+            apply_font_variant_to_text_font(
+                &mut text_font,
+                fonts,
+                FontVariant::Regular,
+                state.document_format,
+            );
             let next_font_size = FontSize::Px(font_size);
             if text_font.font_size != next_font_size {
                 text_font.font_size = next_font_size;
@@ -1896,6 +1955,12 @@ fn apply_processed_styles(
             if !text_span.is_empty() {
                 text_span.clear();
             }
+            apply_font_variant_to_text_font(
+                &mut text_font,
+                fonts,
+                FontVariant::Regular,
+                state.document_format,
+            );
             if text_color.0 != Color::NONE {
                 text_color.0 = Color::NONE;
             }
@@ -1909,6 +1974,12 @@ fn apply_processed_styles(
             if !text_span.is_empty() {
                 text_span.clear();
             }
+            apply_font_variant_to_text_font(
+                &mut text_font,
+                fonts,
+                FontVariant::Regular,
+                state.document_format,
+            );
             if text_color.0 != Color::NONE {
                 text_color.0 = Color::NONE;
             }
@@ -1922,8 +1993,6 @@ fn apply_processed_styles(
         );
         let fragment_raw_range =
             processed_visual_fragment_raw_range(visual_line, processed_span.part_index);
-        let next_font =
-            font_for_variant_with_format(fonts, effective_variant, state.document_format).into();
         let next_font_size = FontSize::Px(font_size * style.font_scale);
         let next_line_height = LineHeight::Px(
             line_height * processed_visual_line_height_units(state, visual_line),
@@ -1947,9 +2016,12 @@ fn apply_processed_styles(
         } else {
             style.color
         };
-        if text_font.font != next_font {
-            text_font.font = next_font;
-        }
+        apply_font_variant_to_text_font(
+            &mut text_font,
+            fonts,
+            effective_variant,
+            state.document_format,
+        );
         if text_font.font_size != next_font_size {
             text_font.font_size = next_font_size;
         }
