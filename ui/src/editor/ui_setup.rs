@@ -839,39 +839,36 @@ fn setup_processed_papers(
                         },
                     ))
                     .with_children(|paper| {
-                        paper
-                            .spawn((
-                                Text::new(""),
-                                TextLayout::no_wrap(),
-                                TextFont {
-                                    font: slot_font.clone().into(),
-                                    font_size: FontSize::Px(FONT_SIZE),
-                                    ..default()
-                                },
-                                LineHeight::Px(LINE_HEIGHT),
-                                TextColor(COLOR_ACTION),
-                                Node {
-                                    position_type: PositionType::Absolute,
-                                    left: px(PAGE_TEXT_MARGIN_LEFT),
-                                    top: px(PAGE_TEXT_MARGIN_TOP),
-                                    width: px((A4_WIDTH_POINTS
-                                        - PAGE_TEXT_MARGIN_LEFT
-                                        - PAGE_TEXT_MARGIN_RIGHT)
-                                        .max(1.0)),
-                                    height: px((A4_HEIGHT_POINTS
-                                        - PAGE_TEXT_MARGIN_TOP
-                                        - PAGE_TEXT_MARGIN_BOTTOM)
-                                        .max(1.0)),
-                                    overflow: Overflow::visible(),
-                                    ..default()
-                                },
-                                UiTransform::default(),
-                                ZIndex(1),
-                                GlobalZIndex(1),
-                                ProcessedPaperText { slot },
-                            ))
-                            .with_children(|text_parent| {
-                                for line_offset in 0..span_capacity {
+                        for line_offset in 0..span_capacity {
+                            paper
+                                .spawn((
+                                    Text::new(""),
+                                    TextLayout::no_wrap(),
+                                    TextFont {
+                                        font: slot_font.clone().into(),
+                                        font_size: FontSize::Px(FONT_SIZE),
+                                        ..default()
+                                    },
+                                    LineHeight::Px(LINE_HEIGHT),
+                                    TextColor(COLOR_ACTION),
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        left: px(PAGE_TEXT_MARGIN_LEFT),
+                                        top: px(PAGE_TEXT_MARGIN_TOP),
+                                        width: px((A4_WIDTH_POINTS
+                                            - PAGE_TEXT_MARGIN_LEFT
+                                            - PAGE_TEXT_MARGIN_RIGHT)
+                                            .max(1.0)),
+                                        height: px(LINE_HEIGHT),
+                                        overflow: Overflow::visible(),
+                                        ..default()
+                                    },
+                                    UiTransform::default(),
+                                    ZIndex(1),
+                                    GlobalZIndex(1),
+                                    ProcessedPaperText { slot, line_offset },
+                                ))
+                                .with_children(|text_parent| {
                                     for part_index in 0..PROCESSED_LINE_SPAN_PARTS {
                                         text_parent.spawn((
                                             TextSpan::new(""),
@@ -889,8 +886,8 @@ fn setup_processed_papers(
                                             },
                                         ));
                                     }
-                                }
-                            });
+                                });
+                        }
 
                         for line_offset in 0..span_capacity {
                             paper.spawn((
@@ -939,39 +936,36 @@ fn setup_processed_papers(
         let regular_font = regular_font.clone();
         let unchecked_icon = unchecked_icon.clone();
         commands.entity(entity).with_children(|paper| {
-            paper
-                .spawn((
-                    Text::new(""),
-                    TextLayout::no_wrap(),
-                    TextFont {
-                        font: regular_font.clone().into(),
-                        font_size: FontSize::Px(FONT_SIZE),
-                        ..default()
-                    },
-                    LineHeight::Px(LINE_HEIGHT),
-                    TextColor(COLOR_ACTION),
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: px(PAGE_TEXT_MARGIN_LEFT),
-                        top: px(PAGE_TEXT_MARGIN_TOP),
-                        width: px((A4_WIDTH_POINTS
-                            - PAGE_TEXT_MARGIN_LEFT
-                            - PAGE_TEXT_MARGIN_RIGHT)
-                            .max(1.0)),
-                        height: px((A4_HEIGHT_POINTS
-                            - PAGE_TEXT_MARGIN_TOP
-                            - PAGE_TEXT_MARGIN_BOTTOM)
-                            .max(1.0)),
-                        overflow: Overflow::visible(),
-                        ..default()
-                    },
-                    UiTransform::default(),
-                    ZIndex(1),
-                    GlobalZIndex(1),
-                    ProcessedPaperText { slot },
-                ))
-                .with_children(|text_parent| {
-                    for line_offset in 0..span_capacity {
+            for line_offset in 0..span_capacity {
+                paper
+                    .spawn((
+                        Text::new(""),
+                        TextLayout::no_wrap(),
+                        TextFont {
+                            font: regular_font.clone().into(),
+                            font_size: FontSize::Px(FONT_SIZE),
+                            ..default()
+                        },
+                        LineHeight::Px(LINE_HEIGHT),
+                        TextColor(COLOR_ACTION),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: px(PAGE_TEXT_MARGIN_LEFT),
+                            top: px(PAGE_TEXT_MARGIN_TOP),
+                            width: px((A4_WIDTH_POINTS
+                                - PAGE_TEXT_MARGIN_LEFT
+                                - PAGE_TEXT_MARGIN_RIGHT)
+                                .max(1.0)),
+                            height: px(LINE_HEIGHT),
+                            overflow: Overflow::visible(),
+                            ..default()
+                        },
+                        UiTransform::default(),
+                        ZIndex(1),
+                        GlobalZIndex(1),
+                        ProcessedPaperText { slot, line_offset },
+                    ))
+                    .with_children(|text_parent| {
                         for part_index in 0..PROCESSED_LINE_SPAN_PARTS {
                             text_parent.spawn((
                                 TextSpan::new(""),
@@ -989,8 +983,8 @@ fn setup_processed_papers(
                                 },
                             ));
                         }
-                        }
                     });
+            }
 
             for line_offset in 0..span_capacity {
                 paper.spawn((

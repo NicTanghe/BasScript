@@ -239,9 +239,14 @@ fn handle_mouse_selection(
             ) + processed_zoom_bias_px;
             let local_x = (panel_x - text_left).max(0.0);
             let local_y = (panel_y - text_top).max(0.0);
-            let fallback_line_in_page = ((local_y / processed_line_height).floor().max(0.0)
-                as usize)
-                .min(processed_lines_per_page.saturating_sub(1));
+            let page_start = page_index.saturating_mul(processed_step_lines);
+            let fallback_line_in_page = processed_visual_line_offset_at_height(
+                &state,
+                &processed_all_lines,
+                page_start,
+                processed_lines_per_page,
+                local_y / processed_line_height.max(1.0),
+            );
             let fallback_column = if panel_x <= text_left {
                 0
             } else {
@@ -250,22 +255,16 @@ fn handle_mouse_selection(
                     .max(0.0) as usize
             };
 
-            let (line_in_page, display_column) = processed_text_layout_query
+            let line_in_page = fallback_line_in_page;
+            let display_column = processed_text_layout_query
                 .iter()
-                .find(|(paper_text, _, _)| paper_text.slot == slot)
+                .find(|(paper_text, _, _)| {
+                    paper_text.slot == slot && paper_text.line_offset == line_in_page
+                })
                 .map_or(
-                    (fallback_line_in_page, fallback_column),
+                    fallback_column,
                     |(_, text_block, text_computed)| {
                         let inverse_scale = text_computed.inverse_scale_factor();
-                        let line_in_page = line_index_from_layout_y(
-                            text_block,
-                            local_y,
-                            processed_lines_per_page.max(1),
-                            inverse_scale,
-                        )
-                        .unwrap_or(fallback_line_in_page)
-                        .min(processed_lines_per_page.saturating_sub(1));
-
                         let global_for_line = page_index
                             .saturating_mul(processed_step_lines)
                             .saturating_add(line_in_page)
@@ -275,14 +274,14 @@ fn handle_mouse_selection(
                             .map_or("", |line| line.text.as_str());
                         let display_column = column_from_layout_x(
                             text_block,
-                            line_in_page,
+                            0,
                             local_x,
                             display_line,
                             inverse_scale,
                             processed_char_width,
                         )
                         .unwrap_or(fallback_column);
-                        (line_in_page, display_column)
+                        display_column
                     },
                 );
 
@@ -517,8 +516,14 @@ fn hovered_processed_link_at_cursor(
     ) + processed_zoom_bias_px;
     let local_x = (panel_x - text_left).max(0.0);
     let local_y = (panel_y - text_top).max(0.0);
-    let fallback_line_in_page = ((local_y / processed_line_height).floor().max(0.0) as usize)
-        .min(processed_lines_per_page.saturating_sub(1));
+    let page_start = page_index.saturating_mul(processed_step_lines);
+    let fallback_line_in_page = processed_visual_line_offset_at_height(
+        state,
+        &processed_all_lines,
+        page_start,
+        processed_lines_per_page,
+        local_y / processed_line_height.max(1.0),
+    );
     let fallback_column = if panel_x <= text_left {
         0
     } else {
@@ -527,22 +532,16 @@ fn hovered_processed_link_at_cursor(
             .max(0.0) as usize
     };
 
-    let (line_in_page, display_column) = processed_text_layout_query
+    let line_in_page = fallback_line_in_page;
+    let display_column = processed_text_layout_query
         .iter()
-        .find(|(paper_text, _, _)| paper_text.slot == slot)
+        .find(|(paper_text, _, _)| {
+            paper_text.slot == slot && paper_text.line_offset == line_in_page
+        })
         .map_or(
-            (fallback_line_in_page, fallback_column),
+            fallback_column,
             |(_, text_block, text_computed)| {
                 let inverse_scale = text_computed.inverse_scale_factor();
-                let line_in_page = line_index_from_layout_y(
-                    text_block,
-                    local_y,
-                    processed_lines_per_page.max(1),
-                    inverse_scale,
-                )
-                .unwrap_or(fallback_line_in_page)
-                .min(processed_lines_per_page.saturating_sub(1));
-
                 let global_for_line = page_index
                     .saturating_mul(processed_step_lines)
                     .saturating_add(line_in_page)
@@ -552,14 +551,14 @@ fn hovered_processed_link_at_cursor(
                     .map_or("", |line| line.text.as_str());
                 let display_column = column_from_layout_x(
                     text_block,
-                    line_in_page,
+                    0,
                     local_x,
                     display_line,
                     inverse_scale,
                     processed_char_width,
                 )
                 .unwrap_or(fallback_column);
-                (line_in_page, display_column)
+                display_column
             },
         );
 
@@ -770,17 +769,25 @@ fn render_selection_rects(
 
             let mut left_x = display_start as f32 * processed_char_width;
             let mut right_x = display_end as f32 * processed_char_width;
-            let mut line_top = line_in_page as f32 * processed_line_height;
+            let page_start_in_view = slot.saturating_mul(processed_page_step_lines.max(1));
+            let mut line_top = processed_visual_line_top_units(
+                state,
+                &processed_view.lines,
+                page_start_in_view,
+                line_in_page,
+            ) * processed_line_height;
             let mut line_height = processed_line_height;
 
             if let Some((_, text_block, text_computed)) = processed_text_layout_query
                 .iter()
-                .find(|(paper_text, _, _)| paper_text.slot == slot)
+                .find(|(paper_text, _, _)| {
+                    paper_text.slot == slot && paper_text.line_offset == line_in_page
+                })
             {
                 let inverse_scale = text_computed.inverse_scale_factor();
                 left_x = caret_x_from_layout(
                     text_block,
-                    line_in_page,
+                    0,
                     line_text,
                     start_byte,
                     inverse_scale,
@@ -789,16 +796,15 @@ fn render_selection_rects(
                 .unwrap_or(left_x);
                 right_x = caret_x_from_layout(
                     text_block,
-                    line_in_page,
+                    0,
                     line_text,
                     end_byte,
                     inverse_scale,
                     processed_char_width,
                 )
                 .unwrap_or(right_x);
-                line_top = line_top_from_layout(text_block, line_in_page, inverse_scale)
-                    .unwrap_or(line_top);
-                line_height = line_height_from_layout(text_block, line_in_page, inverse_scale)
+                line_top += line_top_from_layout(text_block, 0, inverse_scale).unwrap_or(0.0);
+                line_height = line_height_from_layout(text_block, 0, inverse_scale)
                     .unwrap_or(line_height);
             }
 

@@ -1194,6 +1194,45 @@ fn processed_visual_line_height_units(
     style.line_height_scale.max(0.0)
 }
 
+fn processed_visual_line_top_units(
+    state: &EditorState,
+    lines: &[ProcessedVisualLine],
+    page_start: usize,
+    line_offset: usize,
+) -> f32 {
+    lines
+        .get(page_start..page_start.saturating_add(line_offset))
+        .unwrap_or(&[])
+        .iter()
+        .map(|line| processed_visual_line_height_units(state, line))
+        .sum()
+}
+
+fn processed_visual_line_offset_at_height(
+    state: &EditorState,
+    lines: &[ProcessedVisualLine],
+    page_start: usize,
+    lines_per_page: usize,
+    height_units: f32,
+) -> usize {
+    let mut top = 0.0;
+    let mut last_visible = 0usize;
+    for line_offset in 0..lines_per_page.max(1) {
+        let Some(line) = lines.get(page_start.saturating_add(line_offset)) else {
+            break;
+        };
+        let height = processed_visual_line_height_units(state, line);
+        if height > 0.0 {
+            last_visible = line_offset;
+            if height_units < top + height {
+                return line_offset;
+            }
+        }
+        top += height;
+    }
+    last_visible
+}
+
 fn processed_visual_line_block_height_units(
     state: &EditorState,
     visual_line: &ProcessedVisualLine,
@@ -1739,6 +1778,63 @@ mod processed_markdown_inline_tests {
         assert_eq!(page_fill.entries, 0);
         assert_eq!(page_fill.height_units, 0.0);
     }
+
+    #[test]
+    fn independent_parley_rows_match_pagination_budget() {
+        use bevy::{
+            asset::Assets,
+            text::{
+                ComputedTextBlock, FontCx, FontSource, LayoutCx, LetterSpacing, TextBounds,
+                TextFont, TextPipeline,
+            },
+        };
+
+        let font = Font::from_bytes(include_bytes!("../../../fonts/SegoeUIVF.ttf").to_vec());
+        let mut font_cx = FontCx::default();
+        let family_ids = font_cx.collection.register_fonts(font.data.clone(), None);
+        let family_name = font_cx
+            .collection
+            .family_name(family_ids[0].0)
+            .expect("font should expose a family name")
+            .to_owned();
+        let fonts = Assets::<Font>::default();
+        let rows = [("body", 12.0, 12.0), ("Heading", 21.6, 25.8), (" ", 12.0, 12.0)];
+        let mut pipeline = TextPipeline::default();
+        let mut layout_cx = LayoutCx::default();
+        for (index, (text, font_size, expected_height)) in rows.into_iter().enumerate() {
+            let font = TextFont {
+                font: FontSource::Family(family_name.clone().into()),
+                font_size: FontSize::Px(font_size),
+                ..default()
+            };
+            let mut computed = ComputedTextBlock::default();
+            pipeline
+                .update_buffer(
+                    &fonts,
+                    std::iter::once((
+                        Entity::from_bits(index as u64 + 1),
+                        1,
+                        text,
+                        &font,
+                        Color::WHITE,
+                        LineHeight::Px(expected_height),
+                        LetterSpacing::default(),
+                    )),
+                    bevy::text::LineBreak::NoWrap,
+                    bevy::text::Justify::Left,
+                    TextBounds::UNBOUNDED,
+                    1.0,
+                    &mut computed,
+                    &mut font_cx,
+                    &mut layout_cx,
+                    Vec2::new(1024.0, 768.0),
+                    20.0,
+                )
+                .expect("Parley layout should succeed");
+
+            assert!((computed.buffer().height() - expected_height).abs() < 0.01);
+        }
+    }
 }
 
 fn apply_processed_styles(
@@ -1775,41 +1871,49 @@ fn apply_processed_styles(
         let global_index = page_start.saturating_add(line_offset);
 
         if line_offset >= lines_per_page {
-            **text_span = String::new();
-            text_font.font = fonts.regular.clone().into();
-            text_font.font_size = FontSize::Px(font_size);
-            *text_line_height = LineHeight::Px(line_height);
-            text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
+            if !text_span.is_empty() {
+                text_span.clear();
+            }
+            let next_font = fonts.regular.clone().into();
+            if text_font.font != next_font {
+                text_font.font = next_font;
+            }
+            let next_font_size = FontSize::Px(font_size);
+            if text_font.font_size != next_font_size {
+                text_font.font_size = next_font_size;
+            }
+            let next_line_height = LineHeight::Px(line_height);
+            if *text_line_height != next_line_height {
+                *text_line_height = next_line_height;
+            }
+            if text_color.0 != Color::NONE {
+                text_color.0 = Color::NONE;
+            }
             continue;
         }
 
         let Some(visual_line) = processed_lines.get(global_index) else {
-            **text_span = if processed_span.part_index == 0 && line_offset + 1 < lines_per_page {
-                "\n".to_owned()
-            } else {
-                String::new()
-            };
-            text_font.font = fonts.regular.clone().into();
-            text_font.font_size = FontSize::Px(font_size);
-            *text_line_height = LineHeight::Px(line_height);
-            text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
+            if !text_span.is_empty() {
+                text_span.clear();
+            }
+            if text_color.0 != Color::NONE {
+                text_color.0 = Color::NONE;
+            }
             continue;
         };
         let (style, allow_link_color) = processed_visual_line_style_for_state(state, visual_line);
 
-        let used_fragment_count = processed_visual_fragment_count(visual_line);
-        let Some(mut fragment) =
+        let Some(fragment) =
             processed_visual_fragment_for_part(visual_line, processed_span.part_index)
         else {
-            **text_span = String::new();
-            text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
+            if !text_span.is_empty() {
+                text_span.clear();
+            }
+            if text_color.0 != Color::NONE {
+                text_color.0 = Color::NONE;
+            }
             continue;
         };
-
-        if processed_span.part_index + 1 == used_fragment_count && line_offset + 1 < lines_per_page
-        {
-            fragment.text.push('\n');
-        }
 
         let effective_variant = font_variant_for_processed_fragment(
             style.font_variant,
@@ -1818,12 +1922,13 @@ fn apply_processed_styles(
         );
         let fragment_raw_range =
             processed_visual_fragment_raw_range(visual_line, processed_span.part_index);
-        text_font.font =
+        let next_font =
             font_for_variant_with_format(fonts, effective_variant, state.document_format).into();
-        text_font.font_size = FontSize::Px(font_size * style.font_scale);
-        *text_line_height = LineHeight::Px(line_height * style.line_height_scale);
-        **text_span = fragment.text;
-        text_color.0 = if allow_link_color && fragment.is_link {
+        let next_font_size = FontSize::Px(font_size * style.font_scale);
+        let next_line_height = LineHeight::Px(
+            line_height * processed_visual_line_height_units(state, visual_line),
+        );
+        let next_color = if allow_link_color && fragment.is_link {
             let hovered = state
                 .hovered_processed_link
                 .as_ref()
@@ -1842,6 +1947,21 @@ fn apply_processed_styles(
         } else {
             style.color
         };
+        if text_font.font != next_font {
+            text_font.font = next_font;
+        }
+        if text_font.font_size != next_font_size {
+            text_font.font_size = next_font_size;
+        }
+        if *text_line_height != next_line_height {
+            *text_line_height = next_line_height;
+        }
+        if text_span.as_str() != fragment.text {
+            **text_span = fragment.text;
+        }
+        if text_color.0 != next_color {
+            text_color.0 = next_color;
+        }
     }
 }
 

@@ -154,7 +154,9 @@ fn render_panel_carets(
                 let slot = page_index.saturating_sub(first_visible_page);
                 let (processed_layout, processed_inverse_scale) = processed_text_layout_query
                     .iter()
-                    .find(|(paper_text, _, _)| paper_text.slot == slot)
+                    .find(|(paper_text, _, _)| {
+                        paper_text.slot == slot && paper_text.line_offset == line_in_page
+                    })
                     .map_or((None, 1.0), |(_, text_block, computed)| {
                         (Some(text_block), computed.inverse_scale_factor())
                     });
@@ -165,12 +167,19 @@ fn render_panel_carets(
                     processed_page_step_pixels,
                     processed_anchor_offset_px,
                 ) + processed_zoom_bias_px;
+                let page_start_in_view = slot.saturating_mul(processed_page_step_lines);
+                let line_top = processed_visual_line_top_units(
+                    state,
+                    &processed_view.lines,
+                    page_start_in_view,
+                    line_in_page,
+                ) * processed_line_height;
                 let (processed_origin_x, processed_origin_y) = (
                     processed_geometry.text_left - state.processed_horizontal_scroll,
-                    page_text_top,
+                    page_text_top + line_top,
                 );
                 (
-                    line_in_page,
+                    0,
                     display_column,
                     visual_line.text.as_str(),
                     processed_layout,

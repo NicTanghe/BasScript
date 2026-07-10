@@ -416,6 +416,7 @@ struct MiddleAutoscrollIndicator;
 #[derive(Component)]
 struct ProcessedPaperText {
     slot: usize,
+    line_offset: usize,
 }
 
 #[derive(Component)]

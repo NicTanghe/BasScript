@@ -290,13 +290,65 @@ fn render_editor(
             continue;
         }
 
-        node.left = px(processed_geometry.text_left - processed_geometry.paper_left);
-        node.top = px(processed_geometry.text_top - processed_geometry.paper_top);
-        node.width = px(processed_geometry.text_width);
-        node.height = px(processed_geometry.text_height);
-        node.overflow = Overflow::visible();
-        transform.scale = Vec2::ONE;
-        transform.translation = Val2::ZERO;
+        let page_index = first_visible_page.saturating_add(paper_text.slot);
+        let page_start = page_index.saturating_mul(processed_page_step_lines);
+        let global_index = page_start.saturating_add(paper_text.line_offset);
+        let Some(visual_line) = processed_all_lines.get(global_index) else {
+            if node.width != px(0.0) {
+                node.width = px(0.0);
+            }
+            if node.height != px(0.0) {
+                node.height = px(0.0);
+            }
+            continue;
+        };
+        if page_index >= processed_total_pages
+            || paper_text.line_offset >= processed_lines_per_page
+        {
+            if node.width != px(0.0) {
+                node.width = px(0.0);
+            }
+            if node.height != px(0.0) {
+                node.height = px(0.0);
+            }
+            continue;
+        }
+
+        let line_top_units = processed_visual_line_top_units(
+            &state,
+            &processed_all_lines,
+            page_start,
+            paper_text.line_offset,
+        );
+        let line_height_units = processed_visual_line_height_units(&state, visual_line);
+        let next_left = px(processed_geometry.text_left - processed_geometry.paper_left);
+        let next_top = px(
+            processed_geometry.text_top - processed_geometry.paper_top
+                + line_top_units * processed_line_height,
+        );
+        let next_width = px(processed_geometry.text_width);
+        let next_height = px(line_height_units * processed_line_height);
+        if node.left != next_left {
+            node.left = next_left;
+        }
+        if node.top != next_top {
+            node.top = next_top;
+        }
+        if node.width != next_width {
+            node.width = next_width;
+        }
+        if node.height != next_height {
+            node.height = next_height;
+        }
+        if node.overflow != Overflow::visible() {
+            node.overflow = Overflow::visible();
+        }
+        if transform.scale != Vec2::ONE {
+            transform.scale = Vec2::ONE;
+        }
+        if transform.translation != Val2::ZERO {
+            transform.translation = Val2::ZERO;
+        }
     }
 
     let text_left_in_paper = processed_geometry.text_left - processed_geometry.paper_left;
@@ -342,9 +394,15 @@ fn render_editor(
         } else {
             checklist_icons.unchecked.clone()
         };
+        let line_top_units = processed_visual_line_top_units(
+            &state,
+            &processed_all_lines,
+            page_start,
+            line_offset,
+        );
         node.left = px((text_left_in_paper - checklist_icon_size - checklist_icon_gap).max(0.0));
         node.top = px(text_top_in_paper
-            + line_offset as f32 * processed_line_height
+            + line_top_units * processed_line_height
             + ((processed_line_height - checklist_icon_size) * 0.5).max(0.0));
         node.width = px(checklist_icon_size);
         node.height = px(checklist_icon_size);
@@ -597,8 +655,14 @@ fn render_processed_images(
             .min(max_width)
             .max(1.0);
         let left = text_left_in_paper + (max_width - display_width) * 0.5;
+        let line_top_units = processed_visual_line_top_units(
+            &state,
+            &processed_all_lines,
+            page_start,
+            line_offset,
+        );
         let top = text_top_in_paper
-            + line_offset as f32 * processed_line_height
+            + line_top_units * processed_line_height
             + ((reserved_height - display_height) * 0.5).max(0.0);
 
         node.left = px(left);
