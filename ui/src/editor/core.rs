@@ -429,6 +429,14 @@ struct ProcessedLinkColorToggle {
     kind: PanelKind,
 }
 
+#[derive(Component, Clone, Copy, Debug, Default)]
+struct ProcessedLinkColorToggleSpring {
+    offset_x: f32,
+    velocity_x: f32,
+    touching_page: bool,
+    initialized: bool,
+}
+
 #[derive(Component)]
 struct ProcessedLinkColorToggleLabel;
 

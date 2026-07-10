@@ -231,6 +231,32 @@ mod modifier_key_tests {
             ProcessedLinkColorMode::Plain
         );
     }
+
+    #[test]
+    fn link_toggle_spring_bounces_once_and_stays_within_eight_pixels() {
+        let (first_offset, first_velocity) =
+            step_link_toggle_contact_bounce(0.0, 0.0, true, 1.0 / 60.0);
+        let (next_offset, _) =
+            step_link_toggle_contact_bounce(first_offset, first_velocity, false, 1.0 / 60.0);
+
+        assert!(first_offset > 0.0);
+        assert!((0.0..=8.0).contains(&first_offset));
+        assert!((0.0..=8.0).contains(&next_offset));
+    }
+
+    #[test]
+    fn link_toggle_moves_below_page_only_after_contact_bounce_finishes() {
+        assert!(!link_toggle_should_render_under_page(true, true, 0.0, 0.0));
+        assert!(!link_toggle_should_render_under_page(
+            true, false, 2.0, -10.0
+        ));
+        assert!(link_toggle_should_render_under_page(
+            true, false, 0.0, 0.0
+        ));
+        assert!(!link_toggle_should_render_under_page(
+            false, false, 0.0, 0.0
+        ));
+    }
 }
 
 fn handle_window_shortcuts(

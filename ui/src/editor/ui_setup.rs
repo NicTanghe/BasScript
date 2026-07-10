@@ -1635,6 +1635,7 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
                             ..default()
                         },
                         UiTransform::default(),
+                        ZIndex(1),
                         PanelCanvas { kind },
                         children![
                         (
@@ -1710,15 +1711,18 @@ fn processed_link_color_toggle_bundle(font: Handle<Font>, kind: PanelKind) -> im
     (
         Button,
         ProcessedLinkColorToggle { kind },
+        ProcessedLinkColorToggleSpring::default(),
         Node {
             position_type: PositionType::Absolute,
-            right: px(10.0),
+            left: px(0.0),
             top: px(10.0),
             display: if kind == PanelKind::Processed {
                 Display::Flex
             } else {
                 Display::None
             },
+            min_width: px(116.0),
+            justify_content: JustifyContent::Center,
             padding: UiRect::axes(px(9.0), px(5.0)),
             border_radius: BorderRadius::all(px(4.0)),
             ..default()
@@ -1845,17 +1849,66 @@ fn handle_processed_link_color_toggle(
 }
 
 fn sync_processed_link_color_toggle(
+    time: Res<Time>,
     state: Res<EditorState>,
-    mut toggle_query: Query<(&ProcessedLinkColorToggle, &mut Node)>,
+    panel_query: Query<(&PanelBody, &ComputedNode)>,
+    mut toggle_query: Query<(
+        &ProcessedLinkColorToggle,
+        &ComputedNode,
+        &mut ProcessedLinkColorToggleSpring,
+        &mut Node,
+        &mut ZIndex,
+    )>,
     mut label_query: Query<&mut Text, With<ProcessedLinkColorToggleLabel>>,
 ) {
-    for (toggle, mut node) in toggle_query.iter_mut() {
-        node.display = if toggle.kind == PanelKind::Processed
-            && state.document_format != DocumentFormat::Canvas
-        {
-            Display::Flex
+    let processed_panel_size = panel_query
+        .iter()
+        .find(|(panel, _)| panel.kind == PanelKind::Processed)
+        .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
+    let dt = time.delta_secs().clamp(0.0, 1.0 / 30.0);
+
+    for (toggle, computed, mut spring, mut node, mut z_index) in toggle_query.iter_mut() {
+        let Some(panel_size) = processed_panel_size.filter(|_| {
+            toggle.kind == PanelKind::Processed
+                && state.document_format != DocumentFormat::Canvas
+        }) else {
+            node.display = Display::None;
+            *z_index = ZIndex(20);
+            *spring = ProcessedLinkColorToggleSpring::default();
+            continue;
+        };
+
+        let geometry = processed_page_geometry(panel_size, &state);
+        let paper_right = geometry.paper_left + geometry.paper_width
+            - state.processed_horizontal_scroll;
+        let toggle_width = (computed.size().x * computed.inverse_scale_factor()).max(116.0);
+        let base_x = (panel_size.x - toggle_width - 10.0).max(0.0);
+        let touching_page = paper_right + 8.0 >= base_x;
+        let contact_started = spring.initialized && touching_page && !spring.touching_page;
+
+        node.display = Display::Flex;
+        node.top = px(10.0);
+        (spring.offset_x, spring.velocity_x) = step_link_toggle_contact_bounce(
+            spring.offset_x,
+            spring.velocity_x,
+            contact_started,
+            dt,
+        );
+        spring.touching_page = touching_page;
+        spring.initialized = true;
+        node.left = px(base_x + spring.offset_x);
+
+        *z_index = if link_toggle_should_render_under_page(
+            touching_page,
+            contact_started,
+            spring.offset_x,
+            spring.velocity_x,
+        ) {
+            // Once the one-shot bounce settles, let the paper and its clipped
+            // contents render over the toggle until they separate again.
+            ZIndex(0)
         } else {
-            Display::None
+            ZIndex(20)
         };
     }
 
@@ -1868,6 +1921,44 @@ fn sync_processed_link_color_toggle(
         if text.as_str() != label {
             **text = label.to_string();
         }
+    }
+}
+
+fn link_toggle_should_render_under_page(
+    touching_page: bool,
+    contact_started: bool,
+    offset: f32,
+    velocity: f32,
+) -> bool {
+    touching_page && !contact_started && offset <= 0.05 && velocity.abs() <= 0.05
+}
+
+fn step_link_toggle_contact_bounce(
+    offset: f32,
+    velocity: f32,
+    contact_started: bool,
+    dt: f32,
+) -> (f32, f32) {
+    let dt = dt.clamp(0.0, 1.0 / 30.0);
+    let velocity = if contact_started { 150.0 } else { velocity };
+    let acceleration = -offset * 210.0 - velocity * 20.0;
+    let mut next_velocity = velocity + acceleration * dt;
+    let mut next_offset = offset + next_velocity * dt;
+
+    if next_offset > 8.0 {
+        next_offset = 8.0;
+        if next_velocity > 0.0 {
+            next_velocity *= -0.35;
+        }
+    } else if next_offset < 0.0 {
+        next_offset = 0.0;
+        next_velocity = 0.0;
+    }
+
+    if next_offset < 0.05 && next_velocity.abs() < 0.05 {
+        (0.0, 0.0)
+    } else {
+        (next_offset, next_velocity)
     }
 }
 
