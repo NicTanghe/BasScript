@@ -9,6 +9,7 @@ fn handle_vim_input(
         &ComputedNode,
     )>,
     capture: Res<LinkAutocompleteInputCapture>,
+    navigation_capture: Res<DocumentNavigationInputCapture>,
     mut repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
 ) {
@@ -17,6 +18,11 @@ fn handle_vim_input(
     }
 
     if capture.is_captured() {
+        for _ in keyboard_inputs.read() {}
+        reset_vim_repeat(&mut repeat);
+        return;
+    }
+    if navigation_capture.captured {
         for _ in keyboard_inputs.read() {}
         reset_vim_repeat(&mut repeat);
         return;

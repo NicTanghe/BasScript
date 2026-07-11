@@ -507,7 +507,7 @@ fn open_workspace_path_from_selection(state: &mut EditorState, path: &Path) {
     {
         state.open_workspace_file(index);
     } else {
-        state.load_from_path(path.to_path_buf());
+        let _ = state.load_from_path(path.to_path_buf());
     }
 }
 
@@ -627,7 +627,7 @@ fn confirm_workspace_create(state: &mut EditorState, input: &str) {
         .open(&path)
     {
         Ok(_) => {
-            state.load_from_path(path.clone());
+            let _ = state.load_from_path(path.clone());
             state.refresh_workspace();
             if let Some(parent_key) = path
                 .parent()

@@ -2192,7 +2192,9 @@ impl EditorState {
             return;
         };
 
-        self.load_from_path(target.path.clone());
+        if !self.navigate_to_path(target.path.clone()) {
+            return;
+        }
         let line = target
             .line
             .min(self.document.line_count().saturating_sub(1));
@@ -2208,7 +2210,9 @@ impl EditorState {
         match self.resolve_script_target_path(&target) {
             Ok(path) => {
                 let metadata_warning = basscript_core::EntityDocument::load(&path).err();
-                self.load_from_path(path.clone());
+                if !self.navigate_to_path(path.clone()) {
+                    return;
+                }
                 self.story_query_sheet.open = false;
                 if let Some(error) = metadata_warning {
                     self.status_message = format!(

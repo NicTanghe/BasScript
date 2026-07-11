@@ -63,6 +63,7 @@ const NAVIGATION_REPEAT_INTERVAL_SECS: f32 = 0.045;
 const WORKSPACE_SELECTION_REPEAT_INITIAL_DELAY_SECS: f32 = 0.10;
 const WORKSPACE_SELECTION_REPEAT_INTERVAL_SECS: f32 = 0.045;
 const HISTORY_LIMIT: usize = 512;
+const DOCUMENT_NAVIGATION_HISTORY_LIMIT: usize = 128;
 const MM_PER_INCH: f32 = 25.4;
 const POINTS_PER_INCH: f32 = 72.0;
 const A4_WIDTH_MM: f32 = 210.0;
@@ -148,6 +149,7 @@ impl Plugin for UiPlugin {
             .init_resource::<MiddleAutoscrollState>()
             .init_resource::<NavigationRepeatState>()
             .init_resource::<LinkAutocompleteInputCapture>()
+            .init_resource::<DocumentNavigationInputCapture>()
             .init_resource::<WorkspaceSelectionRepeatState>()
             .init_resource::<MouseSelectionState>()
             .init_resource::<CanvasDragState>()
@@ -268,6 +270,16 @@ impl Plugin for UiPlugin {
                 )
                     .run_if(in_state(UiScreenState::Editor)),
             );
+        app.add_systems(
+            Update,
+            handle_document_navigation_back
+                .before(handle_story_query_sheet_keyboard)
+                .before(handle_command_menu_input)
+                .before(handle_markdown_metadata_input)
+                .before(handle_vim_input)
+                .before(handle_navigation_input)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
         app.add_systems(
             Update,
             handle_markdown_metadata_input
@@ -451,6 +463,11 @@ enum ProcessedLinkColorTogglePhase {
 
 #[derive(Component)]
 struct ProcessedLinkColorToggleLabel;
+
+#[derive(Resource, Default)]
+struct DocumentNavigationInputCapture {
+    captured: bool,
+}
 
 #[derive(Component)]
 struct EditorBodyRow;
@@ -1374,6 +1391,7 @@ struct EditorState {
     workspace_ui_dirty: bool,
     undo_history: Vec<EditorHistorySnapshot>,
     redo_history: Vec<EditorHistorySnapshot>,
+    document_navigation_history: Vec<DocumentNavigationEntry>,
 }
 
 #[derive(Resource, Default)]
@@ -1409,6 +1427,23 @@ struct EditorHistorySnapshot {
     plain_horizontal_scroll: f32,
     processed_horizontal_scroll: f32,
     processed_zoom_anchor_bias_px: f32,
+}
+
+#[derive(Clone, Debug)]
+struct DocumentNavigationEntry {
+    path: PathBuf,
+    cursor: Cursor,
+    selection_anchor: Option<Position>,
+    top_line: usize,
+    processed_top_line: usize,
+    processed_top_visual: usize,
+    plain_horizontal_scroll: f32,
+    processed_horizontal_scroll: f32,
+    processed_zoom_anchor_bias_px: f32,
+    display_mode: DisplayMode,
+    focused_panel: PanelKind,
+    zoom: f32,
+    canvas_pan: Vec2,
 }
 
 #[derive(Resource, Default)]
@@ -2006,6 +2041,9 @@ impl FromWorld for EditorState {
             workspace_ui_dirty: true,
             undo_history: Vec::new(),
             redo_history: Vec::new(),
+            document_navigation_history: Vec::with_capacity(
+                DOCUMENT_NAVIGATION_HISTORY_LIMIT,
+            ),
         };
         normalize_page_margins(&mut next);
         let initial_status = next.status_message.clone();
@@ -2288,7 +2326,7 @@ impl EditorState {
         self.save_to_path(self.paths.save_path.clone());
     }
 
-    fn load_from_path(&mut self, path: PathBuf) {
+    fn load_from_path(&mut self, path: PathBuf) -> bool {
         match Document::load(&path) {
             Ok(document) => {
                 let document_format = detect_document_format(&path, &document);
@@ -2334,10 +2372,12 @@ impl EditorState {
                 );
                 self.sync_workspace_active_file();
                 self.reset_blink();
+                true
             }
             Err(error) => {
                 self.status_message =
                     format!("Load failed for {}: {error}", status_path_label(&path));
+                false
             }
         }
     }

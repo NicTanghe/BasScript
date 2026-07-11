@@ -4,7 +4,7 @@
 	show_system_titlebar: false,
 	page_margin_left: 82.000,
 	page_margin_right: 66.000,
-	page_margin_top: 88.000,
+	page_margin_top: 64.000,
 	page_margin_bottom: 64.000,
 	workspace_root_path: "/home/dude/scripts/Trools",
 	vim_mode_enabled: true,

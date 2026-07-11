@@ -219,7 +219,7 @@ impl EditorState {
             return;
         };
 
-        self.load_from_path(entry.path.clone());
+        let _ = self.load_from_path(entry.path.clone());
     }
 
     fn refresh_workspace(&mut self) {

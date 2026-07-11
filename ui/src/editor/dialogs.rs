@@ -277,6 +277,35 @@ mod modifier_key_tests {
     }
 
     #[test]
+    fn document_navigation_history_keeps_the_latest_128_entries() {
+        let mut history = Vec::with_capacity(DOCUMENT_NAVIGATION_HISTORY_LIMIT);
+        for index in 0..130 {
+            push_document_navigation_history(
+                &mut history,
+                DocumentNavigationEntry {
+                    path: PathBuf::from(format!("jump-{index}.fountain")),
+                    cursor: Cursor::default(),
+                    selection_anchor: None,
+                    top_line: index,
+                    processed_top_line: index,
+                    processed_top_visual: index,
+                    plain_horizontal_scroll: 0.0,
+                    processed_horizontal_scroll: 0.0,
+                    processed_zoom_anchor_bias_px: 0.0,
+                    display_mode: DisplayMode::Split,
+                    focused_panel: PanelKind::Plain,
+                    zoom: 1.0,
+                    canvas_pan: Vec2::ZERO,
+                },
+            );
+        }
+
+        assert_eq!(history.len(), DOCUMENT_NAVIGATION_HISTORY_LIMIT);
+        assert_eq!(history.first().unwrap().path, PathBuf::from("jump-2.fountain"));
+        assert_eq!(history.last().unwrap().path, PathBuf::from("jump-129.fountain"));
+    }
+
+    #[test]
     fn link_toggle_rebound_moves_right_by_twice_the_compression() {
         let compression = 20.0;
         let border = 12.0;

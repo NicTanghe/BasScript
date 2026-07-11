@@ -229,11 +229,12 @@ fn handle_navigation_input(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     capture: Res<LinkAutocompleteInputCapture>,
+    navigation_capture: Res<DocumentNavigationInputCapture>,
     body_query: Query<(&PanelBody, &ComputedNode)>,
     mut navigation_repeat: ResMut<NavigationRepeatState>,
     mut state: ResMut<EditorState>,
 ) {
-    if capture.is_captured() {
+    if capture.is_captured() || navigation_capture.captured {
         return;
     }
 

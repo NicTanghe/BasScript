@@ -55,8 +55,9 @@ impl EditorState {
         match self.resolve_script_link_path(&link) {
             Ok(path) => {
                 let metadata_warning = EntityDocument::load(&path).err();
-                self.load_from_path(path.clone());
-                if let Some(error) = metadata_warning {
+                if self.navigate_to_path(path.clone())
+                    && let Some(error) = metadata_warning
+                {
                     self.status_message = format!(
                         "Loaded {} with metadata warning: {error}",
                         status_path_label(&path)
@@ -69,6 +70,74 @@ impl EditorState {
         }
 
         true
+    }
+
+    fn document_navigation_entry(&self) -> DocumentNavigationEntry {
+        DocumentNavigationEntry {
+            path: self.paths.load_path.clone(),
+            cursor: self.cursor,
+            selection_anchor: self.selection_anchor,
+            top_line: self.top_line,
+            processed_top_line: self.processed_top_line,
+            processed_top_visual: self.processed_top_visual,
+            plain_horizontal_scroll: self.plain_horizontal_scroll,
+            processed_horizontal_scroll: self.processed_horizontal_scroll,
+            processed_zoom_anchor_bias_px: self.processed_zoom_anchor_bias_px,
+            display_mode: self.display_mode,
+            focused_panel: self.focused_panel,
+            zoom: self.zoom,
+            canvas_pan: self.canvas_pan,
+        }
+    }
+
+    fn navigate_to_path(&mut self, path: PathBuf) -> bool {
+        if workspace_paths_match(&path, &self.paths.load_path) {
+            return self.load_from_path(path);
+        }
+
+        let previous = self.document_navigation_entry();
+        if !self.load_from_path(path) {
+            return false;
+        }
+
+        push_document_navigation_history(&mut self.document_navigation_history, previous);
+        true
+    }
+
+    fn navigate_back(&mut self) -> bool {
+        while let Some(previous) = self.document_navigation_history.pop() {
+            let label = status_path_label(&previous.path);
+            if !self.load_from_path(previous.path) {
+                continue;
+            }
+
+            self.set_zoom(previous.zoom);
+            self.cursor = previous.cursor;
+            self.cursor.position = self.document.clamp_position(self.cursor.position);
+            self.cursor.preferred_column = self
+                .cursor
+                .preferred_column
+                .min(self.document.line_len_chars(self.cursor.position.line));
+            self.selection_anchor = previous
+                .selection_anchor
+                .map(|position| self.document.clamp_position(position));
+            self.top_line = previous.top_line;
+            self.processed_top_line = previous.processed_top_line;
+            self.processed_top_visual = previous.processed_top_visual;
+            self.plain_horizontal_scroll = previous.plain_horizontal_scroll;
+            self.processed_horizontal_scroll = previous.processed_horizontal_scroll;
+            self.processed_zoom_anchor_bias_px = previous.processed_zoom_anchor_bias_px;
+            self.display_mode = previous.display_mode;
+            self.focused_panel = previous.focused_panel;
+            self.canvas_pan = previous.canvas_pan;
+            self.clamp_processed_top_line();
+            self.reset_blink();
+            self.status_message = format!("Back to {label}");
+            return true;
+        }
+
+        self.status_message = "No previous linked page.".to_string();
+        false
     }
 
     fn resolve_script_link_path(&self, link: &ScriptLink) -> Result<PathBuf, String> {
@@ -210,6 +279,43 @@ impl EditorState {
             raw_end_column: visible.end().saturating_add(1),
         })
     }
+}
+
+fn push_document_navigation_history(
+    history: &mut Vec<DocumentNavigationEntry>,
+    entry: DocumentNavigationEntry,
+) {
+    if history.len() == DOCUMENT_NAVIGATION_HISTORY_LIMIT {
+        history.remove(0);
+    }
+    history.push(entry);
+}
+
+fn handle_document_navigation_back(
+    keys: Res<ButtonInput<KeyCode>>,
+    autocomplete_capture: Res<LinkAutocompleteInputCapture>,
+    middle_autoscroll: Res<MiddleAutoscrollState>,
+    mut navigation_capture: ResMut<DocumentNavigationInputCapture>,
+    mut state: ResMut<EditorState>,
+) {
+    navigation_capture.captured = false;
+    if !keys.just_pressed(KeyCode::Escape)
+        || autocomplete_capture.is_captured()
+        || state.link_autocomplete_has_visible_suggestions()
+        || state.workspace_prompt.is_some()
+        || state.command_menu.is_some()
+        || state.markdown_metadata_input_active()
+        || state.story_query_sheet.open
+        || state.workspace_focused
+        || middle_autoscroll.is_active()
+        || (state.vim_enabled && state.vim_mode != VimMode::Normal)
+        || (state.document_format == DocumentFormat::Canvas
+            && state.canvas_editing_node_id.is_some())
+    {
+        return;
+    }
+
+    navigation_capture.captured = state.navigate_back();
 }
 
 fn entity_document_matches_mention(document: &EntityDocument, lookup: &str) -> bool {
