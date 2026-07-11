@@ -1,4 +1,4 @@
-fn apply_plain_panel_horizontal_scroll(
+pub(crate) fn apply_plain_panel_horizontal_scroll(
     state: &mut EditorState,
     plain_panel_size: Option<Vec2>,
     horizontal_delta_px: f32,
@@ -14,7 +14,7 @@ fn apply_plain_panel_horizontal_scroll(
     changed
 }
 
-fn apply_plain_panel_vertical_scroll(
+pub(crate) fn apply_plain_panel_vertical_scroll(
     state: &mut EditorState,
     line_delta: isize,
     visible_lines: usize,
@@ -27,3 +27,5 @@ fn apply_plain_panel_vertical_scroll(
     state.scroll_by(line_delta, visible_lines);
     state.top_line != before
 }
+#[allow(unused_imports)]
+use super::*;

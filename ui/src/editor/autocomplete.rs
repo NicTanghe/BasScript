@@ -1,124 +1,124 @@
-const LINK_AUTOCOMPLETE_INLINE_PREFIX_MIN_CHARS: usize = 2;
-const LINK_AUTOCOMPLETE_QUERY_LIMIT: usize = 16;
-const LINK_AUTOCOMPLETE_VISIBLE_ROWS: usize = 6;
-const LINK_AUTOCOMPLETE_MENU_WIDTH: f32 = 340.0;
-const LINK_AUTOCOMPLETE_ROW_HEIGHT: f32 = 30.0;
-const LINK_AUTOCOMPLETE_MENU_PADDING: f32 = 5.0;
-const LINK_AUTOCOMPLETE_MENU_GAP: f32 = 6.0;
-const LINK_AUTOCOMPLETE_WINDOW_MARGIN: f32 = 8.0;
-const LINK_AUTOCOMPLETE_WINDOW_BOTTOM_MARGIN: f32 = 28.0;
-const LINK_AUTOCOMPLETE_MENU_Z: i32 = 120;
-const LINK_AUTOCOMPLETE_ROW_Z: i32 = 121;
-const LINK_AUTOCOMPLETE_TEXT_Z: i32 = 122;
-const COLOR_LINK_AUTOCOMPLETE_MENU_BG: Color = Color::srgb(0.97, 0.98, 0.99);
-const COLOR_LINK_AUTOCOMPLETE_SELECTED_BG: Color = Color::srgb(0.86, 0.91, 0.97);
+pub(crate) const LINK_AUTOCOMPLETE_INLINE_PREFIX_MIN_CHARS: usize = 2;
+pub(crate) const LINK_AUTOCOMPLETE_QUERY_LIMIT: usize = 16;
+pub(crate) const LINK_AUTOCOMPLETE_VISIBLE_ROWS: usize = 6;
+pub(crate) const LINK_AUTOCOMPLETE_MENU_WIDTH: f32 = 340.0;
+pub(crate) const LINK_AUTOCOMPLETE_ROW_HEIGHT: f32 = 30.0;
+pub(crate) const LINK_AUTOCOMPLETE_MENU_PADDING: f32 = 5.0;
+pub(crate) const LINK_AUTOCOMPLETE_MENU_GAP: f32 = 6.0;
+pub(crate) const LINK_AUTOCOMPLETE_WINDOW_MARGIN: f32 = 8.0;
+pub(crate) const LINK_AUTOCOMPLETE_WINDOW_BOTTOM_MARGIN: f32 = 28.0;
+pub(crate) const LINK_AUTOCOMPLETE_MENU_Z: i32 = 120;
+pub(crate) const LINK_AUTOCOMPLETE_ROW_Z: i32 = 121;
+pub(crate) const LINK_AUTOCOMPLETE_TEXT_Z: i32 = 122;
+pub(crate) const COLOR_LINK_AUTOCOMPLETE_MENU_BG: Color = Color::srgb(0.97, 0.98, 0.99);
+pub(crate) const COLOR_LINK_AUTOCOMPLETE_SELECTED_BG: Color = Color::srgb(0.86, 0.91, 0.97);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LinkAutocompleteSource {
+pub(crate) enum LinkAutocompleteSource {
     Document,
     CanvasText,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LinkAutocompleteTrigger {
+pub(crate) enum LinkAutocompleteTrigger {
     Bracket,
     InlinePrefix,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct LinkAutocompleteRange {
-    start: Position,
-    end: Position,
+pub(crate) struct LinkAutocompleteRange {
+    pub(crate) start: Position,
+    pub(crate) end: Position,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct LinkAutocomplete {
-    source: LinkAutocompleteSource,
-    trigger: LinkAutocompleteTrigger,
-    range: LinkAutocompleteRange,
-    prefix: String,
-    suggestions: Vec<LinkAutocompleteSuggestion>,
-    selected_index: usize,
+pub(crate) struct LinkAutocomplete {
+    pub(crate) source: LinkAutocompleteSource,
+    pub(crate) trigger: LinkAutocompleteTrigger,
+    pub(crate) range: LinkAutocompleteRange,
+    pub(crate) prefix: String,
+    pub(crate) suggestions: Vec<LinkAutocompleteSuggestion>,
+    pub(crate) selected_index: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LinkAutocompleteSuggestionKind {
+pub(crate) enum LinkAutocompleteSuggestionKind {
     Entity,
     Scene,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LinkAutocompleteLineContext {
+pub(crate) enum LinkAutocompleteLineContext {
     CharacterCue,
     SceneHeading,
     General,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct LinkAutocompleteSuggestion {
-    kind: LinkAutocompleteSuggestionKind,
-    display_name: String,
-    entity_type: String,
-    target: String,
-    detail: String,
-    score: i32,
+pub(crate) struct LinkAutocompleteSuggestion {
+    pub(crate) kind: LinkAutocompleteSuggestionKind,
+    pub(crate) display_name: String,
+    pub(crate) entity_type: String,
+    pub(crate) target: String,
+    pub(crate) detail: String,
+    pub(crate) score: i32,
 }
 
 #[derive(Component)]
-struct LinkAutocompleteRoot;
+pub(crate) struct LinkAutocompleteRoot;
 
 #[derive(Component)]
-struct LinkAutocompleteRow {
-    index: usize,
+pub(crate) struct LinkAutocompleteRow {
+    pub(crate) index: usize,
 }
 
 #[derive(Component)]
-struct LinkAutocompleteNameText {
-    index: usize,
+pub(crate) struct LinkAutocompleteNameText {
+    pub(crate) index: usize,
 }
 
 #[derive(Component)]
-struct LinkAutocompleteTypeText {
-    index: usize,
+pub(crate) struct LinkAutocompleteTypeText {
+    pub(crate) index: usize,
 }
 
 #[derive(Component)]
-struct LinkAutocompleteTargetText {
-    index: usize,
+pub(crate) struct LinkAutocompleteTargetText {
+    pub(crate) index: usize,
 }
 
 #[derive(Resource, Default, Clone, Copy, Debug)]
-struct LinkAutocompleteInputCapture {
-    handled_key: Option<KeyCode>,
+pub(crate) struct LinkAutocompleteInputCapture {
+    pub(crate) handled_key: Option<KeyCode>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct LinkAutocompleteAcceptResult {
-    source: LinkAutocompleteSource,
+pub(crate) struct LinkAutocompleteAcceptResult {
+    pub(crate) source: LinkAutocompleteSource,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct LinkAutocompleteAnchorRect {
-    left: f32,
-    line_top: f32,
-    line_bottom: f32,
+pub(crate) struct LinkAutocompleteAnchorRect {
+    pub(crate) left: f32,
+    pub(crate) line_top: f32,
+    pub(crate) line_bottom: f32,
 }
 
 impl LinkAutocompleteInputCapture {
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.handled_key = None;
     }
 
-    fn capture(&mut self, key: KeyCode) {
+    pub(crate) fn capture(&mut self, key: KeyCode) {
         self.handled_key = Some(key);
     }
 
-    fn is_captured(&self) -> bool {
+    pub(crate) fn is_captured(&self) -> bool {
         self.handled_key.is_some()
     }
 }
 
-fn handle_link_autocomplete_keyboard_input(
+pub(crate) fn handle_link_autocomplete_keyboard_input(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     body_query: Query<(&PanelBody, &ComputedNode)>,
@@ -181,28 +181,32 @@ fn handle_link_autocomplete_keyboard_input(
     capture.capture(pressed_selection_key.expect("selection key"));
 }
 
-fn link_autocomplete_pressed_selection_key(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
+pub(crate) fn link_autocomplete_pressed_selection_key(
+    keys: &ButtonInput<KeyCode>,
+) -> Option<KeyCode> {
     [KeyCode::ArrowDown, KeyCode::ArrowUp]
         .into_iter()
         .find(|key| keys.pressed(*key))
 }
 
-fn just_pressed_link_autocomplete_selection_key(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
+pub(crate) fn just_pressed_link_autocomplete_selection_key(
+    keys: &ButtonInput<KeyCode>,
+) -> Option<KeyCode> {
     [KeyCode::ArrowDown, KeyCode::ArrowUp]
         .into_iter()
         .find(|key| keys.just_pressed(*key))
 }
 
-fn held_link_autocomplete_selection_key(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
+pub(crate) fn held_link_autocomplete_selection_key(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
     link_autocomplete_pressed_selection_key(keys)
 }
 
-fn reset_link_autocomplete_repeat(repeat: &mut NavigationRepeatState) {
+pub(crate) fn reset_link_autocomplete_repeat(repeat: &mut NavigationRepeatState) {
     repeat.active_arrow = None;
     repeat.repeat_cooldown_secs = 0.0;
 }
 
-fn sync_link_autocomplete_context(
+pub(crate) fn sync_link_autocomplete_context(
     mut state: ResMut<EditorState>,
     dialogs: Res<DialogState>,
 ) {
@@ -214,7 +218,10 @@ fn sync_link_autocomplete_context(
     state.validate_link_autocomplete_context();
 }
 
-fn spawn_link_autocomplete_menu(parent: &mut ChildSpawnerCommands<'_>, font: Handle<Font>) {
+pub(crate) fn spawn_link_autocomplete_menu(
+    parent: &mut ChildSpawnerCommands<'_>,
+    font: Handle<Font>,
+) {
     parent
         .spawn((
             Node {
@@ -241,7 +248,7 @@ fn spawn_link_autocomplete_menu(parent: &mut ChildSpawnerCommands<'_>, font: Han
         });
 }
 
-fn spawn_link_autocomplete_row(
+pub(crate) fn spawn_link_autocomplete_row(
     parent: &mut ChildSpawnerCommands<'_>,
     font: Handle<Font>,
     index: usize,
@@ -323,22 +330,18 @@ fn spawn_link_autocomplete_row(
         });
 }
 
-fn sync_link_autocomplete_ui(
+pub(crate) fn sync_link_autocomplete_ui(
     state: Res<EditorState>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     caret_query: Query<
         (&PanelCaret, &ComputedNode, &UiGlobalTransform),
         (Without<LinkAutocompleteRoot>, Without<LinkAutocompleteRow>),
     >,
-    mut root_query: Query<
-        &mut Node,
-        (With<LinkAutocompleteRoot>, Without<LinkAutocompleteRow>),
+    mut root_query: Query<&mut Node, (With<LinkAutocompleteRoot>, Without<LinkAutocompleteRow>)>,
+    mut row_query: Query<
+        (&LinkAutocompleteRow, &mut Node, &mut BackgroundColor),
+        (With<LinkAutocompleteRow>, Without<LinkAutocompleteRoot>),
     >,
-    mut row_query: Query<(
-        &LinkAutocompleteRow,
-        &mut Node,
-        &mut BackgroundColor,
-    ), (With<LinkAutocompleteRow>, Without<LinkAutocompleteRoot>)>,
     mut text_queries: ParamSet<(
         Query<(&LinkAutocompleteNameText, &mut Text)>,
         Query<(&LinkAutocompleteTypeText, &mut Text, &mut TextColor)>,
@@ -368,14 +371,13 @@ fn sync_link_autocomplete_ui(
         return;
     }
 
-    let (left, top) = link_autocomplete_menu_position(&state, &window_query, &caret_query, visible_count);
+    let (left, top) =
+        link_autocomplete_menu_position(&state, &window_query, &caret_query, visible_count);
     root.display = Display::Flex;
     root.left = px(left);
     root.top = px(top);
-    root.height = px(
-        (visible_count as f32 * LINK_AUTOCOMPLETE_ROW_HEIGHT)
-            + (LINK_AUTOCOMPLETE_MENU_PADDING * 2.0),
-    );
+    root.height = px((visible_count as f32 * LINK_AUTOCOMPLETE_ROW_HEIGHT)
+        + (LINK_AUTOCOMPLETE_MENU_PADDING * 2.0));
 
     for (row, mut node, mut background) in row_query.iter_mut() {
         if row.index >= visible_count {
@@ -400,20 +402,22 @@ fn sync_link_autocomplete_ui(
     }
 }
 
-fn link_autocomplete_visible_start(active: &LinkAutocomplete) -> usize {
+pub(crate) fn link_autocomplete_visible_start(active: &LinkAutocomplete) -> usize {
     let suggestion_count = active.suggestions.len();
     if suggestion_count <= LINK_AUTOCOMPLETE_VISIBLE_ROWS {
         return 0;
     }
 
-    let selected = active.selected_index.min(suggestion_count.saturating_sub(1));
+    let selected = active
+        .selected_index
+        .min(suggestion_count.saturating_sub(1));
     selected
         .saturating_add(1)
         .saturating_sub(LINK_AUTOCOMPLETE_VISIBLE_ROWS)
         .min(suggestion_count - LINK_AUTOCOMPLETE_VISIBLE_ROWS)
 }
 
-fn sync_link_autocomplete_row_text(
+pub(crate) fn sync_link_autocomplete_row_text(
     text_queries: &mut ParamSet<(
         Query<(&LinkAutocompleteNameText, &mut Text)>,
         Query<(&LinkAutocompleteTypeText, &mut Text, &mut TextColor)>,
@@ -444,7 +448,7 @@ fn sync_link_autocomplete_row_text(
     }
 }
 
-fn link_autocomplete_menu_position(
+pub(crate) fn link_autocomplete_menu_position(
     state: &EditorState,
     window_query: &Query<&Window, With<PrimaryWindow>>,
     caret_query: &Query<
@@ -462,10 +466,7 @@ fn link_autocomplete_menu_position(
             let top = window_size.map_or(anchor.line_bottom + LINK_AUTOCOMPLETE_MENU_GAP, |size| {
                 link_autocomplete_menu_top_for_anchor(anchor, menu_height, size.y)
             });
-            (
-                anchor.left + LINK_AUTOCOMPLETE_MENU_GAP,
-                top,
-            )
+            (anchor.left + LINK_AUTOCOMPLETE_MENU_GAP, top)
         })
         .unwrap_or((320.0, 96.0));
 
@@ -473,21 +474,16 @@ fn link_autocomplete_menu_position(
         let max_left =
             (window_size.x - LINK_AUTOCOMPLETE_MENU_WIDTH - LINK_AUTOCOMPLETE_WINDOW_MARGIN)
                 .max(LINK_AUTOCOMPLETE_WINDOW_MARGIN);
-        left_top.0 = left_top
-            .0
-            .clamp(LINK_AUTOCOMPLETE_WINDOW_MARGIN, max_left);
-        let max_top =
-            (window_size.y - LINK_AUTOCOMPLETE_WINDOW_BOTTOM_MARGIN - menu_height)
-                .max(LINK_AUTOCOMPLETE_WINDOW_MARGIN);
-        left_top.1 = left_top
-            .1
-            .clamp(LINK_AUTOCOMPLETE_WINDOW_MARGIN, max_top);
+        left_top.0 = left_top.0.clamp(LINK_AUTOCOMPLETE_WINDOW_MARGIN, max_left);
+        let max_top = (window_size.y - LINK_AUTOCOMPLETE_WINDOW_BOTTOM_MARGIN - menu_height)
+            .max(LINK_AUTOCOMPLETE_WINDOW_MARGIN);
+        left_top.1 = left_top.1.clamp(LINK_AUTOCOMPLETE_WINDOW_MARGIN, max_top);
     }
 
     left_top
 }
 
-fn link_autocomplete_menu_top_for_anchor(
+pub(crate) fn link_autocomplete_menu_top_for_anchor(
     anchor: LinkAutocompleteAnchorRect,
     menu_height: f32,
     window_height: f32,
@@ -512,7 +508,7 @@ fn link_autocomplete_menu_top_for_anchor(
     }
 }
 
-fn link_autocomplete_caret_anchor_rect(
+pub(crate) fn link_autocomplete_caret_anchor_rect(
     state: &EditorState,
     caret_query: &Query<
         (&PanelCaret, &ComputedNode, &UiGlobalTransform),
@@ -534,8 +530,7 @@ fn link_autocomplete_caret_anchor_rect(
         .map(|(_, computed, transform)| {
             let (_, _, translation) = transform.to_scale_angle_translation();
             let node_size = computed.size() * computed.inverse_scale_factor();
-            let top_left =
-                (translation * computed.inverse_scale_factor()) - (node_size * 0.5);
+            let top_left = (translation * computed.inverse_scale_factor()) - (node_size * 0.5);
             let line_height = node_size.y.max(state.measured_line_step).max(1.0);
             let left = top_left.x;
             let caret_top = top_left.y;
@@ -549,31 +544,33 @@ fn link_autocomplete_caret_anchor_rect(
 }
 
 impl EditorState {
-    fn close_link_autocomplete(&mut self) {
+    pub(crate) fn close_link_autocomplete(&mut self) {
         self.link_autocomplete = None;
     }
 
-    fn link_autocomplete_has_visible_suggestions(&self) -> bool {
+    pub(crate) fn link_autocomplete_has_visible_suggestions(&self) -> bool {
         self.link_autocomplete
             .as_ref()
             .is_some_and(|active| !active.suggestions.is_empty())
     }
 
-    fn select_next_link_autocomplete_suggestion(&mut self) -> bool {
+    pub(crate) fn select_next_link_autocomplete_suggestion(&mut self) -> bool {
         let Some(active) = self.link_autocomplete.as_mut() else {
             return false;
         };
         active.select_next()
     }
 
-    fn select_previous_link_autocomplete_suggestion(&mut self) -> bool {
+    pub(crate) fn select_previous_link_autocomplete_suggestion(&mut self) -> bool {
         let Some(active) = self.link_autocomplete.as_mut() else {
             return false;
         };
         active.select_previous()
     }
 
-    fn accept_link_autocomplete_selection(&mut self) -> Option<LinkAutocompleteAcceptResult> {
+    pub(crate) fn accept_link_autocomplete_selection(
+        &mut self,
+    ) -> Option<LinkAutocompleteAcceptResult> {
         let active = self.link_autocomplete.clone()?;
         let suggestion = active.selected_suggestion()?.clone();
         let context = self.link_autocomplete_line_context(&active);
@@ -605,7 +602,10 @@ impl EditorState {
                 self.canvas_text_cursor.set_position(next);
                 self.canvas_text_selection_anchor = None;
                 if self.set_canvas_text_node_content(&node_id, document.to_text()) {
-                    let snapshot = self.canvas_text_edit_undo_snapshot.take().unwrap_or(snapshot);
+                    let snapshot = self
+                        .canvas_text_edit_undo_snapshot
+                        .take()
+                        .unwrap_or(snapshot);
                     self.push_undo_snapshot(snapshot);
                     self.close_link_autocomplete();
                     self.status_message = format!("Linked {}.", suggestion.display_name);
@@ -620,7 +620,7 @@ impl EditorState {
         }
     }
 
-    fn refresh_link_autocomplete_for_document_cursor(&mut self) {
+    pub(crate) fn refresh_link_autocomplete_for_document_cursor(&mut self) {
         if !self.link_autocomplete_document_context_allowed() {
             self.close_link_autocomplete();
             return;
@@ -634,7 +634,7 @@ impl EditorState {
         .and_then(|active| self.with_link_autocomplete_suggestions(active));
     }
 
-    fn refresh_link_autocomplete_for_canvas_text_cursor(&mut self, document: &Document) {
+    pub(crate) fn refresh_link_autocomplete_for_canvas_text_cursor(&mut self, document: &Document) {
         if !self.link_autocomplete_canvas_context_allowed() {
             self.close_link_autocomplete();
             return;
@@ -648,7 +648,7 @@ impl EditorState {
         .and_then(|active| self.with_link_autocomplete_suggestions(active));
     }
 
-    fn validate_link_autocomplete_context(&mut self) {
+    pub(crate) fn validate_link_autocomplete_context(&mut self) {
         let Some(active) = self.link_autocomplete.clone() else {
             return;
         };
@@ -691,7 +691,7 @@ impl EditorState {
         }
     }
 
-    fn with_link_autocomplete_suggestions(
+    pub(crate) fn with_link_autocomplete_suggestions(
         &self,
         mut active: LinkAutocomplete,
     ) -> Option<LinkAutocomplete> {
@@ -704,7 +704,7 @@ impl EditorState {
         }
     }
 
-    fn link_autocomplete_document_context_allowed(&self) -> bool {
+    pub(crate) fn link_autocomplete_document_context_allowed(&self) -> bool {
         !self.workspace_focused
             && self.workspace_prompt.is_none()
             && self.command_menu.is_none()
@@ -713,7 +713,7 @@ impl EditorState {
             && (!self.vim_enabled || self.vim_mode == VimMode::Insert)
     }
 
-    fn link_autocomplete_canvas_context_allowed(&self) -> bool {
+    pub(crate) fn link_autocomplete_canvas_context_allowed(&self) -> bool {
         !self.workspace_focused
             && self.workspace_prompt.is_none()
             && self.command_menu.is_none()
@@ -723,7 +723,7 @@ impl EditorState {
             && (!self.vim_enabled || self.vim_mode == VimMode::Insert)
     }
 
-    fn link_autocomplete_suggestions(
+    pub(crate) fn link_autocomplete_suggestions(
         &self,
         active: &LinkAutocomplete,
     ) -> Vec<LinkAutocompleteSuggestion> {
@@ -745,7 +745,7 @@ impl EditorState {
         suggestions
     }
 
-    fn link_autocomplete_story_database(&self) -> Option<&StoryIndexDatabase> {
+    pub(crate) fn link_autocomplete_story_database(&self) -> Option<&StoryIndexDatabase> {
         self.story_index
             .as_ref()
             .filter(|index| {
@@ -759,7 +759,7 @@ impl EditorState {
             .and_then(|index| index.database.as_ref())
     }
 
-    fn link_autocomplete_line_context(
+    pub(crate) fn link_autocomplete_line_context(
         &self,
         active: &LinkAutocomplete,
     ) -> LinkAutocompleteLineContext {
@@ -778,7 +778,7 @@ impl EditorState {
         }
     }
 
-    fn link_autocomplete_entity_suggestions(
+    pub(crate) fn link_autocomplete_entity_suggestions(
         &self,
         database: &StoryIndexDatabase,
         active: &LinkAutocomplete,
@@ -805,12 +805,13 @@ impl EditorState {
                 if entities.contains_key(&entity.target) {
                     continue;
                 }
-                if fuzzy_subsequence_match(&normalized_link_autocomplete_query(&entity.name), &query)
-                    || fuzzy_subsequence_match(
-                        &normalized_link_autocomplete_query(&entity.target),
-                        &query,
-                    )
-                {
+                if fuzzy_subsequence_match(
+                    &normalized_link_autocomplete_query(&entity.name),
+                    &query,
+                ) || fuzzy_subsequence_match(
+                    &normalized_link_autocomplete_query(&entity.target),
+                    &query,
+                ) {
                     entities.insert(entity.target.clone(), entity);
                 }
             }
@@ -833,7 +834,7 @@ impl EditorState {
             .collect()
     }
 
-    fn link_autocomplete_scene_suggestions(
+    pub(crate) fn link_autocomplete_scene_suggestions(
         &self,
         database: &StoryIndexDatabase,
         active: &LinkAutocomplete,
@@ -866,18 +867,20 @@ impl EditorState {
 }
 
 impl LinkAutocomplete {
-    fn continues_trigger_from(&self, previous: &Self) -> bool {
+    pub(crate) fn continues_trigger_from(&self, previous: &Self) -> bool {
         self.source == previous.source
             && self.trigger == previous.trigger
             && self.range.start == previous.range.start
     }
 
-    fn selected_suggestion(&self) -> Option<&LinkAutocompleteSuggestion> {
-        let selected = self.selected_index.min(self.suggestions.len().checked_sub(1)?);
+    pub(crate) fn selected_suggestion(&self) -> Option<&LinkAutocompleteSuggestion> {
+        let selected = self
+            .selected_index
+            .min(self.suggestions.len().checked_sub(1)?);
         self.suggestions.get(selected)
     }
 
-    fn select_next(&mut self) -> bool {
+    pub(crate) fn select_next(&mut self) -> bool {
         let Some(last_index) = self.suggestions.len().checked_sub(1) else {
             self.selected_index = 0;
             return false;
@@ -889,7 +892,7 @@ impl LinkAutocomplete {
         next != current
     }
 
-    fn select_previous(&mut self) -> bool {
+    pub(crate) fn select_previous(&mut self) -> bool {
         if self.suggestions.is_empty() {
             self.selected_index = 0;
             return false;
@@ -903,7 +906,7 @@ impl LinkAutocomplete {
 }
 
 impl LinkAutocompleteSuggestion {
-    fn row_detail(&self) -> &str {
+    pub(crate) fn row_detail(&self) -> &str {
         match self.kind {
             LinkAutocompleteSuggestionKind::Entity => &self.target,
             LinkAutocompleteSuggestionKind::Scene if !self.detail.is_empty() => &self.detail,
@@ -912,7 +915,7 @@ impl LinkAutocompleteSuggestion {
     }
 }
 
-fn link_autocomplete_replacement_text(
+pub(crate) fn link_autocomplete_replacement_text(
     suggestion: &LinkAutocompleteSuggestion,
     context: LinkAutocompleteLineContext,
 ) -> String {
@@ -926,7 +929,7 @@ fn link_autocomplete_replacement_text(
     }
 }
 
-fn link_autocomplete_display_text(
+pub(crate) fn link_autocomplete_display_text(
     suggestion: &LinkAutocompleteSuggestion,
     context: LinkAutocompleteLineContext,
 ) -> String {
@@ -940,11 +943,11 @@ fn link_autocomplete_display_text(
     suggestion.display_name.clone()
 }
 
-fn link_autocomplete_target_only_is_safe(display: &str, target: &str) -> bool {
+pub(crate) fn link_autocomplete_target_only_is_safe(display: &str, target: &str) -> bool {
     !display.is_empty() && (display == target || link_autocomplete_display_slug(display) == target)
 }
 
-fn link_autocomplete_display_slug(display: &str) -> String {
+pub(crate) fn link_autocomplete_display_slug(display: &str) -> String {
     let mut out = String::new();
     let mut previous_was_separator = true;
     for ch in display.chars() {
@@ -967,7 +970,7 @@ fn link_autocomplete_display_slug(display: &str) -> String {
     out
 }
 
-fn link_autocomplete_at_cursor(
+pub(crate) fn link_autocomplete_at_cursor(
     document: &Document,
     cursor: Position,
     source: LinkAutocompleteSource,
@@ -1016,7 +1019,7 @@ fn link_autocomplete_at_cursor(
     })
 }
 
-fn bracket_link_autocomplete_trigger(
+pub(crate) fn bracket_link_autocomplete_trigger(
     chars: &[char],
     cursor_column: usize,
 ) -> Option<(usize, String)> {
@@ -1043,7 +1046,7 @@ fn bracket_link_autocomplete_trigger(
     None
 }
 
-fn inline_link_autocomplete_trigger(
+pub(crate) fn inline_link_autocomplete_trigger(
     chars: &[char],
     cursor_column: usize,
 ) -> Option<(usize, String)> {
@@ -1067,15 +1070,15 @@ fn inline_link_autocomplete_trigger(
     Some((start, chars[start..cursor_column].iter().collect()))
 }
 
-fn is_link_autocomplete_bracket_char(ch: char) -> bool {
+pub(crate) fn is_link_autocomplete_bracket_char(ch: char) -> bool {
     !matches!(ch, '[' | ']' | '(' | ')' | '\n' | '\r')
 }
 
-fn is_link_autocomplete_word_char(ch: char) -> bool {
+pub(crate) fn is_link_autocomplete_word_char(ch: char) -> bool {
     ch.is_alphanumeric() || matches!(ch, '-' | '_' | '\'')
 }
 
-fn score_entity_suggestion(
+pub(crate) fn score_entity_suggestion(
     entity: &basscript_core::StoryIndexEntityRecord,
     query: &str,
     context: LinkAutocompleteLineContext,
@@ -1094,7 +1097,10 @@ fn score_entity_suggestion(
         LinkAutocompleteLineContext::CharacterCue if entity_type == "character" => 24,
         LinkAutocompleteLineContext::CharacterCue => -8,
         LinkAutocompleteLineContext::SceneHeading
-            if matches!(entity_type.as_str(), "place" | "location" | "scene" | "setting") =>
+            if matches!(
+                entity_type.as_str(),
+                "place" | "location" | "scene" | "setting"
+            ) =>
         {
             24
         }
@@ -1109,7 +1115,7 @@ fn score_entity_suggestion(
     Some(score)
 }
 
-fn score_scene_suggestion(
+pub(crate) fn score_scene_suggestion(
     scene: &basscript_core::StoryIndexSceneRecord,
     query: &str,
 ) -> Option<i32> {
@@ -1129,7 +1135,7 @@ fn score_scene_suggestion(
     Some(score + 18)
 }
 
-fn best_text_match_score(query: &str, fields: &[(&str, i32)]) -> Option<i32> {
+pub(crate) fn best_text_match_score(query: &str, fields: &[(&str, i32)]) -> Option<i32> {
     let mut best = None::<i32>;
     for (field, base) in fields {
         let score = if field == &query {
@@ -1148,7 +1154,7 @@ fn best_text_match_score(query: &str, fields: &[(&str, i32)]) -> Option<i32> {
     best
 }
 
-fn fuzzy_subsequence_match(field: &str, query: &str) -> bool {
+pub(crate) fn fuzzy_subsequence_match(field: &str, query: &str) -> bool {
     if query.is_empty() {
         return true;
     }
@@ -1171,7 +1177,7 @@ fn fuzzy_subsequence_match(field: &str, query: &str) -> bool {
     false
 }
 
-fn normalized_link_autocomplete_query(input: &str) -> String {
+pub(crate) fn normalized_link_autocomplete_query(input: &str) -> String {
     let mut normalized = String::new();
     for ch in input.chars() {
         if ch.is_alphanumeric() {
@@ -1185,7 +1191,7 @@ fn normalized_link_autocomplete_query(input: &str) -> String {
     normalized
 }
 
-fn current_document_mentions_target(document: &str, target: &str) -> bool {
+pub(crate) fn current_document_mentions_target(document: &str, target: &str) -> bool {
     document.contains(&format!("]({target})")) || document.contains(&format!("[{target}]"))
 }
 
@@ -1465,3 +1471,5 @@ mod link_autocomplete_tests {
         );
     }
 }
+#[allow(unused_imports)]
+use super::*;

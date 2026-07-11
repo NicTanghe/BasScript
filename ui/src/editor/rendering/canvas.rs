@@ -1,29 +1,29 @@
-const COLOR_CANVAS_NODE_BG: Color = Color::srgb(0.96, 0.97, 0.98);
-const COLOR_CANVAS_GROUP_BG: Color = Color::srgba(0.80, 0.84, 0.90, 0.28);
-const COLOR_CANVAS_NODE_BORDER: Color = Color::srgba(0.08, 0.10, 0.12, 0.22);
-const COLOR_CANVAS_NODE_ACTIVE_BORDER: Color = Color::srgb(0.69, 0.28, 0.22);
-const COLOR_CANVAS_EDGE: Color = Color::srgba(0.10, 0.12, 0.15, 0.45);
-const CANVAS_TEXT_SELECTION_RECT_CAPACITY: usize = 64;
+pub(crate) const COLOR_CANVAS_NODE_BG: Color = Color::srgb(0.96, 0.97, 0.98);
+pub(crate) const COLOR_CANVAS_GROUP_BG: Color = Color::srgba(0.80, 0.84, 0.90, 0.28);
+pub(crate) const COLOR_CANVAS_NODE_BORDER: Color = Color::srgba(0.08, 0.10, 0.12, 0.22);
+pub(crate) const COLOR_CANVAS_NODE_ACTIVE_BORDER: Color = Color::srgb(0.69, 0.28, 0.22);
+pub(crate) const COLOR_CANVAS_EDGE: Color = Color::srgba(0.10, 0.12, 0.15, 0.45);
+pub(crate) const CANVAS_TEXT_SELECTION_RECT_CAPACITY: usize = 64;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct CanvasRenderedNode {
-    index: usize,
+pub(crate) struct CanvasRenderedNode {
+    pub(crate) index: usize,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct CanvasRenderedNodeText {
-    index: usize,
+pub(crate) struct CanvasRenderedNodeText {
+    pub(crate) index: usize,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct CanvasRenderedTextSelection {
-    node_index: usize,
-    rect_index: usize,
+pub(crate) struct CanvasRenderedTextSelection {
+    pub(crate) node_index: usize,
+    pub(crate) rect_index: usize,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct CanvasRenderedTextCaret {
-    node_index: usize,
+pub(crate) struct CanvasRenderedTextCaret {
+    pub(crate) node_index: usize,
 }
 
 /// A view of Bevy's shaped text buffer in logical UI coordinates.
@@ -33,34 +33,34 @@ struct CanvasRenderedTextCaret {
 /// buffer, including visual clusters, cursor geometry, selection geometry,
 /// bidi ordering, and wrapped-line boundaries.
 #[derive(Clone, Copy)]
-struct CanvasTextLayout<'a> {
-    block: &'a bevy::text::ComputedTextBlock,
-    inverse_scale: f32,
+pub(crate) struct CanvasTextLayout<'a> {
+    pub(crate) block: &'a bevy::text::ComputedTextBlock,
+    pub(crate) inverse_scale: f32,
 }
 
 #[derive(Component, Clone, Debug)]
-struct CanvasRenderedImage {
-    handle: Handle<Image>,
+pub(crate) struct CanvasRenderedImage {
+    pub(crate) handle: Handle<Image>,
 }
 
 #[derive(Component, Clone, Debug)]
-struct CanvasRenderedImageError {
-    handle: Handle<Image>,
+pub(crate) struct CanvasRenderedImageError {
+    pub(crate) handle: Handle<Image>,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct CanvasRenderedEdge {
-    index: usize,
-    segment: CanvasEdgeSegment,
+pub(crate) struct CanvasRenderedEdge {
+    pub(crate) index: usize,
+    pub(crate) segment: CanvasEdgeSegment,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CanvasEdgeSegment {
+pub(crate) enum CanvasEdgeSegment {
     Horizontal,
     Vertical,
 }
 
-fn maybe_center_canvas_view_after_layout(
+pub(crate) fn maybe_center_canvas_view_after_layout(
     body_query: &Query<(&PanelBody, &ComputedNode)>,
     state: &mut EditorState,
 ) {
@@ -78,7 +78,7 @@ fn maybe_center_canvas_view_after_layout(
     }
 }
 
-fn sync_canvas_board(
+pub(crate) fn sync_canvas_board(
     mut commands: Commands,
     canvas_query: Query<(Entity, &PanelCanvas)>,
     existing_node_query: Query<Entity, With<CanvasRenderedNode>>,
@@ -249,7 +249,7 @@ fn sync_canvas_board(
     }
 }
 
-fn sync_canvas_text_overlays(
+pub(crate) fn sync_canvas_text_overlays(
     text_layout_query: Query<(
         &CanvasRenderedNodeText,
         &bevy::text::ComputedTextBlock,
@@ -324,7 +324,7 @@ fn sync_canvas_text_overlays(
     );
 }
 
-fn spawn_canvas_edge(parent: &mut ChildSpawnerCommands, index: usize) {
+pub(crate) fn spawn_canvas_edge(parent: &mut ChildSpawnerCommands, index: usize) {
     for segment in [CanvasEdgeSegment::Horizontal, CanvasEdgeSegment::Vertical] {
         parent.spawn((
             Node {
@@ -342,7 +342,7 @@ fn spawn_canvas_edge(parent: &mut ChildSpawnerCommands, index: usize) {
     }
 }
 
-fn spawn_canvas_node(
+pub(crate) fn spawn_canvas_node(
     parent: &mut ChildSpawnerCommands,
     index: usize,
     node: &basscript_core::CanvasNode,
@@ -493,13 +493,13 @@ fn spawn_canvas_node(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CanvasTextRenderMode {
+pub(crate) enum CanvasTextRenderMode {
     Rendered,
     Plain,
     PlainInteractive,
 }
 
-fn spawn_canvas_text_preview(
+pub(crate) fn spawn_canvas_text_preview(
     parent: &mut ChildSpawnerCommands,
     index: usize,
     text: &str,
@@ -542,7 +542,7 @@ fn spawn_canvas_text_preview(
     ));
 }
 
-fn spawn_canvas_rendered_text_preview(
+pub(crate) fn spawn_canvas_rendered_text_preview(
     parent: &mut ChildSpawnerCommands,
     index: usize,
     text: &str,
@@ -592,17 +592,20 @@ fn spawn_canvas_rendered_text_preview(
 }
 
 #[derive(Clone, Debug)]
-struct CanvasTextPreviewSpan {
-    text: String,
-    style: LineRenderStyle,
+pub(crate) struct CanvasTextPreviewSpan {
+    pub(crate) text: String,
+    pub(crate) style: LineRenderStyle,
 }
 
 #[derive(Default)]
-struct CanvasTextPreview {
-    text: String,
+pub(crate) struct CanvasTextPreview {
+    pub(crate) text: String,
 }
 
-fn spawn_canvas_text_selection_rects(parent: &mut ChildSpawnerCommands, node_index: usize) {
+pub(crate) fn spawn_canvas_text_selection_rects(
+    parent: &mut ChildSpawnerCommands,
+    node_index: usize,
+) {
     for rect_index in 0..CANVAS_TEXT_SELECTION_RECT_CAPACITY {
         parent.spawn((
             Node {
@@ -624,7 +627,7 @@ fn spawn_canvas_text_selection_rects(parent: &mut ChildSpawnerCommands, node_ind
     }
 }
 
-fn spawn_canvas_text_caret(parent: &mut ChildSpawnerCommands, node_index: usize) {
+pub(crate) fn spawn_canvas_text_caret(parent: &mut ChildSpawnerCommands, node_index: usize) {
     parent.spawn((
         Node {
             position_type: PositionType::Absolute,
@@ -642,7 +645,7 @@ fn spawn_canvas_text_caret(parent: &mut ChildSpawnerCommands, node_index: usize)
     ));
 }
 
-fn render_canvas_text_selection_rects(
+pub(crate) fn render_canvas_text_selection_rects(
     selection_query: &mut Query<
         (
             &CanvasRenderedTextSelection,
@@ -690,7 +693,7 @@ fn render_canvas_text_selection_rects(
     }
 }
 
-fn render_canvas_text_carets(
+pub(crate) fn render_canvas_text_carets(
     caret_query: &mut Query<
         (
             &CanvasRenderedTextCaret,
@@ -741,7 +744,10 @@ fn render_canvas_text_carets(
     }
 }
 
-fn canvas_active_text_node_index(canvas: &CanvasDocument, state: &EditorState) -> Option<usize> {
+pub(crate) fn canvas_active_text_node_index(
+    canvas: &CanvasDocument,
+    state: &EditorState,
+) -> Option<usize> {
     let node_id = state.canvas_editing_node_id.as_deref()?;
     canvas
         .nodes
@@ -749,7 +755,7 @@ fn canvas_active_text_node_index(canvas: &CanvasDocument, state: &EditorState) -
         .position(|node| node.id == node_id && matches!(node.kind, CanvasNodeKind::Text { .. }))
 }
 
-fn canvas_text_selection_rects(
+pub(crate) fn canvas_text_selection_rects(
     canvas: &CanvasDocument,
     node_index: usize,
     state: &EditorState,
@@ -811,7 +817,7 @@ fn canvas_text_selection_rects(
     }
 }
 
-fn canvas_text_selection_rects_fallback(
+pub(crate) fn canvas_text_selection_rects_fallback(
     document: &Document,
     start: Position,
     end: Position,
@@ -855,7 +861,7 @@ fn canvas_text_selection_rects_fallback(
     rects
 }
 
-fn canvas_text_caret_rect(
+pub(crate) fn canvas_text_caret_rect(
     canvas: &CanvasDocument,
     node_index: usize,
     state: &EditorState,
@@ -912,7 +918,7 @@ fn canvas_text_caret_rect(
     ))
 }
 
-fn canvas_text_layout_for_node<'a>(
+pub(crate) fn canvas_text_layout_for_node<'a>(
     text_layout_query: &'a Query<(
         &CanvasRenderedNodeText,
         &bevy::text::ComputedTextBlock,
@@ -929,7 +935,10 @@ fn canvas_text_layout_for_node<'a>(
         })
 }
 
-fn canvas_text_layout_matches_document(layout: CanvasTextLayout<'_>, document: &Document) -> bool {
+pub(crate) fn canvas_text_layout_matches_document(
+    layout: CanvasTextLayout<'_>,
+    document: &Document,
+) -> bool {
     if layout.block.needs_rerender(false, false) {
         return false;
     }
@@ -944,7 +953,7 @@ fn canvas_text_layout_matches_document(layout: CanvasTextLayout<'_>, document: &
     buffer_len == document.to_text().len()
 }
 
-fn canvas_text_document_byte_offset(document: &Document, position: Position) -> usize {
+pub(crate) fn canvas_text_document_byte_offset(document: &Document, position: Position) -> usize {
     let position = document.clamp_position(position);
     let preceding_bytes = (0..position.line)
         .map(|line| document.line(line).map_or(0, str::len).saturating_add(1))
@@ -953,7 +962,10 @@ fn canvas_text_document_byte_offset(document: &Document, position: Position) -> 
     preceding_bytes + char_to_byte_index(line_text, position.column)
 }
 
-fn canvas_text_position_from_document_byte(document: &Document, byte_index: usize) -> Position {
+pub(crate) fn canvas_text_position_from_document_byte(
+    document: &Document,
+    byte_index: usize,
+) -> Position {
     let mut line_start = 0usize;
     for line in 0..document.line_count() {
         let line_text = document.line(line).unwrap_or_default();
@@ -978,7 +990,7 @@ fn canvas_text_position_from_document_byte(document: &Document, byte_index: usiz
     Position::default()
 }
 
-fn canvas_text_position_from_layout(
+pub(crate) fn canvas_text_position_from_layout(
     document: &Document,
     layout: CanvasTextLayout<'_>,
     x: f32,
@@ -992,7 +1004,7 @@ fn canvas_text_position_from_layout(
     })
 }
 
-fn spawn_canvas_image_or_placeholder(
+pub(crate) fn spawn_canvas_image_or_placeholder(
     parent: &mut ChildSpawnerCommands,
     index: usize,
     target: &str,
@@ -1064,7 +1076,7 @@ fn spawn_canvas_image_or_placeholder(
     }
 }
 
-fn spawn_canvas_image_error(
+pub(crate) fn spawn_canvas_image_error(
     parent: &mut ChildSpawnerCommands,
     index: usize,
     message: &str,
@@ -1094,18 +1106,18 @@ fn spawn_canvas_image_error(
     ));
 }
 
-fn canvas_image_load_failed(asset_server: &AssetServer, handle: &Handle<Image>) -> bool {
+pub(crate) fn canvas_image_load_failed(asset_server: &AssetServer, handle: &Handle<Image>) -> bool {
     matches!(
         asset_server.get_load_state(handle),
         Some(LoadState::Failed(_))
     )
 }
 
-fn canvas_image_error_text(message: &str, target: &str) -> String {
+pub(crate) fn canvas_image_error_text(message: &str, target: &str) -> String {
     format!("{message}\n{}", canvas_file_placeholder(target))
 }
 
-fn canvas_first_image_target(text: &str) -> Option<String> {
+pub(crate) fn canvas_first_image_target(text: &str) -> Option<String> {
     canvas_first_markdown_image_embed(text)
         .map(|embed| embed.target)
         .or_else(|| canvas_first_html_image_src(text))
@@ -1114,7 +1126,7 @@ fn canvas_first_image_target(text: &str) -> Option<String> {
         .and_then(|target| canvas_clean_image_target(&target))
 }
 
-fn remote_image_target_seems_loadable(target: &str) -> bool {
+pub(crate) fn remote_image_target_seems_loadable(target: &str) -> bool {
     let trimmed = target.trim();
     if !is_remote_image_target(trimmed) {
         return true;
@@ -1131,14 +1143,14 @@ fn remote_image_target_seems_loadable(target: &str) -> bool {
     )
 }
 
-fn canvas_first_markdown_image_embed(text: &str) -> Option<ImageEmbed> {
+pub(crate) fn canvas_first_markdown_image_embed(text: &str) -> Option<ImageEmbed> {
     parse_document_with_format(&Document::from_text(text), DocumentFormat::Markdown)
         .into_iter()
         .flat_map(|line| line.image_embeds)
         .next()
 }
 
-fn canvas_first_html_image_src(text: &str) -> Option<String> {
+pub(crate) fn canvas_first_html_image_src(text: &str) -> Option<String> {
     let lower = text.to_ascii_lowercase();
     let mut search_start = 0usize;
 
@@ -1158,7 +1170,7 @@ fn canvas_first_html_image_src(text: &str) -> Option<String> {
     None
 }
 
-fn canvas_first_obsidian_image_target(text: &str) -> Option<String> {
+pub(crate) fn canvas_first_obsidian_image_target(text: &str) -> Option<String> {
     let start = text.find("![[")? + 3;
     let rest = text.get(start..)?;
     let end = rest
@@ -1169,7 +1181,7 @@ fn canvas_first_obsidian_image_target(text: &str) -> Option<String> {
     Some(target.split('|').next().unwrap_or(target).trim().to_owned())
 }
 
-fn canvas_first_remote_image_url(text: &str) -> Option<String> {
+pub(crate) fn canvas_first_remote_image_url(text: &str) -> Option<String> {
     let start = text.find("https://").or_else(|| text.find("http://"))?;
     let rest = text.get(start..)?;
     let end = rest
@@ -1182,7 +1194,7 @@ fn canvas_first_remote_image_url(text: &str) -> Option<String> {
     Some(rest.get(..end)?.to_owned())
 }
 
-fn canvas_clean_image_target(target: &str) -> Option<String> {
+pub(crate) fn canvas_clean_image_target(target: &str) -> Option<String> {
     let mut trimmed = target.trim();
     if let Some(markdown_target_start) = trimmed.find("](") {
         let target_start = markdown_target_start + 2;
@@ -1206,7 +1218,7 @@ fn canvas_clean_image_target(target: &str) -> Option<String> {
     (!cleaned.is_empty()).then(|| cleaned.to_owned())
 }
 
-fn html_attr_value(tag: &str, attr: &str) -> Option<String> {
+pub(crate) fn html_attr_value(tag: &str, attr: &str) -> Option<String> {
     let lower = tag.to_ascii_lowercase();
     let mut search_start = 0usize;
 
@@ -1267,7 +1279,7 @@ fn html_attr_value(tag: &str, attr: &str) -> Option<String> {
     None
 }
 
-fn skip_ascii_whitespace(input: &str, mut index: usize) -> usize {
+pub(crate) fn skip_ascii_whitespace(input: &str, mut index: usize) -> usize {
     while input
         .as_bytes()
         .get(index)
@@ -1278,7 +1290,10 @@ fn skip_ascii_whitespace(input: &str, mut index: usize) -> usize {
     index
 }
 
-fn canvas_text_render_mode(state: &EditorState, active_text_node: bool) -> CanvasTextRenderMode {
+pub(crate) fn canvas_text_render_mode(
+    state: &EditorState,
+    active_text_node: bool,
+) -> CanvasTextRenderMode {
     if state.display_mode == DisplayMode::Plain {
         return if active_text_node {
             CanvasTextRenderMode::PlainInteractive
@@ -1298,7 +1313,7 @@ fn canvas_text_render_mode(state: &EditorState, active_text_node: bool) -> Canva
     }
 }
 
-fn canvas_text_interaction_active(state: &EditorState) -> bool {
+pub(crate) fn canvas_text_interaction_active(state: &EditorState) -> bool {
     state.canvas_editing_node_id.is_some()
         && (!state.vim_enabled
             || matches!(
@@ -1307,7 +1322,7 @@ fn canvas_text_interaction_active(state: &EditorState) -> bool {
             ))
 }
 
-fn canvas_text_preview(
+pub(crate) fn canvas_text_preview(
     text: &str,
     mode: CanvasTextRenderMode,
     _state: &EditorState,
@@ -1326,7 +1341,7 @@ fn canvas_text_preview(
     }
 }
 
-fn canvas_rendered_text_spans(text: &str) -> Vec<CanvasTextPreviewSpan> {
+pub(crate) fn canvas_rendered_text_spans(text: &str) -> Vec<CanvasTextPreviewSpan> {
     let normalized = text.replace("\r\n", "\n");
     let lines = normalized.split('\n').collect::<Vec<_>>();
     if lines.is_empty() {
@@ -1374,7 +1389,7 @@ fn canvas_rendered_text_spans(text: &str) -> Vec<CanvasTextPreviewSpan> {
         .collect()
 }
 
-fn canvas_file_placeholder(file: &str) -> String {
+pub(crate) fn canvas_file_placeholder(file: &str) -> String {
     if is_remote_image_target(file) {
         return file.to_owned();
     }
@@ -1387,12 +1402,12 @@ fn canvas_file_placeholder(file: &str) -> String {
         .to_owned()
 }
 
-fn canvas_node_center(node: &basscript_core::CanvasNode) -> Vec2 {
+pub(crate) fn canvas_node_center(node: &basscript_core::CanvasNode) -> Vec2 {
     let size = canvas_node_size(node.width, node.height);
     Vec2::new(node.x + size.x * 0.5, node.y + size.y * 0.5)
 }
 
-fn canvas_edge_centers(
+pub(crate) fn canvas_edge_centers(
     canvas: &CanvasDocument,
     edge: &basscript_core::CanvasEdge,
 ) -> Option<(Vec2, Vec2)> {
@@ -1401,7 +1416,7 @@ fn canvas_edge_centers(
     Some((canvas_node_center(from), canvas_node_center(to)))
 }
 
-fn canvas_edge_segment_rect(
+pub(crate) fn canvas_edge_segment_rect(
     from_center: Vec2,
     to_center: Vec2,
     segment: CanvasEdgeSegment,
@@ -1437,3 +1452,5 @@ fn canvas_edge_segment_rect(
         }
     }
 }
+#[allow(unused_imports)]
+use super::*;

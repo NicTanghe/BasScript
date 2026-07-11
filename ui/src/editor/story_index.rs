@@ -4,20 +4,20 @@ use basscript_core::{
 };
 
 #[derive(Clone, Debug)]
-struct EditorStoryIndex {
-    database: Option<StoryIndexDatabase>,
-    workspace_root: PathBuf,
-    database_path: PathBuf,
-    status: EditorStoryIndexStatus,
-    file_count: usize,
-    entity_count: usize,
-    entity_error_count: usize,
-    scene_count: usize,
-    appearance_count: usize,
+pub(crate) struct EditorStoryIndex {
+    pub(crate) database: Option<StoryIndexDatabase>,
+    pub(crate) workspace_root: PathBuf,
+    pub(crate) database_path: PathBuf,
+    pub(crate) status: EditorStoryIndexStatus,
+    pub(crate) file_count: usize,
+    pub(crate) entity_count: usize,
+    pub(crate) entity_error_count: usize,
+    pub(crate) scene_count: usize,
+    pub(crate) appearance_count: usize,
 }
 
 #[derive(Clone, Debug)]
-enum EditorStoryIndexStatus {
+pub(crate) enum EditorStoryIndexStatus {
     Ready,
     Created,
     Recreated,
@@ -25,7 +25,7 @@ enum EditorStoryIndexStatus {
 }
 
 impl EditorStoryIndex {
-    fn visible_label(&self) -> String {
+    pub(crate) fn visible_label(&self) -> String {
         let workspace = self
             .workspace_root
             .file_name()
@@ -51,7 +51,7 @@ impl EditorStoryIndex {
 }
 
 impl EditorStoryIndexStatus {
-    fn label(&self) -> &'static str {
+    pub(crate) fn label(&self) -> &'static str {
         match self {
             Self::Ready => "ready",
             Self::Created => "created",
@@ -62,7 +62,7 @@ impl EditorStoryIndexStatus {
 }
 
 impl EditorState {
-    fn open_story_index_for_workspace(&mut self, workspace_root: &Path) -> String {
+    pub(crate) fn open_story_index_for_workspace(&mut self, workspace_root: &Path) -> String {
         match StoryIndexDatabase::open_workspace(workspace_root) {
             Ok(report) => {
                 let scan = report.database.scan_workspace_files();
@@ -111,12 +111,12 @@ impl EditorState {
         }
     }
 
-    fn refresh_story_index_for_workspace(&mut self) -> Option<String> {
+    pub(crate) fn refresh_story_index_for_workspace(&mut self) -> Option<String> {
         let workspace_root = self.workspace_root.clone()?;
         Some(self.open_story_index_for_workspace(&workspace_root))
     }
 
-    fn story_index_visible_label(&self) -> String {
+    pub(crate) fn story_index_visible_label(&self) -> String {
         self.story_index
             .as_ref()
             .map(EditorStoryIndex::visible_label)
@@ -124,7 +124,7 @@ impl EditorState {
     }
 }
 
-fn editor_story_index_status(status: &StoryIndexOpenStatus) -> EditorStoryIndexStatus {
+pub(crate) fn editor_story_index_status(status: &StoryIndexOpenStatus) -> EditorStoryIndexStatus {
     match status {
         StoryIndexOpenStatus::Created => EditorStoryIndexStatus::Created,
         StoryIndexOpenStatus::Ready => EditorStoryIndexStatus::Ready,
@@ -132,7 +132,7 @@ fn editor_story_index_status(status: &StoryIndexOpenStatus) -> EditorStoryIndexS
     }
 }
 
-fn story_index_status_message(
+pub(crate) fn story_index_status_message(
     report: &StoryIndexOpenReport,
     scan: Option<&StoryIndexScanReport>,
 ) -> String {
@@ -169,7 +169,7 @@ fn story_index_status_message(
     }
 }
 
-fn story_index_scan_summary(scan: &StoryIndexScanReport) -> String {
+pub(crate) fn story_index_scan_summary(scan: &StoryIndexScanReport) -> String {
     format!(
         "Index ready: {} files (+{}, ~{}, -{}), {} entities, {} aliases, {} entity errors, {} scenes, {} appearances.",
         scan.file_count,
@@ -183,3 +183,5 @@ fn story_index_scan_summary(scan: &StoryIndexScanReport) -> String {
         scan.appearance_count
     )
 }
+#[allow(unused_imports)]
+use super::*;

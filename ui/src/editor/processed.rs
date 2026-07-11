@@ -1,10 +1,10 @@
-fn processed_page_step_lines() -> usize {
+pub(crate) fn processed_page_step_lines() -> usize {
     ((A4_HEIGHT_POINTS + PAGE_GAP) / LINE_HEIGHT)
         .round()
         .max(1.0) as usize
 }
 
-fn processed_page_geometry_with_header_offset(
+pub(crate) fn processed_page_geometry_with_header_offset(
     panel_size: Vec2,
     state: &EditorState,
     header_offset: f32,
@@ -43,7 +43,10 @@ fn processed_page_geometry_with_header_offset(
     }
 }
 
-fn processed_page_geometry(panel_size: Vec2, state: &EditorState) -> ProcessedPageGeometry {
+pub(crate) fn processed_page_geometry(
+    panel_size: Vec2,
+    state: &EditorState,
+) -> ProcessedPageGeometry {
     processed_page_geometry_with_header_offset(
         panel_size,
         state,
@@ -51,7 +54,7 @@ fn processed_page_geometry(panel_size: Vec2, state: &EditorState) -> ProcessedPa
     )
 }
 
-fn processed_page_layout(panel_size: Vec2, state: &EditorState) -> ProcessedPageLayout {
+pub(crate) fn processed_page_layout(panel_size: Vec2, state: &EditorState) -> ProcessedPageLayout {
     processed_page_layout_for_format(
         panel_size,
         state,
@@ -60,7 +63,7 @@ fn processed_page_layout(panel_size: Vec2, state: &EditorState) -> ProcessedPage
     )
 }
 
-fn processed_page_layout_for_format(
+pub(crate) fn processed_page_layout_for_format(
     panel_size: Vec2,
     state: &EditorState,
     document_format: DocumentFormat,
@@ -89,11 +92,14 @@ fn processed_page_layout_for_format(
     }
 }
 
-fn processed_anchor_scroll_offset_px(anchor_line_in_page: usize, line_height: f32) -> f32 {
+pub(crate) fn processed_anchor_scroll_offset_px(
+    anchor_line_in_page: usize,
+    line_height: f32,
+) -> f32 {
     anchor_line_in_page as f32 * line_height.max(1.0)
 }
 
-fn processed_anchor_scroll_offset_px_from_lines(
+pub(crate) fn processed_anchor_scroll_offset_px_from_lines(
     state: &EditorState,
     lines: &[ProcessedVisualLine],
     anchor_index: usize,
@@ -113,11 +119,14 @@ fn processed_anchor_scroll_offset_px_from_lines(
     height_units * line_height.max(1.0)
 }
 
-fn processed_page_step_px(geometry: &ProcessedPageGeometry, zoom: f32) -> f32 {
+pub(crate) fn processed_page_step_px(geometry: &ProcessedPageGeometry, zoom: f32) -> f32 {
     (geometry.paper_height + PAGE_GAP * zoom.max(f32::EPSILON)).max(1.0)
 }
 
-fn processed_page_count_for_lines(lines: &[ProcessedVisualLine], page_step_lines: usize) -> usize {
+pub(crate) fn processed_page_count_for_lines(
+    lines: &[ProcessedVisualLine],
+    page_step_lines: usize,
+) -> usize {
     let page_step_lines = page_step_lines.max(1);
     let page_count = lines
         .len()
@@ -126,7 +135,7 @@ fn processed_page_count_for_lines(lines: &[ProcessedVisualLine], page_step_lines
     page_count.max(1)
 }
 
-fn processed_page_top_for_slot(
+pub(crate) fn processed_page_top_for_slot(
     geometry: &ProcessedPageGeometry,
     slot: usize,
     page_step_px: f32,
@@ -135,7 +144,7 @@ fn processed_page_top_for_slot(
     geometry.paper_top + slot as f32 * page_step_px - anchor_scroll_offset_px
 }
 
-fn processed_text_top_for_slot(
+pub(crate) fn processed_text_top_for_slot(
     geometry: &ProcessedPageGeometry,
     slot: usize,
     page_step_px: f32,
@@ -146,7 +155,7 @@ fn processed_text_top_for_slot(
     page_top + (geometry.text_top - geometry.paper_top)
 }
 
-fn processed_anchor_page_top_for_state(
+pub(crate) fn processed_anchor_page_top_for_state(
     state: &mut EditorState,
     processed_panel_size: Option<Vec2>,
 ) -> Option<f32> {
@@ -184,7 +193,7 @@ fn processed_anchor_page_top_for_state(
     Some(page_top)
 }
 
-fn set_zoom_preserving_processed_anchor(
+pub(crate) fn set_zoom_preserving_processed_anchor(
     state: &mut EditorState,
     processed_panel_size: Option<Vec2>,
     next_zoom: f32,
@@ -197,7 +206,7 @@ fn set_zoom_preserving_processed_anchor(
     }
 }
 
-fn build_processed_view(
+pub(crate) fn build_processed_view(
     all_lines: &[ProcessedVisualLine],
     anchor_index: usize,
     page_step_lines: usize,
@@ -235,7 +244,7 @@ fn build_processed_view(
     }
 }
 
-fn processed_segment_ranges(state: &EditorState) -> Vec<(usize, usize, bool)> {
+pub(crate) fn processed_segment_ranges(state: &EditorState) -> Vec<(usize, usize, bool)> {
     let mut ranges = Vec::new();
     let mut segment_start = 0usize;
 
@@ -250,14 +259,14 @@ fn processed_segment_ranges(state: &EditorState) -> Vec<(usize, usize, bool)> {
     ranges
 }
 
-struct PreparedProcessedText {
-    text: String,
-    display_to_raw: Vec<usize>,
-    link_targets: Vec<Option<String>>,
-    inline_styles: Vec<InlineTextStyle>,
+pub(crate) struct PreparedProcessedText {
+    pub(crate) text: String,
+    pub(crate) display_to_raw: Vec<usize>,
+    pub(crate) link_targets: Vec<Option<String>>,
+    pub(crate) inline_styles: Vec<InlineTextStyle>,
 }
 
-fn identity_link_display_text(input: &str) -> LinkDisplayText {
+pub(crate) fn identity_link_display_text(input: &str) -> LinkDisplayText {
     let char_count = input.chars().count();
     LinkDisplayText {
         text: input.to_owned(),
@@ -265,7 +274,7 @@ fn identity_link_display_text(input: &str) -> LinkDisplayText {
     }
 }
 
-fn build_link_targets(
+pub(crate) fn build_link_targets(
     display_to_raw: &[usize],
     script_links: &[ScriptLink],
 ) -> Vec<Option<String>> {
@@ -292,7 +301,7 @@ fn build_link_targets(
         .collect()
 }
 
-fn prepare_processed_line_text(
+pub(crate) fn prepare_processed_line_text(
     parsed_line: &ParsedLine,
     raw_override_active: bool,
     render_override: Option<&ProcessedLineRenderOverride>,
@@ -348,7 +357,7 @@ fn prepare_processed_line_text(
     (prepared, checklist_state)
 }
 
-fn prepare_image_embed_line_text(parsed_line: &ParsedLine) -> PreparedProcessedText {
+pub(crate) fn prepare_image_embed_line_text(parsed_line: &ParsedLine) -> PreparedProcessedText {
     let chars = parsed_line.raw.chars().collect::<Vec<_>>();
     let mut filtered = String::new();
     let mut filtered_to_raw = vec![0usize];
@@ -396,14 +405,14 @@ fn prepare_image_embed_line_text(parsed_line: &ParsedLine) -> PreparedProcessedT
 }
 
 #[derive(Clone, Copy, Debug)]
-struct MarkdownOpenDelimiter {
-    marker: char,
-    start: usize,
-    used: usize,
-    remaining: usize,
+pub(crate) struct MarkdownOpenDelimiter {
+    pub(crate) marker: char,
+    pub(crate) start: usize,
+    pub(crate) used: usize,
+    pub(crate) remaining: usize,
 }
 
-fn markdown_inline_emphasis_allowed(kind: &LineKind) -> bool {
+pub(crate) fn markdown_inline_emphasis_allowed(kind: &LineKind) -> bool {
     matches!(
         kind,
         LineKind::MarkdownHeading
@@ -413,7 +422,9 @@ fn markdown_inline_emphasis_allowed(kind: &LineKind) -> bool {
     )
 }
 
-fn apply_markdown_inline_emphasis(prepared: PreparedProcessedText) -> PreparedProcessedText {
+pub(crate) fn apply_markdown_inline_emphasis(
+    prepared: PreparedProcessedText,
+) -> PreparedProcessedText {
     let chars = prepared.text.chars().collect::<Vec<_>>();
     if chars.is_empty() {
         return prepared;
@@ -468,7 +479,7 @@ fn apply_markdown_inline_emphasis(prepared: PreparedProcessedText) -> PreparedPr
     build_emphasized_processed_text(prepared, &chars, &remove, &styles)
 }
 
-fn close_markdown_emphasis_run(
+pub(crate) fn close_markdown_emphasis_run(
     stack: &mut Vec<MarkdownOpenDelimiter>,
     remove: &mut [bool],
     styles: &mut [InlineTextStyle],
@@ -525,7 +536,7 @@ fn close_markdown_emphasis_run(
     close_used
 }
 
-fn markdown_emphasis_pair_len(open_remaining: usize, close_remaining: usize) -> usize {
+pub(crate) fn markdown_emphasis_pair_len(open_remaining: usize, close_remaining: usize) -> usize {
     if open_remaining >= 3 && close_remaining >= 3 {
         3
     } else if open_remaining >= 2 && close_remaining >= 2 {
@@ -535,14 +546,14 @@ fn markdown_emphasis_pair_len(open_remaining: usize, close_remaining: usize) -> 
     }
 }
 
-fn markdown_emphasis_style_for_len(len: usize) -> InlineTextStyle {
+pub(crate) fn markdown_emphasis_style_for_len(len: usize) -> InlineTextStyle {
     InlineTextStyle {
         bold: len >= 2,
         italic: len == 1 || len >= 3,
     }
 }
 
-fn build_emphasized_processed_text(
+pub(crate) fn build_emphasized_processed_text(
     prepared: PreparedProcessedText,
     chars: &[char],
     remove: &[bool],
@@ -581,7 +592,7 @@ fn build_emphasized_processed_text(
     }
 }
 
-fn markdown_code_span_mask(chars: &[char]) -> Vec<bool> {
+pub(crate) fn markdown_code_span_mask(chars: &[char]) -> Vec<bool> {
     let mut mask = vec![false; chars.len()];
     let mut index = 0usize;
 
@@ -615,7 +626,7 @@ fn markdown_code_span_mask(chars: &[char]) -> Vec<bool> {
     mask
 }
 
-fn markdown_same_char_run_len(chars: &[char], start: usize, marker: char) -> usize {
+pub(crate) fn markdown_same_char_run_len(chars: &[char], start: usize, marker: char) -> usize {
     let mut len = 0usize;
     while chars.get(start + len).is_some_and(|ch| *ch == marker) {
         len += 1;
@@ -623,7 +634,7 @@ fn markdown_same_char_run_len(chars: &[char], start: usize, marker: char) -> usi
     len
 }
 
-fn markdown_delimiter_is_escaped(chars: &[char], index: usize) -> bool {
+pub(crate) fn markdown_delimiter_is_escaped(chars: &[char], index: usize) -> bool {
     let mut slash_count = 0usize;
     let mut cursor = index;
     while cursor > 0 && chars[cursor - 1] == '\\' {
@@ -633,7 +644,7 @@ fn markdown_delimiter_is_escaped(chars: &[char], index: usize) -> bool {
     slash_count % 2 == 1
 }
 
-fn markdown_delimiter_flanking(
+pub(crate) fn markdown_delimiter_flanking(
     chars: &[char],
     start: usize,
     len: usize,
@@ -664,7 +675,7 @@ fn markdown_delimiter_flanking(
     }
 }
 
-fn build_processed_segment_lines(
+pub(crate) fn build_processed_segment_lines(
     state: &EditorState,
     start_line: usize,
     end_line_exclusive: usize,
@@ -789,7 +800,7 @@ fn build_processed_segment_lines(
     paged_lines
 }
 
-fn build_processed_cache(
+pub(crate) fn build_processed_cache(
     state: &EditorState,
     wrap_columns: usize,
     lines_per_page: usize,
@@ -828,7 +839,7 @@ fn build_processed_cache(
     }
 }
 
-fn rebuild_processed_cache_segment(
+pub(crate) fn rebuild_processed_cache_segment(
     state: &EditorState,
     cache: &mut ProcessedCache,
     dirty_line: usize,
@@ -859,7 +870,7 @@ fn rebuild_processed_cache_segment(
     true
 }
 
-fn ensure_processed_cache(
+pub(crate) fn ensure_processed_cache(
     state: &mut EditorState,
     wrap_columns: usize,
     lines_per_page: usize,
@@ -925,7 +936,7 @@ fn ensure_processed_cache(
     }
 }
 
-fn processed_cache_lines<'a>(
+pub(crate) fn processed_cache_lines<'a>(
     state: &'a mut EditorState,
     wrap_columns: usize,
     lines_per_page: usize,
@@ -939,7 +950,7 @@ fn processed_cache_lines<'a>(
         .map_or(&[], |cache| cache.lines.as_slice())
 }
 
-fn processed_display_lines(
+pub(crate) fn processed_display_lines(
     state: &mut EditorState,
     wrap_columns: usize,
     lines_per_page: usize,
@@ -974,7 +985,7 @@ fn processed_display_lines(
     lines
 }
 
-fn push_processed_fragment(
+pub(crate) fn push_processed_fragment(
     fragments: &mut Vec<ProcessedVisualFragment>,
     text: String,
     is_link: bool,
@@ -1003,7 +1014,7 @@ fn push_processed_fragment(
     });
 }
 
-fn uppercase_processed_text(input: &str, uppercase: bool) -> String {
+pub(crate) fn uppercase_processed_text(input: &str, uppercase: bool) -> String {
     if uppercase {
         input.to_ascii_uppercase()
     } else {
@@ -1011,7 +1022,7 @@ fn uppercase_processed_text(input: &str, uppercase: bool) -> String {
     }
 }
 
-fn push_wrapped_visual_lines(
+pub(crate) fn push_wrapped_visual_lines(
     out: &mut Vec<ProcessedVisualLine>,
     source_line: usize,
     indent_width: usize,
@@ -1164,7 +1175,11 @@ fn push_wrapped_visual_lines(
     }
 }
 
-fn push_page_spacers(out: &mut Vec<ProcessedVisualLine>, source_line: usize, count: usize) {
+pub(crate) fn push_page_spacers(
+    out: &mut Vec<ProcessedVisualLine>,
+    source_line: usize,
+    count: usize,
+) {
     for _ in 0..count {
         out.push(ProcessedVisualLine {
             source_line,
@@ -1186,7 +1201,7 @@ fn push_page_spacers(out: &mut Vec<ProcessedVisualLine>, source_line: usize, cou
     }
 }
 
-fn processed_visual_line_height_units(
+pub(crate) fn processed_visual_line_height_units(
     state: &EditorState,
     visual_line: &ProcessedVisualLine,
 ) -> f32 {
@@ -1194,7 +1209,7 @@ fn processed_visual_line_height_units(
     style.line_height_scale.max(0.0)
 }
 
-fn processed_visual_line_top_units(
+pub(crate) fn processed_visual_line_top_units(
     state: &EditorState,
     lines: &[ProcessedVisualLine],
     page_start: usize,
@@ -1208,7 +1223,7 @@ fn processed_visual_line_top_units(
         .sum()
 }
 
-fn processed_visual_line_offset_at_height(
+pub(crate) fn processed_visual_line_offset_at_height(
     state: &EditorState,
     lines: &[ProcessedVisualLine],
     page_start: usize,
@@ -1233,7 +1248,7 @@ fn processed_visual_line_offset_at_height(
     last_visible
 }
 
-fn processed_visual_line_block_height_units(
+pub(crate) fn processed_visual_line_block_height_units(
     state: &EditorState,
     visual_line: &ProcessedVisualLine,
 ) -> f32 {
@@ -1244,7 +1259,7 @@ fn processed_visual_line_block_height_units(
         .unwrap_or_else(|| processed_visual_line_height_units(state, visual_line))
 }
 
-fn push_image_embed_visual_lines(
+pub(crate) fn push_image_embed_visual_lines(
     out: &mut Vec<ProcessedVisualLine>,
     source_line: usize,
     image_embeds: &[ImageEmbed],
@@ -1295,12 +1310,12 @@ fn push_image_embed_visual_lines(
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-struct ProcessedPageFill {
-    entries: usize,
-    height_units: f32,
+pub(crate) struct ProcessedPageFill {
+    pub(crate) entries: usize,
+    pub(crate) height_units: f32,
 }
 
-fn finish_processed_page(
+pub(crate) fn finish_processed_page(
     paged_lines: &mut Vec<ProcessedVisualLine>,
     source_line: usize,
     page_fill: &mut ProcessedPageFill,
@@ -1319,7 +1334,7 @@ fn finish_processed_page(
     *page_fill = ProcessedPageFill::default();
 }
 
-fn push_paged_visual_lines(
+pub(crate) fn push_paged_visual_lines(
     paged_lines: &mut Vec<ProcessedVisualLine>,
     lines: Vec<ProcessedVisualLine>,
     state: &EditorState,
@@ -1365,12 +1380,12 @@ fn push_paged_visual_lines(
     }
 }
 
-fn is_fountain_page_break_marker(raw: &str) -> bool {
+pub(crate) fn is_fountain_page_break_marker(raw: &str) -> bool {
     let trimmed = raw.trim();
     trimmed.chars().count() >= 3 && trimmed.chars().all(|ch| ch == '=')
 }
 
-fn should_split_on_double_space(state: &EditorState, kind: &LineKind) -> bool {
+pub(crate) fn should_split_on_double_space(state: &EditorState, kind: &LineKind) -> bool {
     if matches!(
         kind,
         LineKind::MarkdownHeading
@@ -1390,7 +1405,7 @@ fn should_split_on_double_space(state: &EditorState, kind: &LineKind) -> bool {
     }
 }
 
-fn first_visual_index_for_source_line(
+pub(crate) fn first_visual_index_for_source_line(
     lines: &[ProcessedVisualLine],
     source_line: usize,
 ) -> Option<usize> {
@@ -1404,7 +1419,7 @@ fn first_visual_index_for_source_line(
         })
 }
 
-fn double_space_segments(input: &str) -> Vec<(usize, usize)> {
+pub(crate) fn double_space_segments(input: &str) -> Vec<(usize, usize)> {
     let chars = input.chars().collect::<Vec<_>>();
     if chars.is_empty() {
         return vec![(0, 0)];
@@ -1430,7 +1445,7 @@ fn double_space_segments(input: &str) -> Vec<(usize, usize)> {
     segments
 }
 
-fn processed_raw_column_from_display(
+pub(crate) fn processed_raw_column_from_display(
     visual_line: &ProcessedVisualLine,
     display_column: usize,
 ) -> usize {
@@ -1443,7 +1458,7 @@ fn processed_raw_column_from_display(
         .unwrap_or(visual_line.raw_end_column)
 }
 
-fn processed_display_column_from_raw(
+pub(crate) fn processed_display_column_from_raw(
     visual_line: &ProcessedVisualLine,
     raw_column: usize,
 ) -> usize {
@@ -1461,14 +1476,14 @@ fn processed_display_column_from_raw(
     display_column.min(visual_line.text.chars().count())
 }
 
-fn processed_caret_visual<'a>(
+pub(crate) fn processed_caret_visual<'a>(
     state: &EditorState,
     processed_view: &'a ProcessedView,
 ) -> Option<(usize, usize, &'a ProcessedVisualLine)> {
     processed_cursor_visual_from_lines(state, &processed_view.lines)
 }
 
-fn processed_cursor_visual_from_lines<'a>(
+pub(crate) fn processed_cursor_visual_from_lines<'a>(
     state: &EditorState,
     lines: &'a [ProcessedVisualLine],
 ) -> Option<(usize, usize, &'a ProcessedVisualLine)> {
@@ -1509,7 +1524,10 @@ fn processed_cursor_visual_from_lines<'a>(
     ))
 }
 
-fn nearest_non_spacer_visual_index(lines: &[ProcessedVisualLine], index: usize) -> Option<usize> {
+pub(crate) fn nearest_non_spacer_visual_index(
+    lines: &[ProcessedVisualLine],
+    index: usize,
+) -> Option<usize> {
     if lines.is_empty() {
         return None;
     }
@@ -1532,7 +1550,7 @@ fn nearest_non_spacer_visual_index(lines: &[ProcessedVisualLine], index: usize) 
     None
 }
 
-fn processed_visual_fragment_for_part(
+pub(crate) fn processed_visual_fragment_for_part(
     visual_line: &ProcessedVisualLine,
     part_index: usize,
 ) -> Option<ProcessedVisualFragment> {
@@ -1576,7 +1594,7 @@ fn processed_visual_fragment_for_part(
     })
 }
 
-fn processed_visual_fragment_raw_range(
+pub(crate) fn processed_visual_fragment_raw_range(
     visual_line: &ProcessedVisualLine,
     part_index: usize,
 ) -> Option<(usize, usize)> {
@@ -1626,7 +1644,7 @@ fn processed_visual_fragment_raw_range(
     ))
 }
 
-fn processed_visual_fragment_count(visual_line: &ProcessedVisualLine) -> usize {
+pub(crate) fn processed_visual_fragment_count(visual_line: &ProcessedVisualLine) -> usize {
     visual_line
         .fragments
         .len()
@@ -1754,10 +1772,7 @@ mod processed_markdown_inline_tests {
         };
 
         assert_eq!(
-            font_variant_for_processed_fragment(
-                FontVariant::Bold,
-                &fragment,
-            ),
+            font_variant_for_processed_fragment(FontVariant::Bold, &fragment,),
             FontVariant::BoldItalic
         );
     }
@@ -1876,7 +1891,11 @@ mod processed_markdown_inline_tests {
             .expect("font should expose a family name")
             .to_owned();
         let fonts = Assets::<Font>::default();
-        let rows = [("body", 12.0, 12.0), ("Heading", 21.6, 25.8), (" ", 12.0, 12.0)];
+        let rows = [
+            ("body", 12.0, 12.0),
+            ("Heading", 21.6, 25.8),
+            (" ", 12.0, 12.0),
+        ];
         let mut pipeline = TextPipeline::default();
         let mut layout_cx = LayoutCx::default();
         for (index, (text, font_size, expected_height)) in rows.into_iter().enumerate() {
@@ -1915,7 +1934,7 @@ mod processed_markdown_inline_tests {
     }
 }
 
-fn apply_processed_styles(
+pub(crate) fn apply_processed_styles(
     processed_span_query: &mut Query<
         (
             &ProcessedPaperLineSpan,
@@ -2007,40 +2026,37 @@ fn apply_processed_styles(
             continue;
         };
 
-        let effective_variant = font_variant_for_processed_fragment(
-            style.font_variant,
-            &fragment,
-        );
+        let effective_variant = font_variant_for_processed_fragment(style.font_variant, &fragment);
         let fragment_raw_range =
             processed_visual_fragment_raw_range(visual_line, processed_span.part_index);
         let next_font_size = FontSize::Px(font_size * style.font_scale);
-        let next_line_height = LineHeight::Px(
-            line_height * processed_visual_line_height_units(state, visual_line),
-        );
-        let next_color = if allow_link_color && fragment.is_link {
-            let hovered = state
-                .hovered_processed_link
-                .as_ref()
-                .is_some_and(|hovered| {
-                    fragment_raw_range.is_some_and(|(raw_start, raw_end)| {
-                        hovered.source_line == visual_line.source_line
-                            && raw_start < hovered.raw_end_column
-                            && raw_end > hovered.raw_start_column
-                    })
-                });
-            match state.processed_link_color_mode {
-                ProcessedLinkColorMode::Colored if hovered => state
-                    .hovered_processed_link_color_for_target(fragment.link_target.as_deref()),
-                ProcessedLinkColorMode::Colored => {
-                    state.processed_link_color_for_target(fragment.link_target.as_deref())
+        let next_line_height =
+            LineHeight::Px(line_height * processed_visual_line_height_units(state, visual_line));
+        let next_color =
+            if allow_link_color && fragment.is_link {
+                let hovered = state
+                    .hovered_processed_link
+                    .as_ref()
+                    .is_some_and(|hovered| {
+                        fragment_raw_range.is_some_and(|(raw_start, raw_end)| {
+                            hovered.source_line == visual_line.source_line
+                                && raw_start < hovered.raw_end_column
+                                && raw_end > hovered.raw_start_column
+                        })
+                    });
+                match state.processed_link_color_mode {
+                    ProcessedLinkColorMode::Colored if hovered => state
+                        .hovered_processed_link_color_for_target(fragment.link_target.as_deref()),
+                    ProcessedLinkColorMode::Colored => {
+                        state.processed_link_color_for_target(fragment.link_target.as_deref())
+                    }
+                    ProcessedLinkColorMode::Hovered if hovered => state
+                        .hovered_processed_link_color_for_target(fragment.link_target.as_deref()),
+                    ProcessedLinkColorMode::Hovered | ProcessedLinkColorMode::Plain => style.color,
                 }
-                ProcessedLinkColorMode::Hovered if hovered => state
-                    .hovered_processed_link_color_for_target(fragment.link_target.as_deref()),
-                ProcessedLinkColorMode::Hovered | ProcessedLinkColorMode::Plain => style.color,
-            }
-        } else {
-            style.color
-        };
+            } else {
+                style.color
+            };
         apply_font_variant_to_text_font(
             &mut text_font,
             fonts,
@@ -2062,7 +2078,7 @@ fn apply_processed_styles(
     }
 }
 
-fn panel_layout_info<'a>(
+pub(crate) fn panel_layout_info<'a>(
     text_layout_query: &'a Query<(&PanelText, &ComputedTextBlock)>,
     kind: PanelKind,
 ) -> Option<&'a ComputedTextBlock> {
@@ -2075,7 +2091,7 @@ fn panel_layout_info<'a>(
 /// Reads the exact shaped line box from Parley's `ComputedTextBlock` buffer.
 /// Bevy 0.19's renderer-facing glyphs intentionally no longer expose source
 /// byte ranges or glyph sizes.
-fn line_top_from_layout(
+pub(crate) fn line_top_from_layout(
     text_block: &ComputedTextBlock,
     line_index: usize,
     inverse_scale: f32,
@@ -2086,7 +2102,7 @@ fn line_top_from_layout(
         .map(|line| line.metrics().block_min_coord * inverse_scale)
 }
 
-fn line_height_from_layout(
+pub(crate) fn line_height_from_layout(
     text_block: &ComputedTextBlock,
     line_index: usize,
     inverse_scale: f32,
@@ -2097,7 +2113,7 @@ fn line_height_from_layout(
     })
 }
 
-fn line_index_from_layout_y(
+pub(crate) fn line_index_from_layout_y(
     text_block: &ComputedTextBlock,
     y: f32,
     visible_lines: usize,
@@ -2136,7 +2152,7 @@ fn line_index_from_layout_y(
         .map(|(line_index, _)| line_index)
 }
 
-fn line_boundaries(
+pub(crate) fn line_boundaries(
     text_block: &ComputedTextBlock,
     line_index: usize,
     line_text: &str,
@@ -2195,7 +2211,7 @@ fn line_boundaries(
         .collect()
 }
 
-fn caret_x_from_layout(
+pub(crate) fn caret_x_from_layout(
     text_block: &ComputedTextBlock,
     line_index: usize,
     line_text: &str,
@@ -2217,7 +2233,7 @@ fn caret_x_from_layout(
         .or_else(|| boundaries.last().map(|(_, x)| *x))
 }
 
-fn column_from_layout_x(
+pub(crate) fn column_from_layout_x(
     text_block: &ComputedTextBlock,
     line_index: usize,
     x: f32,
@@ -2242,7 +2258,7 @@ fn column_from_layout_x(
     Some(byte_to_char_index(line_text, *best_byte))
 }
 
-fn char_to_byte_index(input: &str, column: usize) -> usize {
+pub(crate) fn char_to_byte_index(input: &str, column: usize) -> usize {
     if column == 0 {
         return 0;
     }
@@ -2254,7 +2270,7 @@ fn char_to_byte_index(input: &str, column: usize) -> usize {
         .unwrap_or(input.len())
 }
 
-fn byte_to_char_index(input: &str, byte_index: usize) -> usize {
+pub(crate) fn byte_to_char_index(input: &str, byte_index: usize) -> usize {
     if byte_index == 0 {
         return 0;
     }
@@ -2265,10 +2281,12 @@ fn byte_to_char_index(input: &str, byte_index: usize) -> usize {
         .count()
 }
 
-fn is_printable_char(chr: char) -> bool {
+pub(crate) fn is_printable_char(chr: char) -> bool {
     let private_use = ('\u{e000}'..='\u{f8ff}').contains(&chr)
         || ('\u{f0000}'..='\u{ffffd}').contains(&chr)
         || ('\u{100000}'..='\u{10fffd}').contains(&chr);
 
     !private_use && !chr.is_ascii_control()
 }
+#[allow(unused_imports)]
+use super::*;

@@ -1,26 +1,26 @@
-const CANVAS_ZOOM_MIN: f32 = 0.1;
-const CANVAS_ZOOM_MAX: f32 = 4.0;
-const CANVAS_SCROLL_STEP_PX: f32 = 64.0;
-const CANVAS_VIEW_MARGIN: f32 = 120.0;
-const CANVAS_NODE_DEFAULT_WIDTH: f32 = 260.0;
-const CANVAS_NODE_DEFAULT_HEIGHT: f32 = 160.0;
-const CANVAS_TEXT_PADDING_X: f32 = 10.0;
-const CANVAS_TEXT_PADDING_Y: f32 = 10.0;
+pub(crate) const CANVAS_ZOOM_MIN: f32 = 0.1;
+pub(crate) const CANVAS_ZOOM_MAX: f32 = 4.0;
+pub(crate) const CANVAS_SCROLL_STEP_PX: f32 = 64.0;
+pub(crate) const CANVAS_VIEW_MARGIN: f32 = 120.0;
+pub(crate) const CANVAS_NODE_DEFAULT_WIDTH: f32 = 260.0;
+pub(crate) const CANVAS_NODE_DEFAULT_HEIGHT: f32 = 160.0;
+pub(crate) const CANVAS_TEXT_PADDING_X: f32 = 10.0;
+pub(crate) const CANVAS_TEXT_PADDING_Y: f32 = 10.0;
 
-const COLOR_CANVAS_BG: Color = Color::srgb(0.38, 0.40, 0.43);
+pub(crate) const COLOR_CANVAS_BG: Color = Color::srgb(0.38, 0.40, 0.43);
 
 #[derive(Component)]
-struct PanelCanvas {
-    kind: PanelKind,
+pub(crate) struct PanelCanvas {
+    pub(crate) kind: PanelKind,
 }
 
 #[derive(Resource, Default)]
-struct CanvasDragState {
-    active: Option<CanvasDragMode>,
-    last_cursor_position: Option<Vec2>,
+pub(crate) struct CanvasDragState {
+    pub(crate) active: Option<CanvasDragMode>,
+    pub(crate) last_cursor_position: Option<Vec2>,
 }
 
-enum CanvasDragMode {
+pub(crate) enum CanvasDragMode {
     Pan {
         button: CanvasPanButton,
     },
@@ -35,13 +35,13 @@ enum CanvasDragMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CanvasPanButton {
+pub(crate) enum CanvasPanButton {
     SpaceLeft,
     Middle,
 }
 
 impl EditorState {
-    fn sync_canvas_document(&mut self) {
+    pub(crate) fn sync_canvas_document(&mut self) {
         if self.document_format != DocumentFormat::Canvas {
             self.canvas_document = None;
             self.canvas_parse_error = None;
@@ -67,7 +67,7 @@ impl EditorState {
         self.canvas_version = self.canvas_version.saturating_add(1);
     }
 
-    fn reset_canvas_view_to_content(&mut self) {
+    pub(crate) fn reset_canvas_view_to_content(&mut self) {
         self.canvas_view_needs_centering = true;
         let Some(bounds) = self.canvas_bounds() else {
             self.canvas_pan = Vec2::ZERO;
@@ -80,7 +80,7 @@ impl EditorState {
         );
     }
 
-    fn center_canvas_view_in_panel(&mut self, panel_size: Vec2) {
+    pub(crate) fn center_canvas_view_in_panel(&mut self, panel_size: Vec2) {
         let Some(bounds) = self.canvas_bounds() else {
             self.canvas_pan = Vec2::ZERO;
             self.canvas_view_needs_centering = false;
@@ -94,7 +94,7 @@ impl EditorState {
         self.canvas_view_needs_centering = false;
     }
 
-    fn canvas_bounds(&self) -> Option<Rect> {
+    pub(crate) fn canvas_bounds(&self) -> Option<Rect> {
         let canvas = self.canvas_document.as_ref()?;
         let mut min = Vec2::new(f32::INFINITY, f32::INFINITY);
         let mut max = Vec2::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
@@ -110,11 +110,11 @@ impl EditorState {
         min.x.is_finite().then_some(Rect { min, max })
     }
 
-    fn canvas_world_from_panel_pos(&self, panel_pos: Vec2) -> Vec2 {
+    pub(crate) fn canvas_world_from_panel_pos(&self, panel_pos: Vec2) -> Vec2 {
         self.canvas_pan + panel_pos / self.zoom.max(CANVAS_ZOOM_MIN)
     }
 
-    fn canvas_node_index_at_world(&self, world: Vec2) -> Option<usize> {
+    pub(crate) fn canvas_node_index_at_world(&self, world: Vec2) -> Option<usize> {
         let canvas = self.canvas_document.as_ref()?;
         canvas
             .nodes
@@ -131,7 +131,7 @@ impl EditorState {
             })
     }
 
-    fn move_canvas_node_by_delta(&mut self, node_id: &str, delta: Vec2) -> bool {
+    pub(crate) fn move_canvas_node_by_delta(&mut self, node_id: &str, delta: Vec2) -> bool {
         let Some((next_x, next_y)) = self
             .canvas_document
             .as_ref()
@@ -163,7 +163,11 @@ impl EditorState {
         }
     }
 
-    fn begin_canvas_text_edit(&mut self, node_id: String, cursor_position: Option<Position>) {
+    pub(crate) fn begin_canvas_text_edit(
+        &mut self,
+        node_id: String,
+        cursor_position: Option<Position>,
+    ) {
         self.workspace_focused = false;
         self.focused_panel = PanelKind::Processed;
 
@@ -202,7 +206,7 @@ impl EditorState {
         self.reset_blink();
     }
 
-    fn clear_canvas_text_edit(&mut self) {
+    pub(crate) fn clear_canvas_text_edit(&mut self) {
         let was_editing = self.canvas_editing_node_id.is_some();
         self.canvas_editing_node_id = None;
         self.canvas_text_cursor = Cursor::default();
@@ -215,7 +219,7 @@ impl EditorState {
         self.reset_blink();
     }
 
-    fn canvas_text_node_content(&self, node_id: &str) -> Option<String> {
+    pub(crate) fn canvas_text_node_content(&self, node_id: &str) -> Option<String> {
         self.canvas_document
             .as_ref()?
             .nodes
@@ -227,7 +231,7 @@ impl EditorState {
             })
     }
 
-    fn set_canvas_text_node_content(&mut self, node_id: &str, text: String) -> bool {
+    pub(crate) fn set_canvas_text_node_content(&mut self, node_id: &str, text: String) -> bool {
         match update_canvas_text_node_content(&self.document.to_text(), node_id, &text) {
             Ok(updated_document) => {
                 self.document = Document::from_text(&updated_document);
@@ -250,13 +254,13 @@ impl EditorState {
         }
     }
 
-    fn active_canvas_text_document(&self) -> Option<Document> {
+    pub(crate) fn active_canvas_text_document(&self) -> Option<Document> {
         let node_id = self.canvas_editing_node_id.as_deref()?;
         self.canvas_text_node_content(node_id)
             .map(|text| Document::from_text(&text))
     }
 
-    fn active_canvas_text_node_index(&self) -> Option<usize> {
+    pub(crate) fn active_canvas_text_node_index(&self) -> Option<usize> {
         let node_id = self.canvas_editing_node_id.as_deref()?;
         self.canvas_document
             .as_ref()?
@@ -265,7 +269,10 @@ impl EditorState {
             .position(|node| node.id == node_id)
     }
 
-    fn canvas_text_selection_bounds(&self, document: &Document) -> Option<(Position, Position)> {
+    pub(crate) fn canvas_text_selection_bounds(
+        &self,
+        document: &Document,
+    ) -> Option<(Position, Position)> {
         let anchor = self.canvas_text_selection_anchor?;
         let anchor = document.clamp_position(anchor);
         let head = document.clamp_position(self.canvas_text_cursor.position);
@@ -280,7 +287,7 @@ impl EditorState {
         }
     }
 
-    fn set_canvas_text_cursor_with_selection(
+    pub(crate) fn set_canvas_text_cursor_with_selection(
         &mut self,
         document: &Document,
         position: Position,
@@ -306,7 +313,7 @@ impl EditorState {
         self.canvas_version = self.canvas_version.saturating_add(1);
     }
 
-    fn delete_canvas_text_selection(&mut self, document: &mut Document) -> bool {
+    pub(crate) fn delete_canvas_text_selection(&mut self, document: &mut Document) -> bool {
         let Some((start, end)) = self.canvas_text_selection_bounds(document) else {
             return false;
         };
@@ -317,7 +324,7 @@ impl EditorState {
     }
 }
 
-fn canvas_text_end_position(text: &str) -> Position {
+pub(crate) fn canvas_text_end_position(text: &str) -> Position {
     let document = Document::from_text(text);
     let line = document.line_count().saturating_sub(1);
     Position {
@@ -326,7 +333,7 @@ fn canvas_text_end_position(text: &str) -> Position {
     }
 }
 
-fn canvas_text_position_from_world(
+pub(crate) fn canvas_text_position_from_world(
     node: &basscript_core::CanvasNode,
     text: &str,
     world_pos: Vec2,
@@ -357,7 +364,7 @@ fn canvas_text_position_from_world(
     }
 }
 
-fn active_canvas_text_layout<'a>(
+pub(crate) fn active_canvas_text_layout<'a>(
     state: &EditorState,
     text_layout_query: &'a Query<(
         &CanvasRenderedNodeText,
@@ -369,7 +376,7 @@ fn active_canvas_text_layout<'a>(
     canvas_text_layout_for_node(text_layout_query, node_index)
 }
 
-fn move_canvas_text_cursor_by_key(
+pub(crate) fn move_canvas_text_cursor_by_key(
     state: &mut EditorState,
     document: &Document,
     key: KeyCode,
@@ -404,7 +411,7 @@ fn move_canvas_text_cursor_by_key(
     next != current || extend_selection
 }
 
-fn canvas_text_visual_arrow_position(
+pub(crate) fn canvas_text_visual_arrow_position(
     document: &Document,
     current: Position,
     key: KeyCode,
@@ -453,7 +460,7 @@ fn canvas_text_visual_arrow_position(
     )
 }
 
-fn update_canvas_text_drag_selection(
+pub(crate) fn update_canvas_text_drag_selection(
     state: &mut EditorState,
     node_id: &str,
     anchor: Position,
@@ -503,7 +510,7 @@ fn update_canvas_text_drag_selection(
     false
 }
 
-fn canvas_text_editable_key(key: KeyCode) -> bool {
+pub(crate) fn canvas_text_editable_key(key: KeyCode) -> bool {
     matches!(
         key,
         KeyCode::ArrowLeft
@@ -515,33 +522,33 @@ fn canvas_text_editable_key(key: KeyCode) -> bool {
     )
 }
 
-fn canvas_text_arrow_key(key: KeyCode) -> bool {
+pub(crate) fn canvas_text_arrow_key(key: KeyCode) -> bool {
     matches!(
         key,
         KeyCode::ArrowLeft | KeyCode::ArrowRight | KeyCode::ArrowUp | KeyCode::ArrowDown
     )
 }
 
-fn canvas_text_font_size(zoom: f32) -> f32 {
+pub(crate) fn canvas_text_font_size(zoom: f32) -> f32 {
     (FONT_SIZE * zoom.max(CANVAS_ZOOM_MIN)).clamp(7.0, 28.0)
 }
 
-fn canvas_text_line_height(zoom: f32) -> f32 {
+pub(crate) fn canvas_text_line_height(zoom: f32) -> f32 {
     (canvas_text_font_size(zoom) * 1.25).max(1.0)
 }
 
-fn canvas_text_char_width(zoom: f32) -> f32 {
+pub(crate) fn canvas_text_char_width(zoom: f32) -> f32 {
     (canvas_text_font_size(zoom) * 0.55).max(1.0)
 }
 
-fn canvas_node_size(width: f32, height: f32) -> Vec2 {
+pub(crate) fn canvas_node_size(width: f32, height: f32) -> Vec2 {
     Vec2::new(
         width.max(CANVAS_NODE_DEFAULT_WIDTH),
         height.max(CANVAS_NODE_DEFAULT_HEIGHT),
     )
 }
 
-fn handle_canvas_drag_input(
+pub(crate) fn handle_canvas_drag_input(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
@@ -639,7 +646,7 @@ fn handle_canvas_drag_input(
     }
 }
 
-fn start_canvas_drag_if_requested(
+pub(crate) fn start_canvas_drag_if_requested(
     mouse_buttons: &ButtonInput<MouseButton>,
     keys: &ButtonInput<KeyCode>,
     panel_query: &Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
@@ -746,7 +753,7 @@ fn start_canvas_drag_if_requested(
     }
 }
 
-fn start_canvas_pan_drag(
+pub(crate) fn start_canvas_pan_drag(
     drag_state: &mut CanvasDragState,
     state: &mut EditorState,
     cursor_position: Vec2,
@@ -758,7 +765,7 @@ fn start_canvas_pan_drag(
     drag_state.last_cursor_position = Some(cursor_position);
 }
 
-fn canvas_drag_mode_still_active(
+pub(crate) fn canvas_drag_mode_still_active(
     mode: &CanvasDragMode,
     mouse_buttons: &ButtonInput<MouseButton>,
     keys: &ButtonInput<KeyCode>,
@@ -775,7 +782,7 @@ fn canvas_drag_mode_still_active(
     }
 }
 
-fn handle_canvas_text_edit_input(
+pub(crate) fn handle_canvas_text_edit_input(
     mut keyboard_inputs: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
@@ -985,3 +992,5 @@ fn handle_canvas_text_edit_input(
     state.refresh_link_autocomplete_for_canvas_text_cursor(&document);
     state.reset_blink();
 }
+#[allow(unused_imports)]
+use super::*;

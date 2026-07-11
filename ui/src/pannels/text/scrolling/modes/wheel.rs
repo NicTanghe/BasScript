@@ -1,4 +1,4 @@
-fn handle_mouse_scroll(
+pub(crate) fn handle_mouse_scroll(
     mut mouse_wheels: MessageReader<MouseWheel>,
     keys: Res<ButtonInput<KeyCode>>,
     panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
@@ -142,7 +142,7 @@ fn handle_mouse_scroll(
     }
 }
 
-fn handle_canvas_mouse_scroll(
+pub(crate) fn handle_canvas_mouse_scroll(
     mouse_wheels: &mut MessageReader<MouseWheel>,
     keys: &ButtonInput<KeyCode>,
     panel_context: &ScrollPanelsContext,
@@ -191,3 +191,5 @@ fn handle_canvas_mouse_scroll(
     state.canvas_pan.x += -dx / zoom;
     state.canvas_pan.y += -dy / zoom;
 }
+#[allow(unused_imports)]
+use super::*;

@@ -1,4 +1,4 @@
-fn handle_vim_input(
+pub(crate) fn handle_vim_input(
     mut keyboard_inputs: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
@@ -127,7 +127,7 @@ fn handle_vim_input(
     }
 }
 
-fn handle_canvas_vim_input(
+pub(crate) fn handle_canvas_vim_input(
     keyboard_inputs: &mut MessageReader<KeyboardInput>,
     keys: &ButtonInput<KeyCode>,
     time: &Time,
@@ -253,7 +253,7 @@ fn handle_canvas_vim_input(
     }
 }
 
-fn canvas_vim_enter_normal_mode(state: &mut EditorState, clear_selection: bool) {
+pub(crate) fn canvas_vim_enter_normal_mode(state: &mut EditorState, clear_selection: bool) {
     state.close_link_autocomplete();
     state.vim_mode = VimMode::Normal;
     state.vim_pending_operator = None;
@@ -268,7 +268,7 @@ fn canvas_vim_enter_normal_mode(state: &mut EditorState, clear_selection: bool) 
     state.status_message = "Vim normal mode.".to_string();
 }
 
-fn canvas_vim_enter_insert_mode(state: &mut EditorState) {
+pub(crate) fn canvas_vim_enter_insert_mode(state: &mut EditorState) {
     state.vim_mode = VimMode::Insert;
     state.vim_pending_operator = None;
     state.vim_visual_anchor = None;
@@ -277,7 +277,7 @@ fn canvas_vim_enter_insert_mode(state: &mut EditorState) {
     state.status_message = "Vim insert mode.".to_string();
 }
 
-fn canvas_vim_enter_visual_char_mode(state: &mut EditorState) {
+pub(crate) fn canvas_vim_enter_visual_char_mode(state: &mut EditorState) {
     state.close_link_autocomplete();
     let cursor = state.canvas_text_cursor.position;
     state.vim_mode = VimMode::VisualChar;
@@ -289,7 +289,7 @@ fn canvas_vim_enter_visual_char_mode(state: &mut EditorState) {
     state.status_message = "Vim visual mode.".to_string();
 }
 
-fn canvas_vim_enter_visual_line_mode(state: &mut EditorState, document: &Document) {
+pub(crate) fn canvas_vim_enter_visual_line_mode(state: &mut EditorState, document: &Document) {
     state.close_link_autocomplete();
     let line = state
         .canvas_text_cursor
@@ -311,7 +311,7 @@ fn canvas_vim_enter_visual_line_mode(state: &mut EditorState, document: &Documen
     state.status_message = "Vim visual line mode.".to_string();
 }
 
-fn canvas_vim_move_text_cursor(
+pub(crate) fn canvas_vim_move_text_cursor(
     state: &mut EditorState,
     document: &Document,
     key: KeyCode,
@@ -330,7 +330,7 @@ fn canvas_vim_move_text_cursor(
     move_canvas_text_cursor_by_key(state, document, arrow, extend_selection, layout, zoom)
 }
 
-fn canvas_vim_move_visual_line(
+pub(crate) fn canvas_vim_move_visual_line(
     state: &mut EditorState,
     document: &Document,
     arrow: KeyCode,
@@ -371,7 +371,7 @@ fn canvas_vim_move_visual_line(
     true
 }
 
-fn canvas_vim_handle_edit_command(
+pub(crate) fn canvas_vim_handle_edit_command(
     keys: &ButtonInput<KeyCode>,
     state: &mut EditorState,
     node_id: &str,
@@ -386,7 +386,7 @@ fn canvas_vim_handle_edit_command(
     }
 }
 
-fn canvas_vim_handle_normal_command(
+pub(crate) fn canvas_vim_handle_normal_command(
     keys: &ButtonInput<KeyCode>,
     state: &mut EditorState,
     node_id: &str,
@@ -432,7 +432,7 @@ fn canvas_vim_handle_normal_command(
     false
 }
 
-fn canvas_vim_handle_visual_command(
+pub(crate) fn canvas_vim_handle_visual_command(
     keys: &ButtonInput<KeyCode>,
     state: &mut EditorState,
     node_id: &str,
@@ -468,7 +468,7 @@ fn canvas_vim_handle_visual_command(
     false
 }
 
-fn canvas_delete_current_text_line(state: &mut EditorState, document: &mut Document) {
+pub(crate) fn canvas_delete_current_text_line(state: &mut EditorState, document: &mut Document) {
     let line = state
         .canvas_text_cursor
         .position
@@ -494,7 +494,7 @@ fn canvas_delete_current_text_line(state: &mut EditorState, document: &mut Docum
     state.canvas_text_selection_anchor = None;
 }
 
-fn canvas_paste_vim_register(state: &mut EditorState, document: &mut Document) -> bool {
+pub(crate) fn canvas_paste_vim_register(state: &mut EditorState, document: &mut Document) -> bool {
     let Some(register) = current_vim_register(state) else {
         state.status_message = "Vim register and clipboard are empty.".to_string();
         return false;
@@ -512,7 +512,7 @@ fn canvas_paste_vim_register(state: &mut EditorState, document: &mut Document) -
     true
 }
 
-fn canvas_commit_text_change(
+pub(crate) fn canvas_commit_text_change(
     state: &mut EditorState,
     node_id: &str,
     document: &Document,
@@ -526,7 +526,7 @@ fn canvas_commit_text_change(
     }
 }
 
-fn handle_vim_non_movement_command(
+pub(crate) fn handle_vim_non_movement_command(
     keys: &ButtonInput<KeyCode>,
     state: &mut EditorState,
     processed_panel_size: Option<Vec2>,
@@ -543,7 +543,7 @@ fn handle_vim_non_movement_command(
     }
 }
 
-fn handle_vim_normal_command(
+pub(crate) fn handle_vim_normal_command(
     keys: &ButtonInput<KeyCode>,
     state: &mut EditorState,
     processed_panel_size: Option<Vec2>,
@@ -626,7 +626,7 @@ fn handle_vim_normal_command(
     false
 }
 
-fn vim_delete_normal_selection(state: &mut EditorState) -> Option<usize> {
+pub(crate) fn vim_delete_normal_selection(state: &mut EditorState) -> Option<usize> {
     let (start, end) = state.selection_bounds()?;
     let text = document_text_range(&state.document, start, end);
     if text.is_empty() {
@@ -643,7 +643,7 @@ fn vim_delete_normal_selection(state: &mut EditorState) -> Option<usize> {
     Some(start.line)
 }
 
-fn handle_vim_visual_command(
+pub(crate) fn handle_vim_visual_command(
     keys: &ButtonInput<KeyCode>,
     state: &mut EditorState,
     processed_panel_size: Option<Vec2>,
@@ -669,7 +669,7 @@ fn handle_vim_visual_command(
     false
 }
 
-fn vim_enter_normal_mode(state: &mut EditorState, clear_selection: bool) {
+pub(crate) fn vim_enter_normal_mode(state: &mut EditorState, clear_selection: bool) {
     state.close_link_autocomplete();
     let visual_line_head = (state.vim_mode == VimMode::VisualLine)
         .then_some(state.vim_visual_head)
@@ -691,7 +691,7 @@ fn vim_enter_normal_mode(state: &mut EditorState, clear_selection: bool) {
     state.status_message = "Vim normal mode.".to_string();
 }
 
-fn vim_enter_insert_mode(state: &mut EditorState) {
+pub(crate) fn vim_enter_insert_mode(state: &mut EditorState) {
     state.vim_mode = VimMode::Insert;
     state.vim_pending_operator = None;
     state.vim_visual_anchor = None;
@@ -700,7 +700,7 @@ fn vim_enter_insert_mode(state: &mut EditorState) {
     state.status_message = "Vim insert mode.".to_string();
 }
 
-fn vim_append_position(document: &Document, position: Position) -> Position {
+pub(crate) fn vim_append_position(document: &Document, position: Position) -> Position {
     let current = document.clamp_position(position);
     let line_len = document.line_len_chars(current.line);
     Position {
@@ -709,7 +709,7 @@ fn vim_append_position(document: &Document, position: Position) -> Position {
     }
 }
 
-fn vim_enter_visual_char_mode(state: &mut EditorState) {
+pub(crate) fn vim_enter_visual_char_mode(state: &mut EditorState) {
     state.close_link_autocomplete();
     let cursor = state.cursor.position;
     state.vim_mode = VimMode::VisualChar;
@@ -720,7 +720,7 @@ fn vim_enter_visual_char_mode(state: &mut EditorState) {
     state.status_message = "Vim visual mode.".to_string();
 }
 
-fn vim_enter_visual_line_mode(state: &mut EditorState) {
+pub(crate) fn vim_enter_visual_line_mode(state: &mut EditorState) {
     state.close_link_autocomplete();
     let cursor = state.cursor.position;
     state.vim_mode = VimMode::VisualLine;
@@ -731,7 +731,7 @@ fn vim_enter_visual_line_mode(state: &mut EditorState) {
     state.status_message = "Vim visual line mode.".to_string();
 }
 
-fn move_vim_cursor(
+pub(crate) fn move_vim_cursor(
     state: &mut EditorState,
     key: KeyCode,
     processed_panel_size: Option<Vec2>,
@@ -752,7 +752,7 @@ fn move_vim_cursor(
     }
 }
 
-fn move_vim_visual_line_cursor(
+pub(crate) fn move_vim_visual_line_cursor(
     state: &mut EditorState,
     arrow: KeyCode,
     processed_panel_size: Option<Vec2>,
@@ -768,7 +768,7 @@ fn move_vim_visual_line_cursor(
     moved
 }
 
-fn apply_vim_linewise_selection(state: &mut EditorState) {
+pub(crate) fn apply_vim_linewise_selection(state: &mut EditorState) {
     let anchor_line = state
         .vim_visual_anchor
         .unwrap_or(state.cursor.position)
@@ -802,7 +802,7 @@ fn apply_vim_linewise_selection(state: &mut EditorState) {
     state.cursor.preferred_column = end.column;
 }
 
-fn vim_yank_current_line(state: &mut EditorState) {
+pub(crate) fn vim_yank_current_line(state: &mut EditorState) {
     let line = state
         .cursor
         .position
@@ -813,7 +813,7 @@ fn vim_yank_current_line(state: &mut EditorState) {
     state.status_message = "Yanked line.".to_string();
 }
 
-fn vim_yank_visual_selection(state: &mut EditorState) {
+pub(crate) fn vim_yank_visual_selection(state: &mut EditorState) {
     match state.vim_mode {
         VimMode::VisualLine => {
             let text = vim_linewise_selection_text(state);
@@ -833,7 +833,7 @@ fn vim_yank_visual_selection(state: &mut EditorState) {
     }
 }
 
-fn vim_delete_current_line(state: &mut EditorState) -> Option<usize> {
+pub(crate) fn vim_delete_current_line(state: &mut EditorState) -> Option<usize> {
     let snapshot = state.history_snapshot();
     let line = state
         .cursor
@@ -897,7 +897,7 @@ fn vim_delete_current_line(state: &mut EditorState) -> Option<usize> {
     Some(dirty_line)
 }
 
-fn vim_delete_visual_selection(state: &mut EditorState) -> Option<usize> {
+pub(crate) fn vim_delete_visual_selection(state: &mut EditorState) -> Option<usize> {
     let (register, start, end) = match state.vim_mode {
         VimMode::VisualLine => {
             let text = vim_linewise_selection_text(state);
@@ -926,7 +926,7 @@ fn vim_delete_visual_selection(state: &mut EditorState) -> Option<usize> {
     Some(start.line)
 }
 
-fn vim_paste_register(state: &mut EditorState) -> Option<usize> {
+pub(crate) fn vim_paste_register(state: &mut EditorState) -> Option<usize> {
     let Some(register) = current_vim_register(state) else {
         state.status_message = "Vim register and clipboard are empty.".to_string();
         return None;
@@ -968,7 +968,7 @@ fn vim_paste_register(state: &mut EditorState) -> Option<usize> {
     Some(dirty_line)
 }
 
-fn vim_linewise_selection_text(state: &EditorState) -> String {
+pub(crate) fn vim_linewise_selection_text(state: &EditorState) -> String {
     let anchor_line = state
         .vim_visual_anchor
         .unwrap_or(state.cursor.position)
@@ -988,7 +988,7 @@ fn vim_linewise_selection_text(state: &EditorState) -> String {
         .join("\n")
 }
 
-fn document_text_range(document: &Document, start: Position, end: Position) -> String {
+pub(crate) fn document_text_range(document: &Document, start: Position, end: Position) -> String {
     let start = document.clamp_position(start);
     let end = document.clamp_position(end);
     if start.line > end.line || (start.line == end.line && start.column >= end.column) {
@@ -1019,7 +1019,7 @@ fn document_text_range(document: &Document, start: Position, end: Position) -> S
     out
 }
 
-fn vim_char_to_byte_index(input: &str, column: usize) -> usize {
+pub(crate) fn vim_char_to_byte_index(input: &str, column: usize) -> usize {
     if column == 0 {
         return 0;
     }
@@ -1031,19 +1031,19 @@ fn vim_char_to_byte_index(input: &str, column: usize) -> usize {
         .unwrap_or(input.len())
 }
 
-fn just_pressed_vim_movement_key(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
+pub(crate) fn just_pressed_vim_movement_key(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
     vim_movement_keys()
         .into_iter()
         .find(|key| keys.just_pressed(*key))
 }
 
-fn held_vim_movement_key(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
+pub(crate) fn held_vim_movement_key(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
     vim_movement_keys()
         .into_iter()
         .find(|key| keys.pressed(*key))
 }
 
-fn vim_movement_keys() -> [KeyCode; 8] {
+pub(crate) fn vim_movement_keys() -> [KeyCode; 8] {
     [
         KeyCode::KeyJ,
         KeyCode::KeyK,
@@ -1056,7 +1056,7 @@ fn vim_movement_keys() -> [KeyCode; 8] {
     ]
 }
 
-fn vim_movement_key_to_arrow(key: KeyCode) -> Option<KeyCode> {
+pub(crate) fn vim_movement_key_to_arrow(key: KeyCode) -> Option<KeyCode> {
     match key {
         KeyCode::KeyJ | KeyCode::ArrowDown => Some(KeyCode::ArrowDown),
         KeyCode::KeyK | KeyCode::ArrowUp => Some(KeyCode::ArrowUp),
@@ -1066,7 +1066,9 @@ fn vim_movement_key_to_arrow(key: KeyCode) -> Option<KeyCode> {
     }
 }
 
-fn reset_vim_repeat(repeat: &mut NavigationRepeatState) {
+pub(crate) fn reset_vim_repeat(repeat: &mut NavigationRepeatState) {
     repeat.active_arrow = None;
     repeat.repeat_cooldown_secs = 0.0;
 }
+#[allow(unused_imports)]
+use super::*;

@@ -1,4 +1,4 @@
-fn consume_script_link_click(
+pub(crate) fn consume_script_link_click(
     state: &mut EditorState,
     mouse_selection: &mut MouseSelectionState,
     keys: &ButtonInput<KeyCode>,
@@ -14,3 +14,5 @@ fn consume_script_link_click(
     mouse_selection.dragged = false;
     true
 }
+#[allow(unused_imports)]
+use super::*;

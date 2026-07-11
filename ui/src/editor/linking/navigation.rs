@@ -4,12 +4,12 @@ use basscript_core::{
 };
 
 impl EditorState {
-    fn clear_script_link_target_cache(&mut self) {
+    pub(crate) fn clear_script_link_target_cache(&mut self) {
         self.script_link_target_types.clear();
         self.missing_script_link_targets.clear();
     }
 
-    fn ensure_current_script_link_targets_cached(&mut self) {
+    pub(crate) fn ensure_current_script_link_targets_cached(&mut self) {
         let links = self
             .parsed
             .iter()
@@ -47,7 +47,7 @@ impl EditorState {
         }
     }
 
-    fn open_script_link_at(&mut self, position: Position) -> bool {
+    pub(crate) fn open_script_link_at(&mut self, position: Position) -> bool {
         let Some(link) = self.script_link_at(position).cloned() else {
             return false;
         };
@@ -72,7 +72,7 @@ impl EditorState {
         true
     }
 
-    fn document_navigation_entry(&self) -> DocumentNavigationEntry {
+    pub(crate) fn document_navigation_entry(&self) -> DocumentNavigationEntry {
         DocumentNavigationEntry {
             path: self.paths.load_path.clone(),
             cursor: self.cursor,
@@ -90,7 +90,7 @@ impl EditorState {
         }
     }
 
-    fn navigate_to_path(&mut self, path: PathBuf) -> bool {
+    pub(crate) fn navigate_to_path(&mut self, path: PathBuf) -> bool {
         if workspace_paths_match(&path, &self.paths.load_path) {
             return self.load_from_path(path);
         }
@@ -105,7 +105,7 @@ impl EditorState {
         true
     }
 
-    fn navigate_back(&mut self) -> bool {
+    pub(crate) fn navigate_back(&mut self) -> bool {
         let current = self.document_navigation_entry();
         while let Some(previous) = self.document_navigation_history.pop() {
             if !self.restore_document_navigation_entry(previous, "Back to") {
@@ -123,7 +123,7 @@ impl EditorState {
         false
     }
 
-    fn navigate_forward(&mut self) -> bool {
+    pub(crate) fn navigate_forward(&mut self) -> bool {
         let current = self.document_navigation_entry();
         while let Some(next) = self.document_navigation_forward_history.pop() {
             if !self.restore_document_navigation_entry(next, "Forward to") {
@@ -138,7 +138,7 @@ impl EditorState {
         false
     }
 
-    fn restore_document_navigation_entry(
+    pub(crate) fn restore_document_navigation_entry(
         &mut self,
         entry: DocumentNavigationEntry,
         status_prefix: &str,
@@ -173,7 +173,7 @@ impl EditorState {
         true
     }
 
-    fn resolve_script_link_path(&self, link: &ScriptLink) -> Result<PathBuf, String> {
+    pub(crate) fn resolve_script_link_path(&self, link: &ScriptLink) -> Result<PathBuf, String> {
         match self.resolve_script_target_path(&link.target) {
             Ok(path) => Ok(path),
             Err(target_error) => {
@@ -189,7 +189,7 @@ impl EditorState {
         }
     }
 
-    fn resolve_script_target_path(&self, target: &str) -> Result<PathBuf, String> {
+    pub(crate) fn resolve_script_target_path(&self, target: &str) -> Result<PathBuf, String> {
         if !is_valid_target_key(target) {
             return Err(format!("Invalid link target `{target}`."));
         }
@@ -233,7 +233,7 @@ impl EditorState {
         }
     }
 
-    fn resolve_script_mention_path(&self, mention: &str) -> Result<PathBuf, String> {
+    pub(crate) fn resolve_script_mention_path(&self, mention: &str) -> Result<PathBuf, String> {
         let lookup = normalize_script_mention(mention);
         if lookup.is_empty() {
             return Err(format!("Unresolved mention `{mention}`."));
@@ -264,7 +264,7 @@ impl EditorState {
         }
     }
 
-    fn script_entity_candidate_files(&self) -> BTreeSet<PathBuf> {
+    pub(crate) fn script_entity_candidate_files(&self) -> BTreeSet<PathBuf> {
         let mut candidates = BTreeSet::<PathBuf>::new();
         if let Some(parent) = self.paths.load_path.parent()
             && let Ok(entries) = fs::read_dir(parent)
@@ -286,7 +286,7 @@ impl EditorState {
         candidates
     }
 
-    fn default_script_link_root(&self) -> PathBuf {
+    pub(crate) fn default_script_link_root(&self) -> PathBuf {
         self.paths
             .load_path
             .parent()
@@ -295,7 +295,7 @@ impl EditorState {
             .unwrap_or_else(|| PathBuf::from("."))
     }
 
-    fn script_link_at(&self, position: Position) -> Option<&ScriptLink> {
+    pub(crate) fn script_link_at(&self, position: Position) -> Option<&ScriptLink> {
         self.parsed.get(position.line).and_then(|line| {
             line.script_links
                 .iter()
@@ -303,7 +303,10 @@ impl EditorState {
         })
     }
 
-    fn hovered_processed_link_at(&self, position: Position) -> Option<HoveredProcessedLink> {
+    pub(crate) fn hovered_processed_link_at(
+        &self,
+        position: Position,
+    ) -> Option<HoveredProcessedLink> {
         let link = self.script_link_at(position)?;
         let visible = script_link_visible_column_range(link);
         Some(HoveredProcessedLink {
@@ -314,7 +317,7 @@ impl EditorState {
     }
 }
 
-fn push_document_navigation_history(
+pub(crate) fn push_document_navigation_history(
     history: &mut Vec<DocumentNavigationEntry>,
     entry: DocumentNavigationEntry,
 ) {
@@ -324,7 +327,7 @@ fn push_document_navigation_history(
     history.push(entry);
 }
 
-fn handle_document_navigation_history(
+pub(crate) fn handle_document_navigation_history(
     keys: Res<ButtonInput<KeyCode>>,
     autocomplete_capture: Res<LinkAutocompleteInputCapture>,
     middle_autoscroll: Res<MiddleAutoscrollState>,
@@ -360,7 +363,7 @@ fn handle_document_navigation_history(
     };
 }
 
-fn entity_document_matches_mention(document: &EntityDocument, lookup: &str) -> bool {
+pub(crate) fn entity_document_matches_mention(document: &EntityDocument, lookup: &str) -> bool {
     normalize_script_mention(&document.metadata.name) == lookup
         || document
             .metadata
@@ -369,7 +372,7 @@ fn entity_document_matches_mention(document: &EntityDocument, lookup: &str) -> b
             .any(|alias| normalize_script_mention(alias) == lookup)
 }
 
-fn normalize_script_mention(input: &str) -> String {
+pub(crate) fn normalize_script_mention(input: &str) -> String {
     input
         .chars()
         .map(|ch| {
@@ -385,7 +388,7 @@ fn normalize_script_mention(input: &str) -> String {
         .join(" ")
 }
 
-fn is_matching_link_target_file(path: &Path, target: &str) -> bool {
+pub(crate) fn is_matching_link_target_file(path: &Path, target: &str) -> bool {
     if !is_markdown_entity_file(path) {
         return false;
     }
@@ -395,7 +398,7 @@ fn is_matching_link_target_file(path: &Path, target: &str) -> bool {
         .is_some_and(|stem| stem.eq_ignore_ascii_case(target))
 }
 
-fn is_markdown_entity_file(path: &Path) -> bool {
+pub(crate) fn is_markdown_entity_file(path: &Path) -> bool {
     let extension = path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -420,3 +423,5 @@ mod link_navigation_tests {
         ));
     }
 }
+#[allow(unused_imports)]
+use super::*;

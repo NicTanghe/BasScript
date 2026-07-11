@@ -1,10 +1,10 @@
-struct CtrlLeftDragScrollState {
-    panel: PanelKind,
-    last_cursor_position: Vec2,
-    plain_vertical_remainder_lines: f32,
+pub(crate) struct CtrlLeftDragScrollState {
+    pub(crate) panel: PanelKind,
+    pub(crate) last_cursor_position: Vec2,
+    pub(crate) plain_vertical_remainder_lines: f32,
 }
 
-fn handle_ctrl_left_drag_scroll(
+pub(crate) fn handle_ctrl_left_drag_scroll(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     middle_autoscroll: Res<MiddleAutoscrollState>,
@@ -13,10 +13,7 @@ fn handle_ctrl_left_drag_scroll(
     mut drag_state: Local<Option<CtrlLeftDragScrollState>>,
     mut state: ResMut<EditorState>,
 ) {
-    let cursor_position = window_query
-        .iter()
-        .next()
-        .and_then(Window::cursor_position);
+    let cursor_position = window_query.iter().next().and_then(Window::cursor_position);
     let panel_context = gather_scroll_panels_context(&panel_query, &state);
     state.clamp_horizontal_scrolls(
         panel_context.plain_panel_size,
@@ -98,7 +95,8 @@ fn handle_ctrl_left_drag_scroll(
             drag_state.plain_vertical_remainder_lines = total_lines - whole_lines as f32;
 
             if whole_lines != 0 {
-                scrolled |= apply_plain_panel_vertical_scroll(&mut state, whole_lines, visible_lines);
+                scrolled |=
+                    apply_plain_panel_vertical_scroll(&mut state, whole_lines, visible_lines);
                 state.clamp_cursor_to_visible_range(visible_lines);
             }
         }
@@ -119,3 +117,5 @@ fn handle_ctrl_left_drag_scroll(
         state.reset_blink();
     }
 }
+#[allow(unused_imports)]
+use super::*;

@@ -1,23 +1,23 @@
-const STATUS_LINE_FONT_SIZE: f32 = 11.0;
-const STATUS_LINE_PADDING_LEFT: f32 = 18.0;
-const STATUS_LINE_PADDING_RIGHT: f32 = 0.0;
-const STATUS_LINE_PADDING_TOP: f32 = 4.0;
-const STATUS_LINE_PADDING_BOTTOM: f32 = 0.0;
-const STATUS_LINE_LINE_HEIGHT: f32 = 11.0;
-const STATUS_LINE_MIN_HEIGHT: f32 =
+pub(crate) const STATUS_LINE_FONT_SIZE: f32 = 11.0;
+pub(crate) const STATUS_LINE_PADDING_LEFT: f32 = 18.0;
+pub(crate) const STATUS_LINE_PADDING_RIGHT: f32 = 0.0;
+pub(crate) const STATUS_LINE_PADDING_TOP: f32 = 4.0;
+pub(crate) const STATUS_LINE_PADDING_BOTTOM: f32 = 0.0;
+pub(crate) const STATUS_LINE_LINE_HEIGHT: f32 = 11.0;
+pub(crate) const STATUS_LINE_MIN_HEIGHT: f32 =
     STATUS_LINE_PADDING_TOP + STATUS_LINE_LINE_HEIGHT + STATUS_LINE_PADDING_BOTTOM;
 
 #[derive(Component)]
-struct StatusText;
+pub(crate) struct StatusText;
 
-fn status_path_label(path: &Path) -> String {
+pub(crate) fn status_path_label(path: &Path) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().to_string())
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "<unnamed>".to_string())
 }
 
-fn status_line_bundle(font: Handle<Font>, background: Color) -> impl Bundle {
+pub(crate) fn status_line_bundle(font: Handle<Font>, background: Color) -> impl Bundle {
     (
         Node {
             width: percent(100.0),
@@ -55,7 +55,7 @@ fn status_line_bundle(font: Handle<Font>, background: Color) -> impl Bundle {
 }
 
 impl EditorState {
-    fn visible_status(&self) -> String {
+    pub(crate) fn visible_status(&self) -> String {
         let vim_label = if self.vim_enabled {
             format!(" | vim: {}", self.vim_mode.label())
         } else {
@@ -105,3 +105,5 @@ impl EditorState {
         )
     }
 }
+#[allow(unused_imports)]
+use super::*;

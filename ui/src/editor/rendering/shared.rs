@@ -1,4 +1,4 @@
-fn render_editor(
+pub(crate) fn render_editor(
     body_query: Query<(&PanelBody, &ComputedNode)>,
     mut canvas_query: Query<(&PanelCanvas, &mut UiTransform)>,
     mut text_query: Query<
@@ -302,8 +302,7 @@ fn render_editor(
             }
             continue;
         };
-        if page_index >= processed_total_pages
-            || paper_text.line_offset >= processed_lines_per_page
+        if page_index >= processed_total_pages || paper_text.line_offset >= processed_lines_per_page
         {
             if node.width != px(0.0) {
                 node.width = px(0.0);
@@ -322,10 +321,8 @@ fn render_editor(
         );
         let line_height_units = processed_visual_line_height_units(&state, visual_line);
         let next_left = px(processed_geometry.text_left - processed_geometry.paper_left);
-        let next_top = px(
-            processed_geometry.text_top - processed_geometry.paper_top
-                + line_top_units * processed_line_height,
-        );
+        let next_top = px(processed_geometry.text_top - processed_geometry.paper_top
+            + line_top_units * processed_line_height);
         let next_width = px(processed_geometry.text_width);
         let next_height = px(line_height_units * processed_line_height);
         if node.left != next_left {
@@ -394,12 +391,8 @@ fn render_editor(
         } else {
             checklist_icons.unchecked.clone()
         };
-        let line_top_units = processed_visual_line_top_units(
-            &state,
-            &processed_all_lines,
-            page_start,
-            line_offset,
-        );
+        let line_top_units =
+            processed_visual_line_top_units(&state, &processed_all_lines, page_start, line_offset);
         node.left = px((text_left_in_paper - checklist_icon_size - checklist_icon_gap).max(0.0));
         node.top = px(text_top_in_paper
             + line_top_units * processed_line_height
@@ -512,7 +505,7 @@ fn render_editor(
     );
 }
 
-fn render_processed_images(
+pub(crate) fn render_processed_images(
     body_query: Query<(&PanelBody, &ComputedNode)>,
     mut processed_image_query: Query<
         (
@@ -655,12 +648,8 @@ fn render_processed_images(
             .min(max_width)
             .max(1.0);
         let left = text_left_in_paper + (max_width - display_width) * 0.5;
-        let line_top_units = processed_visual_line_top_units(
-            &state,
-            &processed_all_lines,
-            page_start,
-            line_offset,
-        );
+        let line_top_units =
+            processed_visual_line_top_units(&state, &processed_all_lines, page_start, line_offset);
         let top = text_top_in_paper
             + line_top_units * processed_line_height
             + ((reserved_height - display_height) * 0.5).max(0.0);
@@ -673,7 +662,7 @@ fn render_processed_images(
     }
 }
 
-fn viewport_lines(
+pub(crate) fn viewport_lines(
     body_query: &Query<(&PanelBody, &ComputedNode)>,
     display_mode: DisplayMode,
     line_step: f32,
@@ -697,7 +686,7 @@ fn viewport_lines(
     (usable_height / step).floor().max(1.0) as usize
 }
 
-fn viewport_lines_from_panels(
+pub(crate) fn viewport_lines_from_panels(
     panel_query: &Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
     display_mode: DisplayMode,
     line_step: f32,
@@ -721,7 +710,7 @@ fn viewport_lines_from_panels(
     (usable_height / step).floor().max(1.0) as usize
 }
 
-fn visible_plain_lines(state: &EditorState, visible_lines: usize) -> Vec<String> {
+pub(crate) fn visible_plain_lines(state: &EditorState, visible_lines: usize) -> Vec<String> {
     let last = state
         .top_line
         .saturating_add(visible_lines)
@@ -738,74 +727,74 @@ fn visible_plain_lines(state: &EditorState, visible_lines: usize) -> Vec<String>
 }
 
 #[derive(Clone, Debug)]
-struct ProcessedVisualFragment {
-    text: String,
-    is_link: bool,
-    link_target: Option<String>,
-    inline_style: InlineTextStyle,
+pub(crate) struct ProcessedVisualFragment {
+    pub(crate) text: String,
+    pub(crate) is_link: bool,
+    pub(crate) link_target: Option<String>,
+    pub(crate) inline_style: InlineTextStyle,
 }
 
 #[derive(Clone, Debug)]
-struct ProcessedVisualLine {
-    source_line: usize,
-    text: String,
-    fragments: Vec<ProcessedVisualFragment>,
-    display_to_raw: Vec<usize>,
-    raw_start_column: usize,
-    raw_end_column: usize,
-    markdown_checklist_checked: Option<bool>,
-    image_block: Option<ProcessedImageBlock>,
-    render_override: Option<ProcessedLineRenderOverride>,
-    is_spacer: bool,
+pub(crate) struct ProcessedVisualLine {
+    pub(crate) source_line: usize,
+    pub(crate) text: String,
+    pub(crate) fragments: Vec<ProcessedVisualFragment>,
+    pub(crate) display_to_raw: Vec<usize>,
+    pub(crate) raw_start_column: usize,
+    pub(crate) raw_end_column: usize,
+    pub(crate) markdown_checklist_checked: Option<bool>,
+    pub(crate) image_block: Option<ProcessedImageBlock>,
+    pub(crate) render_override: Option<ProcessedLineRenderOverride>,
+    pub(crate) is_spacer: bool,
 }
 
 #[derive(Clone, Debug)]
-struct ProcessedImageBlock {
-    target: String,
-    reserved_lines: usize,
+pub(crate) struct ProcessedImageBlock {
+    pub(crate) target: String,
+    pub(crate) reserved_lines: usize,
 }
 
 #[derive(Clone, Debug)]
-struct ProcessedSegment {
-    start_line: usize,
-    end_line_exclusive: usize,
-    ends_with_hard_break: bool,
-    lines: Vec<ProcessedVisualLine>,
+pub(crate) struct ProcessedSegment {
+    pub(crate) start_line: usize,
+    pub(crate) end_line_exclusive: usize,
+    pub(crate) ends_with_hard_break: bool,
+    pub(crate) lines: Vec<ProcessedVisualLine>,
 }
 
 #[derive(Clone, Debug)]
-struct ProcessedCache {
-    wrap_columns: usize,
-    lines_per_page: usize,
-    spacer_lines: usize,
-    segments: Vec<ProcessedSegment>,
-    lines: Vec<ProcessedVisualLine>,
-    source_line_count: usize,
+pub(crate) struct ProcessedCache {
+    pub(crate) wrap_columns: usize,
+    pub(crate) lines_per_page: usize,
+    pub(crate) spacer_lines: usize,
+    pub(crate) segments: Vec<ProcessedSegment>,
+    pub(crate) lines: Vec<ProcessedVisualLine>,
+    pub(crate) source_line_count: usize,
 }
 
 #[derive(Clone, Debug, Default)]
-struct ProcessedView {
-    start_index: usize,
-    anchor_index: usize,
-    lines: Vec<ProcessedVisualLine>,
+pub(crate) struct ProcessedView {
+    pub(crate) start_index: usize,
+    pub(crate) anchor_index: usize,
+    pub(crate) lines: Vec<ProcessedVisualLine>,
 }
 
 #[derive(Clone, Debug)]
-struct ProcessedLineRenderOverride {
-    kind: LineKind,
-    markdown_heading_level: Option<u8>,
+pub(crate) struct ProcessedLineRenderOverride {
+    pub(crate) kind: LineKind,
+    pub(crate) markdown_heading_level: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug)]
-struct LineRenderStyle {
-    font_variant: FontVariant,
-    color: Color,
-    font_scale: f32,
-    line_height_scale: f32,
+pub(crate) struct LineRenderStyle {
+    pub(crate) font_variant: FontVariant,
+    pub(crate) color: Color,
+    pub(crate) font_scale: f32,
+    pub(crate) line_height_scale: f32,
 }
 
 impl LineRenderStyle {
-    const fn new(
+    pub(crate) const fn new(
         font_variant: FontVariant,
         color: Color,
         font_scale: f32,
@@ -820,7 +809,7 @@ impl LineRenderStyle {
     }
 }
 
-fn transparent_line_render_style() -> LineRenderStyle {
+pub(crate) fn transparent_line_render_style() -> LineRenderStyle {
     LineRenderStyle::new(
         FontVariant::Regular,
         Color::srgba(0.0, 0.0, 0.0, 0.0),
@@ -829,15 +818,15 @@ fn transparent_line_render_style() -> LineRenderStyle {
     )
 }
 
-fn default_line_render_style() -> LineRenderStyle {
+pub(crate) fn default_line_render_style() -> LineRenderStyle {
     LineRenderStyle::new(FontVariant::Regular, COLOR_ACTION, 1.0, 1.0)
 }
 
-fn processed_line_style(parsed_line: &ParsedLine) -> LineRenderStyle {
+pub(crate) fn processed_line_style(parsed_line: &ParsedLine) -> LineRenderStyle {
     processed_line_style_for_kind(&parsed_line.kind, parsed_line.markdown_heading_level)
 }
 
-fn processed_line_style_for_kind(
+pub(crate) fn processed_line_style_for_kind(
     kind: &LineKind,
     markdown_heading_level: Option<u8>,
 ) -> LineRenderStyle {
@@ -846,7 +835,7 @@ fn processed_line_style_for_kind(
         .unwrap_or_else(default_line_render_style)
 }
 
-fn processed_visual_line_style_for_state(
+pub(crate) fn processed_visual_line_style_for_state(
     state: &EditorState,
     visual_line: &ProcessedVisualLine,
 ) -> (LineRenderStyle, bool) {
@@ -872,14 +861,14 @@ fn processed_visual_line_style_for_state(
     }
 }
 
-fn font_variant_for_processed_fragment(
+pub(crate) fn font_variant_for_processed_fragment(
     base: FontVariant,
     fragment: &ProcessedVisualFragment,
 ) -> FontVariant {
     apply_inline_style_to_font_variant(base, fragment.inline_style)
 }
 
-fn font_for_variant_with_format(
+pub(crate) fn font_for_variant_with_format(
     fonts: &EditorFonts,
     variant: FontVariant,
     format: DocumentFormat,
@@ -900,7 +889,7 @@ fn font_for_variant_with_format(
     }
 }
 
-fn processed_image_lookup(
+pub(crate) fn processed_image_lookup(
     cache: &mut EditorImageCache,
     state: &EditorState,
     target: &str,
@@ -954,7 +943,10 @@ fn processed_image_lookup(
     }
 }
 
-fn resolve_processed_image_path(state: &EditorState, target: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_processed_image_path(
+    state: &EditorState,
+    target: &str,
+) -> Result<PathBuf, String> {
     let trimmed = target.trim();
     if trimmed.is_empty() {
         return Err("empty image path".to_owned());
@@ -1012,7 +1004,7 @@ fn resolve_processed_image_path(state: &EditorState, target: &str) -> Result<Pat
         .ok_or_else(|| format!("could not resolve image path: {trimmed}"))
 }
 
-fn relative_path_suffixes(path: &Path) -> Vec<PathBuf> {
+pub(crate) fn relative_path_suffixes(path: &Path) -> Vec<PathBuf> {
     let components = path
         .components()
         .filter_map(|component| match component {
@@ -1033,15 +1025,18 @@ fn relative_path_suffixes(path: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-fn canonicalize_if_possible(path: PathBuf) -> PathBuf {
+pub(crate) fn canonicalize_if_possible(path: PathBuf) -> PathBuf {
     fs::canonicalize(&path).unwrap_or(path)
 }
 
-fn is_remote_image_target(target: &str) -> bool {
+pub(crate) fn is_remote_image_target(target: &str) -> bool {
     target.starts_with("http://") || target.starts_with("https://")
 }
 
-fn load_processed_image(path: &Path, images: &mut Assets<Image>) -> CachedProcessedImageResult {
+pub(crate) fn load_processed_image(
+    path: &Path,
+    images: &mut Assets<Image>,
+) -> CachedProcessedImageResult {
     if !path.exists() {
         return CachedProcessedImageResult::Failed;
     }
@@ -1086,3 +1081,5 @@ fn load_processed_image(path: &Path, images: &mut Assets<Image>) -> CachedProces
     let handle = images.add(image);
     CachedProcessedImageResult::Loaded { handle, size }
 }
+#[allow(unused_imports)]
+use super::*;

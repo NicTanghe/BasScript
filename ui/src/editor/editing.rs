@@ -1,4 +1,4 @@
-fn handle_text_input(
+pub(crate) fn handle_text_input(
     mut keyboard_inputs: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
     capture: Res<LinkAutocompleteInputCapture>,
@@ -217,7 +217,7 @@ fn handle_text_input(
 
     if edited {
         if let Some(snapshot) = undo_snapshot {
-        state.push_undo_snapshot(snapshot);
+            state.push_undo_snapshot(snapshot);
         }
         state.reparse_with_dirty_hint(dirty_from_line.unwrap_or(0));
         state.refresh_link_autocomplete_for_document_cursor();
@@ -225,7 +225,7 @@ fn handle_text_input(
     }
 }
 
-fn handle_navigation_input(
+pub(crate) fn handle_navigation_input(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     capture: Res<LinkAutocompleteInputCapture>,
@@ -433,7 +433,7 @@ fn handle_navigation_input(
     }
 }
 
-fn just_pressed_navigation_arrow(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
+pub(crate) fn just_pressed_navigation_arrow(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
     [
         KeyCode::ArrowLeft,
         KeyCode::ArrowRight,
@@ -444,7 +444,7 @@ fn just_pressed_navigation_arrow(keys: &ButtonInput<KeyCode>) -> Option<KeyCode>
     .find(|key| keys.just_pressed(*key))
 }
 
-fn held_navigation_arrow(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
+pub(crate) fn held_navigation_arrow(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
     [
         KeyCode::ArrowLeft,
         KeyCode::ArrowRight,
@@ -455,7 +455,7 @@ fn held_navigation_arrow(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
     .find(|key| keys.pressed(*key))
 }
 
-fn repeat_navigation_arrow_input(
+pub(crate) fn repeat_navigation_arrow_input(
     keys: &ButtonInput<KeyCode>,
     time: &Time,
     repeat: &mut NavigationRepeatState,
@@ -472,7 +472,7 @@ fn repeat_navigation_arrow_input(
     )
 }
 
-fn repeat_key_input(
+pub(crate) fn repeat_key_input(
     keys: &ButtonInput<KeyCode>,
     time: &Time,
     repeat: &mut NavigationRepeatState,
@@ -513,15 +513,18 @@ fn repeat_key_input(
     moved
 }
 
-fn move_cursor_by_arrow_key(
+pub(crate) fn move_cursor_by_arrow_key(
     state: &mut EditorState,
     arrow: KeyCode,
     extend_selection: bool,
     processed_panel_size: Option<Vec2>,
 ) -> bool {
-    if let Some(moved) =
-        move_processed_cursor_by_visual_arrow_key(state, arrow, extend_selection, processed_panel_size)
-    {
+    if let Some(moved) = move_processed_cursor_by_visual_arrow_key(
+        state,
+        arrow,
+        extend_selection,
+        processed_panel_size,
+    ) {
         return moved;
     }
 
@@ -530,8 +533,12 @@ fn move_cursor_by_arrow_key(
     let next = match arrow {
         KeyCode::ArrowLeft => state.document.move_left(current),
         KeyCode::ArrowRight => state.document.move_right(current),
-        KeyCode::ArrowUp => state.document.move_up(current, state.cursor.preferred_column),
-        KeyCode::ArrowDown => state.document.move_down(current, state.cursor.preferred_column),
+        KeyCode::ArrowUp => state
+            .document
+            .move_up(current, state.cursor.preferred_column),
+        KeyCode::ArrowDown => state
+            .document
+            .move_down(current, state.cursor.preferred_column),
         _ => return false,
     };
 
@@ -543,7 +550,7 @@ fn move_cursor_by_arrow_key(
     next != current
 }
 
-fn move_processed_cursor_by_visual_arrow_key(
+pub(crate) fn move_processed_cursor_by_visual_arrow_key(
     state: &mut EditorState,
     arrow: KeyCode,
     extend_selection: bool,
@@ -601,7 +608,7 @@ fn move_processed_cursor_by_visual_arrow_key(
     Some(next != current)
 }
 
-fn processed_cursor_visual_index_and_display_column(
+pub(crate) fn processed_cursor_visual_index_and_display_column(
     state: &EditorState,
     lines: &[ProcessedVisualLine],
 ) -> Option<(usize, usize)> {
@@ -619,7 +626,7 @@ fn processed_cursor_visual_index_and_display_column(
     ))
 }
 
-fn adjacent_processed_visual_line_index(
+pub(crate) fn adjacent_processed_visual_line_index(
     lines: &[ProcessedVisualLine],
     current_index: usize,
     direction: isize,
@@ -633,3 +640,5 @@ fn adjacent_processed_visual_line_index(
             .find(|index| lines.get(*index).is_some_and(|line| !line.is_spacer))
     }
 }
+#[allow(unused_imports)]
+use super::*;

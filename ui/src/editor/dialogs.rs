@@ -1,4 +1,4 @@
-fn platform_shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+pub(crate) fn platform_shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
     if alt_gr_modifier_pressed(keys) {
         return false;
     }
@@ -11,11 +11,11 @@ fn platform_shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
     ])
 }
 
-fn shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+pub(crate) fn shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
     text_input_modifier_pressed(keys) || keys.pressed(KeyCode::Space)
 }
 
-fn text_input_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+pub(crate) fn text_input_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
     if keys.any_pressed([KeyCode::SuperLeft, KeyCode::SuperRight]) {
         return true;
     }
@@ -32,12 +32,12 @@ fn text_input_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
     ])
 }
 
-fn alt_gr_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+pub(crate) fn alt_gr_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
     keys.pressed(KeyCode::AltRight)
         && keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
 }
 
-fn text_input_should_skip_for_shortcut(
+pub(crate) fn text_input_should_skip_for_shortcut(
     keys: &ButtonInput<KeyCode>,
     input: &KeyboardInput,
     keybinds: &KeybindSettings,
@@ -49,7 +49,7 @@ fn text_input_should_skip_for_shortcut(
             }))
 }
 
-fn key_combination_matches_binding(
+pub(crate) fn key_combination_matches_binding(
     keys: &ButtonInput<KeyCode>,
     key_code: KeyCode,
     binding: ShortcutBinding,
@@ -59,11 +59,11 @@ fn key_combination_matches_binding(
         && binding.shift == shift_modifier_pressed(keys)
 }
 
-fn shift_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+pub(crate) fn shift_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
     keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight])
 }
 
-fn shortcut_just_pressed(keys: &ButtonInput<KeyCode>, binding: ShortcutBinding) -> bool {
+pub(crate) fn shortcut_just_pressed(keys: &ButtonInput<KeyCode>, binding: ShortcutBinding) -> bool {
     if !shortcut_binding_modifier_pressed(keys, binding) {
         return false;
     }
@@ -79,7 +79,7 @@ fn shortcut_just_pressed(keys: &ButtonInput<KeyCode>, binding: ShortcutBinding) 
     keys.just_pressed(binding.key)
 }
 
-fn shortcut_binding_modifier_pressed(
+pub(crate) fn shortcut_binding_modifier_pressed(
     keys: &ButtonInput<KeyCode>,
     binding: ShortcutBinding,
 ) -> bool {
@@ -238,10 +238,8 @@ mod modifier_key_tests {
             "(\nprocessed_link_color_mode: \"hovered\",\n)",
             &defaults,
         );
-        let legacy_plain = persistent_ui_state_from_ron(
-            "(\nprocessed_link_colors_enabled: false,\n)",
-            &defaults,
-        );
+        let legacy_plain =
+            persistent_ui_state_from_ron("(\nprocessed_link_colors_enabled: false,\n)", &defaults);
 
         assert_eq!(
             hovered.processed_link_color_mode,
@@ -280,15 +278,9 @@ mod modifier_key_tests {
 
     #[test]
     fn link_toggle_rebound_finishes_at_its_apex_without_stalling() {
-        assert!(link_toggle_rebound_has_reached_apex(
-            27.0, -0.1, 30.0, 4.0
-        ));
-        assert!(link_toggle_rebound_has_reached_apex(
-            29.6, 12.0, 30.0, 4.0
-        ));
-        assert!(!link_toggle_rebound_has_reached_apex(
-            18.0, 12.0, 30.0, 4.0
-        ));
+        assert!(link_toggle_rebound_has_reached_apex(27.0, -0.1, 30.0, 4.0));
+        assert!(link_toggle_rebound_has_reached_apex(29.6, 12.0, 30.0, 4.0));
+        assert!(!link_toggle_rebound_has_reached_apex(18.0, 12.0, 30.0, 4.0));
     }
 
     #[test]
@@ -323,8 +315,7 @@ mod modifier_key_tests {
         let mut crossed_target = false;
 
         for _ in 0..240 {
-            (top, velocity) =
-                step_link_toggle_vertical_spring(top, velocity, target, 1.0 / 60.0);
+            (top, velocity) = step_link_toggle_vertical_spring(top, velocity, target, 1.0 / 60.0);
             crossed_target |= top > target;
         }
 
@@ -358,8 +349,14 @@ mod modifier_key_tests {
         }
 
         assert_eq!(history.len(), DOCUMENT_NAVIGATION_HISTORY_LIMIT);
-        assert_eq!(history.first().unwrap().path, PathBuf::from("jump-2.fountain"));
-        assert_eq!(history.last().unwrap().path, PathBuf::from("jump-129.fountain"));
+        assert_eq!(
+            history.first().unwrap().path,
+            PathBuf::from("jump-2.fountain")
+        );
+        assert_eq!(
+            history.last().unwrap().path,
+            PathBuf::from("jump-129.fountain")
+        );
     }
 
     #[test]
@@ -396,7 +393,7 @@ mod modifier_key_tests {
     }
 }
 
-fn handle_window_shortcuts(
+pub(crate) fn handle_window_shortcuts(
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<EditorState>,
 ) {
@@ -419,18 +416,12 @@ fn handle_window_shortcuts(
         } else {
             "HIDDEN"
         };
-        state.status_message = format!(
-            "Explorer: {}",
-            visibility
-        );
+        state.status_message = format!("Explorer: {}", visibility);
         if let Err(error) = save_editor_ui_state(&state) {
             warn!("[state] Failed saving UI state: {error}");
             state.status_message = format!("Explorer: {visibility} (state save failed: {error})");
         }
-        info!(
-            "[ui] Explorer shortcut toggled explorer to {}",
-            visibility
-        );
+        info!("[ui] Explorer shortcut toggled explorer to {}", visibility);
         handled = true;
     }
 
@@ -442,18 +433,12 @@ fn handle_window_shortcuts(
         } else {
             "VISIBLE"
         };
-        state.status_message = format!(
-            "Top menu: {}",
-            visibility
-        );
+        state.status_message = format!("Top menu: {}", visibility);
         if let Err(error) = save_editor_ui_state(&state) {
             warn!("[state] Failed saving UI state: {error}");
             state.status_message = format!("Top menu: {visibility} (state save failed: {error})");
         }
-        info!(
-            "[ui] Top-menu shortcut toggled top menu to {}",
-            visibility
-        );
+        info!("[ui] Top-menu shortcut toggled top menu to {}", visibility);
         handled = true;
     }
 
@@ -462,7 +447,7 @@ fn handle_window_shortcuts(
     }
 }
 
-fn sync_window_chrome(
+pub(crate) fn sync_window_chrome(
     state: Res<EditorState>,
     mut native_glass_state: ResMut<NativeGlassState>,
     mut primary_window_query: Query<(Entity, &mut Window), With<PrimaryWindow>>,
@@ -518,7 +503,7 @@ fn sync_window_chrome(
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
-fn apply_native_window_preferences(
+pub(crate) fn apply_native_window_preferences(
     window_entity: Entity,
     show_system_titlebar: bool,
     glass_enabled: bool,
@@ -643,7 +628,7 @@ fn apply_native_window_preferences(
     })
 }
 
-fn handle_file_shortcuts(
+pub(crate) fn handle_file_shortcuts(
     _dialog_main_thread: NonSend<DialogMainThreadMarker>,
     keys: Res<ButtonInput<KeyCode>>,
     primary_window_query: Query<&RawHandleWrapper, With<PrimaryWindow>>,
@@ -682,7 +667,7 @@ fn handle_file_shortcuts(
     }
 }
 
-fn open_workspace_dialog(
+pub(crate) fn open_workspace_dialog(
     state: &mut EditorState,
     dialogs: &mut DialogState,
     parent_handle: Option<&RawHandleWrapper>,
@@ -718,8 +703,10 @@ fn open_workspace_dialog(
 
     let (sender, receiver) = mpsc::channel();
 
-    let mut dialog =
-        dialog_with_parent(FileDialog::new().set_title("Open Workspace Folder"), parent_handle);
+    let mut dialog = dialog_with_parent(
+        FileDialog::new().set_title("Open Workspace Folder"),
+        parent_handle,
+    );
     if let Some(directory) = directory {
         dialog = dialog.set_directory(directory);
     }
@@ -731,7 +718,10 @@ fn open_workspace_dialog(
         );
         let result = dialog.pick_folder();
         match &result {
-            Some(path) => info!("[dialog] Workspace thread received path: {}", path.display()),
+            Some(path) => info!(
+                "[dialog] Workspace thread received path: {}",
+                path.display()
+            ),
             None => info!("[dialog] Workspace thread returned: canceled"),
         }
         let _ = sender.send(Ok(result));
@@ -742,7 +732,7 @@ fn open_workspace_dialog(
     state.status_message = "Opening workspace picker...".to_string();
 }
 
-fn open_save_dialog(
+pub(crate) fn open_save_dialog(
     state: &mut EditorState,
     dialogs: &mut DialogState,
     parent_handle: Option<&RawHandleWrapper>,
@@ -816,7 +806,10 @@ fn open_save_dialog(
     state.status_message = "Opening save dialog...".to_string();
 }
 
-fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<DialogState>) {
+pub(crate) fn resolve_dialog_results(
+    mut state: ResMut<EditorState>,
+    mut dialogs: ResMut<DialogState>,
+) {
     let Some(pending) = dialogs.pending.as_ref() else {
         return;
     };
@@ -897,7 +890,10 @@ fn resolve_dialog_results(mut state: ResMut<EditorState>, mut dialogs: ResMut<Di
     }
 }
 
-fn dialog_with_parent(dialog: FileDialog, parent_handle: Option<&RawHandleWrapper>) -> FileDialog {
+pub(crate) fn dialog_with_parent(
+    dialog: FileDialog,
+    parent_handle: Option<&RawHandleWrapper>,
+) -> FileDialog {
     let Some(parent_handle) = parent_handle else {
         return dialog;
     };
@@ -908,10 +904,13 @@ fn dialog_with_parent(dialog: FileDialog, parent_handle: Option<&RawHandleWrappe
     dialog.set_parent(&parent)
 }
 
-fn finish_workspace_dialog(state: &mut EditorState, result: DialogPathResult) {
+pub(crate) fn finish_workspace_dialog(state: &mut EditorState, result: DialogPathResult) {
     match result {
         Ok(Some(path)) => {
-            info!("[dialog] Opening selected workspace path: {}", path.display());
+            info!(
+                "[dialog] Opening selected workspace path: {}",
+                path.display()
+            );
             state.set_workspace_root(path);
         }
         Ok(None) => {
@@ -925,7 +924,7 @@ fn finish_workspace_dialog(state: &mut EditorState, result: DialogPathResult) {
     }
 }
 
-fn finish_save_dialog(state: &mut EditorState, result: DialogPathResult) {
+pub(crate) fn finish_save_dialog(state: &mut EditorState, result: DialogPathResult) {
     match result {
         Ok(Some(path)) => {
             info!("[dialog] Saving to selected path: {}", path.display());
@@ -942,7 +941,7 @@ fn finish_save_dialog(state: &mut EditorState, result: DialogPathResult) {
     }
 }
 
-fn preferred_dialog_directory(state: &EditorState) -> Option<PathBuf> {
+pub(crate) fn preferred_dialog_directory(state: &EditorState) -> Option<PathBuf> {
     [
         state.workspace_root.clone(),
         state.paths.load_path.parent().map(Path::to_path_buf),
@@ -952,3 +951,5 @@ fn preferred_dialog_directory(state: &EditorState) -> Option<PathBuf> {
     .flatten()
     .find_map(resolve_workspace_directory_candidate)
 }
+#[allow(unused_imports)]
+use super::*;

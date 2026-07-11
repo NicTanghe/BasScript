@@ -1,26 +1,26 @@
-const CARET_WIDTH: f32 = 2.0;
-const VIM_NORMAL_CARET_WIDTH: f32 = 8.0;
-const CARET_X_OFFSET: f32 = -1.0;
+pub(crate) const CARET_WIDTH: f32 = 2.0;
+pub(crate) const VIM_NORMAL_CARET_WIDTH: f32 = 8.0;
+pub(crate) const CARET_X_OFFSET: f32 = -1.0;
 // Parley's line metrics already provide the line box top. The old glyph
 // metadata was center-based, which needed an upward compensation here.
-const CARET_VERTICAL_OFFSET_LINES: f32 = 0.0;
+pub(crate) const CARET_VERTICAL_OFFSET_LINES: f32 = 0.0;
 
 #[derive(Component)]
-struct PanelCaret {
-    kind: PanelKind,
+pub(crate) struct PanelCaret {
+    pub(crate) kind: PanelKind,
 }
 
-fn blink_caret(time: Res<Time>, mut state: ResMut<EditorState>) {
+pub(crate) fn blink_caret(time: Res<Time>, mut state: ResMut<EditorState>) {
     if state.caret_blink.tick(time.delta()).just_finished() {
         state.caret_visible = !state.caret_visible;
     }
 }
 
-fn caret_vertical_offset(line_height: f32) -> f32 {
+pub(crate) fn caret_vertical_offset(line_height: f32) -> f32 {
     CARET_VERTICAL_OFFSET_LINES * line_height
 }
 
-fn caret_width_for_state(state: &EditorState, char_width: f32) -> f32 {
+pub(crate) fn caret_width_for_state(state: &EditorState, char_width: f32) -> f32 {
     if state.vim_enabled && state.vim_mode != VimMode::Insert {
         char_width.max(VIM_NORMAL_CARET_WIDTH).max(CARET_WIDTH)
     } else {
@@ -28,7 +28,7 @@ fn caret_width_for_state(state: &EditorState, char_width: f32) -> f32 {
     }
 }
 
-fn caret_x_offset_for_state(state: &EditorState) -> f32 {
+pub(crate) fn caret_x_offset_for_state(state: &EditorState) -> f32 {
     if state.vim_enabled && state.vim_mode != VimMode::Insert {
         0.0
     } else {
@@ -36,7 +36,7 @@ fn caret_x_offset_for_state(state: &EditorState) -> f32 {
     }
 }
 
-fn processed_caret_line_height(
+pub(crate) fn processed_caret_line_height(
     state: &EditorState,
     visual_line: &ProcessedVisualLine,
     base_line_height: f32,
@@ -45,7 +45,7 @@ fn processed_caret_line_height(
     (base_line_height * style.line_height_scale).max(1.0)
 }
 
-fn render_panel_carets(
+pub(crate) fn render_panel_carets(
     caret_query: &mut Query<
         (&PanelCaret, &mut Node, &mut Visibility, &mut UiTransform),
         (
@@ -249,3 +249,5 @@ fn render_panel_carets(
         *visibility = Visibility::Visible;
     }
 }
+#[allow(unused_imports)]
+use super::*;

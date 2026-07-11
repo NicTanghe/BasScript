@@ -1,16 +1,16 @@
 #[derive(Component)]
-struct WorkspacePromptRoot;
+pub(crate) struct WorkspacePromptRoot;
 
 #[derive(Component)]
-struct WorkspacePromptTitle;
+pub(crate) struct WorkspacePromptTitle;
 
 #[derive(Component)]
-struct WorkspacePromptInput;
+pub(crate) struct WorkspacePromptInput;
 
 #[derive(Component)]
-struct WorkspacePromptHint;
+pub(crate) struct WorkspacePromptHint;
 
-fn workspace_prompt_bundle(font: Handle<Font>) -> impl Bundle {
+pub(crate) fn workspace_prompt_bundle(font: Handle<Font>) -> impl Bundle {
     (
         Node {
             position_type: PositionType::Absolute,
@@ -89,7 +89,7 @@ fn workspace_prompt_bundle(font: Handle<Font>) -> impl Bundle {
     )
 }
 
-fn sync_workspace_prompt_ui(
+pub(crate) fn sync_workspace_prompt_ui(
     state: Res<EditorState>,
     mut root_query: Query<&mut Node, With<WorkspacePromptRoot>>,
     mut text_queries: ParamSet<(
@@ -121,7 +121,7 @@ fn sync_workspace_prompt_ui(
     }
 }
 
-fn workspace_prompt_text(
+pub(crate) fn workspace_prompt_text(
     state: &EditorState,
     prompt: &WorkspacePrompt,
 ) -> (String, String, String) {
@@ -173,7 +173,7 @@ fn workspace_prompt_text(
     }
 }
 
-fn handle_workspace_prompt_input(
+pub(crate) fn handle_workspace_prompt_input(
     mut keyboard_inputs: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<EditorState>,
@@ -270,8 +270,7 @@ fn handle_workspace_prompt_input(
 
                 match &key_input.logical_key {
                     Key::Enter => {
-                        action =
-                            Some(PromptAction::ConfirmRename(target.clone(), input.clone()));
+                        action = Some(PromptAction::ConfirmRename(target.clone(), input.clone()));
                         break;
                     }
                     Key::Backspace => {
@@ -320,7 +319,7 @@ fn handle_workspace_prompt_input(
     }
 }
 
-fn handle_workspace_keyboard_input(
+pub(crate) fn handle_workspace_keyboard_input(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut repeat: ResMut<WorkspaceSelectionRepeatState>,
@@ -369,7 +368,7 @@ fn handle_workspace_keyboard_input(
     }
 }
 
-fn handle_workspace_selection_repeat(
+pub(crate) fn handle_workspace_selection_repeat(
     keys: &ButtonInput<KeyCode>,
     time: &Time,
     repeat: &mut WorkspaceSelectionRepeatState,
@@ -412,25 +411,25 @@ fn handle_workspace_selection_repeat(
     }
 }
 
-fn held_workspace_selection_key(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
+pub(crate) fn held_workspace_selection_key(keys: &ButtonInput<KeyCode>) -> Option<KeyCode> {
     [
         KeyCode::ArrowUp,
         KeyCode::ArrowDown,
         KeyCode::KeyK,
         KeyCode::KeyJ,
     ]
-        .into_iter()
-        .find(|key| keys.pressed(*key))
+    .into_iter()
+    .find(|key| keys.pressed(*key))
 }
 
-fn workspace_selection_key_delta(key: KeyCode) -> isize {
+pub(crate) fn workspace_selection_key_delta(key: KeyCode) -> isize {
     match key {
         KeyCode::ArrowUp | KeyCode::KeyK => -1,
         _ => 1,
     }
 }
 
-fn move_workspace_selection(state: &mut EditorState, delta: isize) {
+pub(crate) fn move_workspace_selection(state: &mut EditorState, delta: isize) {
     let rows = workspace_sidebar_rows(state);
     if rows.is_empty() {
         state.status_message = "Explorer has no rows to select.".to_string();
@@ -448,7 +447,7 @@ fn move_workspace_selection(state: &mut EditorState, delta: isize) {
     select_workspace_row_at_index(state, &rows, next);
 }
 
-fn collapse_or_select_workspace_parent(state: &mut EditorState) {
+pub(crate) fn collapse_or_select_workspace_parent(state: &mut EditorState) {
     let Some(selection) = state.workspace_selected_row.clone() else {
         state.status_message = "No explorer row selected.".to_string();
         return;
@@ -470,7 +469,7 @@ fn collapse_or_select_workspace_parent(state: &mut EditorState) {
     }
 }
 
-fn expand_or_open_workspace_selection(state: &mut EditorState) {
+pub(crate) fn expand_or_open_workspace_selection(state: &mut EditorState) {
     let Some(selection) = state.workspace_selected_row.clone() else {
         state.status_message = "No explorer row selected.".to_string();
         return;
@@ -487,7 +486,7 @@ fn expand_or_open_workspace_selection(state: &mut EditorState) {
     }
 }
 
-fn open_or_toggle_workspace_selection(state: &mut EditorState) {
+pub(crate) fn open_or_toggle_workspace_selection(state: &mut EditorState) {
     let Some(selection) = state.workspace_selected_row.clone() else {
         state.status_message = "No explorer row selected.".to_string();
         return;
@@ -499,7 +498,7 @@ fn open_or_toggle_workspace_selection(state: &mut EditorState) {
     }
 }
 
-fn open_workspace_path_from_selection(state: &mut EditorState, path: &Path) {
+pub(crate) fn open_workspace_path_from_selection(state: &mut EditorState, path: &Path) {
     if let Some(index) = state
         .workspace_files
         .iter()
@@ -511,7 +510,7 @@ fn open_workspace_path_from_selection(state: &mut EditorState, path: &Path) {
     }
 }
 
-fn begin_workspace_create_prompt(state: &mut EditorState) {
+pub(crate) fn begin_workspace_create_prompt(state: &mut EditorState) {
     let Some(folder) = selected_workspace_folder_context(state) else {
         state.status_message = "Open a workspace before creating files.".to_string();
         return;
@@ -524,7 +523,7 @@ fn begin_workspace_create_prompt(state: &mut EditorState) {
     });
 }
 
-fn begin_workspace_delete_prompt(state: &mut EditorState) {
+pub(crate) fn begin_workspace_delete_prompt(state: &mut EditorState) {
     let Some(target) = state.workspace_selected_row.clone() else {
         state.status_message = "Select a file or folder to delete.".to_string();
         return;
@@ -544,7 +543,7 @@ fn begin_workspace_delete_prompt(state: &mut EditorState) {
     state.workspace_prompt = Some(WorkspacePrompt::Delete { target });
 }
 
-fn begin_workspace_rename_prompt(state: &mut EditorState) {
+pub(crate) fn begin_workspace_rename_prompt(state: &mut EditorState) {
     let Some(target) = state.workspace_selected_row.clone() else {
         state.status_message = "Select a file or folder to rename.".to_string();
         return;
@@ -567,7 +566,7 @@ fn begin_workspace_rename_prompt(state: &mut EditorState) {
     });
 }
 
-fn confirm_workspace_create(state: &mut EditorState, input: &str) {
+pub(crate) fn confirm_workspace_create(state: &mut EditorState, input: &str) {
     let raw = input.trim();
     let Some(root) = state.workspace_root.clone() else {
         state.status_message = "Open a workspace before creating files.".to_string();
@@ -607,7 +606,8 @@ fn confirm_workspace_create(state: &mut EditorState, input: &str) {
                 state.status_message = format!("Created folder {}", path.display());
             }
             Err(error) => {
-                state.status_message = format!("Create folder failed for {}: {error}", path.display());
+                state.status_message =
+                    format!("Create folder failed for {}: {error}", path.display());
             }
         }
         return;
@@ -615,8 +615,10 @@ fn confirm_workspace_create(state: &mut EditorState, input: &str) {
 
     if let Some(parent) = path.parent() {
         if let Err(error) = fs::create_dir_all(parent) {
-            state.status_message =
-                format!("Create parent folders failed for {}: {error}", parent.display());
+            state.status_message = format!(
+                "Create parent folders failed for {}: {error}",
+                parent.display()
+            );
             return;
         }
     }
@@ -649,7 +651,7 @@ fn confirm_workspace_create(state: &mut EditorState, input: &str) {
     }
 }
 
-fn confirm_workspace_rename(
+pub(crate) fn confirm_workspace_rename(
     state: &mut EditorState,
     target: WorkspaceSelectedRow,
     input: &str,
@@ -728,15 +730,13 @@ fn confirm_workspace_rename(
                 {
                     expand_workspace_parent_folders(state, &parent_key);
                 }
-                state.workspace_selected_row = Some(WorkspaceSelectedRow::File(destination.clone()));
+                state.workspace_selected_row =
+                    Some(WorkspaceSelectedRow::File(destination.clone()));
             }
             state.workspace_focused = true;
             state.workspace_ui_dirty = true;
-            state.status_message = format!(
-                "Renamed {} to {}",
-                source.display(),
-                destination.display()
-            );
+            state.status_message =
+                format!("Renamed {} to {}", source.display(), destination.display());
         }
         Err(error) => {
             state.status_message = format!(
@@ -748,7 +748,7 @@ fn confirm_workspace_rename(
     }
 }
 
-fn confirm_workspace_delete(state: &mut EditorState, target: WorkspaceSelectedRow) {
+pub(crate) fn confirm_workspace_delete(state: &mut EditorState, target: WorkspaceSelectedRow) {
     let Some(path) = workspace_target_path(state, &target) else {
         state.status_message = "Explorer selection has no filesystem target.".to_string();
         return;
@@ -780,7 +780,7 @@ fn confirm_workspace_delete(state: &mut EditorState, target: WorkspaceSelectedRo
     }
 }
 
-fn selected_workspace_folder_context(state: &EditorState) -> Option<PathBuf> {
+pub(crate) fn selected_workspace_folder_context(state: &EditorState) -> Option<PathBuf> {
     let root = state.workspace_root.as_ref()?;
     match state.workspace_selected_row.as_ref() {
         Some(WorkspaceSelectedRow::Folder(folder_key)) => {
@@ -791,7 +791,7 @@ fn selected_workspace_folder_context(state: &EditorState) -> Option<PathBuf> {
     }
 }
 
-fn workspace_selection_for_row(
+pub(crate) fn workspace_selection_for_row(
     state: &EditorState,
     row: &WorkspaceSidebarRow,
 ) -> Option<WorkspaceSelectedRow> {
@@ -806,7 +806,7 @@ fn workspace_selection_for_row(
     }
 }
 
-fn workspace_row_matches_selection(
+pub(crate) fn workspace_row_matches_selection(
     state: &EditorState,
     row: &WorkspaceSidebarRow,
     selection: &WorkspaceSelectedRow,
@@ -824,7 +824,7 @@ fn workspace_row_matches_selection(
     }
 }
 
-fn selected_workspace_row_index(
+pub(crate) fn selected_workspace_row_index(
     state: &EditorState,
     rows: &[WorkspaceSidebarRow],
 ) -> Option<usize> {
@@ -833,7 +833,7 @@ fn selected_workspace_row_index(
         .position(|row| workspace_row_matches_selection(state, row, selection))
 }
 
-fn select_workspace_row_at_index(
+pub(crate) fn select_workspace_row_at_index(
     state: &mut EditorState,
     rows: &[WorkspaceSidebarRow],
     index: usize,
@@ -848,7 +848,7 @@ fn select_workspace_row_at_index(
     }
 }
 
-fn select_near_workspace_row_index(state: &mut EditorState, preferred_index: usize) {
+pub(crate) fn select_near_workspace_row_index(state: &mut EditorState, preferred_index: usize) {
     let rows = workspace_sidebar_rows(state);
     if rows.is_empty() {
         state.workspace_selected_row = None;
@@ -858,14 +858,18 @@ fn select_near_workspace_row_index(state: &mut EditorState, preferred_index: usi
     select_workspace_row_at_index(state, &rows, index);
 }
 
-fn workspace_parent_folder_selection(folder_key: &str) -> Option<WorkspaceSelectedRow> {
+pub(crate) fn workspace_parent_folder_selection(folder_key: &str) -> Option<WorkspaceSelectedRow> {
     workspace_parent_key(folder_key)
         .is_empty()
         .then_some(None)
-        .unwrap_or_else(|| Some(WorkspaceSelectedRow::Folder(workspace_parent_key(folder_key))))
+        .unwrap_or_else(|| {
+            Some(WorkspaceSelectedRow::Folder(workspace_parent_key(
+                folder_key,
+            )))
+        })
 }
 
-fn workspace_parent_selection_for_file(
+pub(crate) fn workspace_parent_selection_for_file(
     state: &EditorState,
     path: &Path,
 ) -> Option<WorkspaceSelectedRow> {
@@ -874,31 +878,37 @@ fn workspace_parent_selection_for_file(
     workspace_folder_key_for_path(root, parent).map(WorkspaceSelectedRow::Folder)
 }
 
-fn workspace_target_path(
+pub(crate) fn workspace_target_path(
     state: &EditorState,
     target: &WorkspaceSelectedRow,
 ) -> Option<PathBuf> {
     let root = state.workspace_root.as_ref()?;
     match target {
-        WorkspaceSelectedRow::Folder(folder_key) => Some(workspace_path_for_folder_key(root, folder_key)),
+        WorkspaceSelectedRow::Folder(folder_key) => {
+            Some(workspace_path_for_folder_key(root, folder_key))
+        }
         WorkspaceSelectedRow::File(path) => Some(path.clone()),
     }
 }
 
-fn workspace_path_for_folder_key(root: &Path, folder_key: &str) -> PathBuf {
+pub(crate) fn workspace_path_for_folder_key(root: &Path, folder_key: &str) -> PathBuf {
     folder_key
         .split('/')
         .filter(|part| !part.is_empty())
         .fold(root.to_path_buf(), |path, part| path.join(part))
 }
 
-fn workspace_folder_key_for_path(root: &Path, path: &Path) -> Option<String> {
-    let relative = path.strip_prefix(root).ok()?.to_string_lossy().replace('\\', "/");
+pub(crate) fn workspace_folder_key_for_path(root: &Path, path: &Path) -> Option<String> {
+    let relative = path
+        .strip_prefix(root)
+        .ok()?
+        .to_string_lossy()
+        .replace('\\', "/");
     let key = relative.trim_matches('/').to_string();
     if key.is_empty() { None } else { Some(key) }
 }
 
-fn expand_workspace_parent_folders(state: &mut EditorState, folder_key: &str) {
+pub(crate) fn expand_workspace_parent_folders(state: &mut EditorState, folder_key: &str) {
     let mut current = String::new();
     for part in folder_key.split('/').filter(|part| !part.is_empty()) {
         current = if current.is_empty() {
@@ -910,7 +920,7 @@ fn expand_workspace_parent_folders(state: &mut EditorState, folder_key: &str) {
     }
 }
 
-fn path_with_trailing_separator(path: &Path) -> String {
+pub(crate) fn path_with_trailing_separator(path: &Path) -> String {
     let mut text = path.display().to_string();
     if !text.ends_with('/') && !text.ends_with('\\') {
         text.push(std::path::MAIN_SEPARATOR);
@@ -918,7 +928,7 @@ fn path_with_trailing_separator(path: &Path) -> String {
     text
 }
 
-fn workspace_rename_destination(source: &Path, input: &str) -> Result<PathBuf, String> {
+pub(crate) fn workspace_rename_destination(source: &Path, input: &str) -> Result<PathBuf, String> {
     let raw = input.trim();
     if raw.is_empty() {
         return Err("Rename path is empty.".to_string());
@@ -946,7 +956,10 @@ fn workspace_rename_destination(source: &Path, input: &str) -> Result<PathBuf, S
         .parent()
         .ok_or_else(|| "Rename path has no parent folder.".to_string())?;
     if !parent.is_dir() {
-        return Err(format!("Rename parent folder does not exist: {}", parent.display()));
+        return Err(format!(
+            "Rename parent folder does not exist: {}",
+            parent.display()
+        ));
     }
 
     Ok(parent
@@ -955,7 +968,7 @@ fn workspace_rename_destination(source: &Path, input: &str) -> Result<PathBuf, S
         .join(file_name))
 }
 
-fn workspace_destination_is_under_root(root: &Path, destination: &Path) -> bool {
+pub(crate) fn workspace_destination_is_under_root(root: &Path, destination: &Path) -> bool {
     let Some(parent) = destination.parent() else {
         return false;
     };
@@ -965,17 +978,17 @@ fn workspace_destination_is_under_root(root: &Path, destination: &Path) -> bool 
     workspace_path_is_under_root(root, parent)
 }
 
-fn workspace_path_is_under_root(root: &Path, path: &Path) -> bool {
+pub(crate) fn workspace_path_is_under_root(root: &Path, path: &Path) -> bool {
     let root_key = workspace_path_key(root);
     let path_key = workspace_path_key(path);
     path_key == root_key || path_key.starts_with(&format!("{root_key}/"))
 }
 
-fn workspace_paths_match(left: &Path, right: &Path) -> bool {
+pub(crate) fn workspace_paths_match(left: &Path, right: &Path) -> bool {
     workspace_path_key(left) == workspace_path_key(right)
 }
 
-fn workspace_path_key(path: &Path) -> String {
+pub(crate) fn workspace_path_key(path: &Path) -> String {
     let normalized = path
         .canonicalize()
         .unwrap_or_else(|_| path.to_path_buf())
@@ -988,20 +1001,20 @@ fn workspace_path_key(path: &Path) -> String {
     }
 }
 
-fn workspace_dir_has_entries(path: &Path) -> bool {
+pub(crate) fn workspace_dir_has_entries(path: &Path) -> bool {
     fs::read_dir(path)
         .ok()
         .and_then(|mut entries| entries.next())
         .is_some()
 }
 
-fn workspace_active_path_affected(state: &EditorState, deleted_path: &Path) -> bool {
+pub(crate) fn workspace_active_path_affected(state: &EditorState, deleted_path: &Path) -> bool {
     let active_key = workspace_path_key(&state.paths.load_path);
     let deleted_key = workspace_path_key(deleted_path);
     active_key == deleted_key || active_key.starts_with(&format!("{deleted_key}/"))
 }
 
-fn rebase_workspace_active_paths_after_rename(
+pub(crate) fn rebase_workspace_active_paths_after_rename(
     state: &mut EditorState,
     source: &Path,
     destination: &Path,
@@ -1018,7 +1031,11 @@ fn rebase_workspace_active_paths_after_rename(
     changed
 }
 
-fn workspace_rebase_path(path: &Path, source: &Path, destination: &Path) -> Option<PathBuf> {
+pub(crate) fn workspace_rebase_path(
+    path: &Path,
+    source: &Path,
+    destination: &Path,
+) -> Option<PathBuf> {
     if workspace_paths_match(path, source) {
         return Some(destination.to_path_buf());
     }
@@ -1036,7 +1053,7 @@ fn workspace_rebase_path(path: &Path, source: &Path, destination: &Path) -> Opti
 }
 
 impl EditorState {
-    fn clear_deleted_active_document(&mut self) {
+    pub(crate) fn clear_deleted_active_document(&mut self) {
         self.document = Document::new();
         self.document_format = DocumentFormat::Fountain;
         self.parsed = parse_document_with_format(&self.document, self.document_format);
@@ -1062,3 +1079,5 @@ impl EditorState {
         self.workspace_active_file = None;
     }
 }
+#[allow(unused_imports)]
+use super::*;

@@ -1,7 +1,7 @@
-const PROCESSED_HORIZONTAL_OVERSCROLL_FACTOR: f32 = 0.65;
-const PROCESSED_HORIZONTAL_OVERSCROLL_MIN: f32 = 120.0;
+pub(crate) const PROCESSED_HORIZONTAL_OVERSCROLL_FACTOR: f32 = 0.65;
+pub(crate) const PROCESSED_HORIZONTAL_OVERSCROLL_MIN: f32 = 120.0;
 
-fn processed_horizontal_scroll_bounds_with_overscroll(
+pub(crate) fn processed_horizontal_scroll_bounds_with_overscroll(
     state: &EditorState,
     processed_panel_size: Option<Vec2>,
 ) -> (f32, f32) {
@@ -19,7 +19,7 @@ fn processed_horizontal_scroll_bounds_with_overscroll(
     (-(overflow_left + overscroll), overflow_right + overscroll)
 }
 
-fn apply_processed_panel_horizontal_scroll(
+pub(crate) fn apply_processed_panel_horizontal_scroll(
     state: &mut EditorState,
     processed_panel_size: Option<Vec2>,
     horizontal_delta_px: f32,
@@ -37,7 +37,7 @@ fn apply_processed_panel_horizontal_scroll(
     changed
 }
 
-fn apply_processed_panel_vertical_scroll(
+pub(crate) fn apply_processed_panel_vertical_scroll(
     state: &mut EditorState,
     processed_panel_size: Option<Vec2>,
     delta_lines: f32,
@@ -103,7 +103,7 @@ fn apply_processed_panel_vertical_scroll(
     actual_whole_lines != 0 || leftover_px.abs() > f32::EPSILON
 }
 
-fn apply_cursor_follow_scroll_policy(
+pub(crate) fn apply_cursor_follow_scroll_policy(
     state: &mut EditorState,
     processed_panel_size: Option<Vec2>,
     visible_lines: usize,
@@ -178,3 +178,5 @@ fn apply_cursor_follow_scroll_policy(
         }
     }
 }
+#[allow(unused_imports)]
+use super::*;

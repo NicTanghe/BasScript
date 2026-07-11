@@ -1,4 +1,4 @@
-fn setup(
+pub(crate) fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut images: ResMut<Assets<Image>>,
@@ -33,11 +33,7 @@ fn setup(
         ),
     };
     let workspace_icons = WorkspaceIcons {
-        folder_closed: load_workspace_icon_image(
-            &mut images,
-            "assets/icons/folder-closed.svg",
-            16,
-        ),
+        folder_closed: load_workspace_icon_image(&mut images, "assets/icons/folder-closed.svg", 16),
         folder_open: load_workspace_icon_image(&mut images, "assets/icons/folder-open.svg", 16),
     };
     let checklist_icons = ChecklistIcons {
@@ -46,11 +42,7 @@ fn setup(
             "assets/icons/checklist-unchecked.svg",
             16,
         ),
-        checked: load_workspace_icon_image(
-            &mut images,
-            "assets/icons/checklist-checked.svg",
-            16,
-        ),
+        checked: load_workspace_icon_image(&mut images, "assets/icons/checklist-checked.svg", 16),
     };
     let theme_picker_assets = ThemePickerAssets {
         hue_sat_wheel: generate_theme_color_wheel_image(&mut images, THEME_COLOR_WHEEL_SIZE_PX),
@@ -126,7 +118,11 @@ fn setup(
                                     ),
                                     toolbar_button(font.clone(), "Zoom -", ToolbarAction::ZoomOut),
                                     toolbar_button(font.clone(), "Zoom +", ToolbarAction::ZoomIn),
-                                    toolbar_button(font.clone(), "Settings", ToolbarAction::Settings),
+                                    toolbar_button(
+                                        font.clone(),
+                                        "Settings",
+                                        ToolbarAction::Settings
+                                    ),
                                 ],
                             )
                         ],
@@ -241,7 +237,10 @@ fn setup(
                                 SettingsAction::NonDialogueDoubleSpaceNewline,
                             ),
                             settings_toggle_button(font.clone(), SettingsAction::ToggleVimMode),
-                            settings_toggle_button(font.clone(), SettingsAction::ShowSystemTitlebar),
+                            settings_toggle_button(
+                                font.clone(),
+                                SettingsAction::ShowSystemTitlebar
+                            ),
                             margin_setting_row(
                                 font.clone(),
                                 "Left margin (pt)",
@@ -270,14 +269,26 @@ fn setup(
                                 SettingsAction::MarginBottomDecrease,
                                 SettingsAction::MarginBottomIncrease,
                             ),
-                            settings_action_button(font.clone(), "Theme", SettingsAction::OpenTheme),
+                            settings_action_button(
+                                font.clone(),
+                                "Theme",
+                                SettingsAction::OpenTheme
+                            ),
                             settings_action_button(
                                 font.clone(),
                                 "Link colors",
                                 SettingsAction::OpenLinkColors,
                             ),
-                            settings_action_button(font.clone(), "Keybinds", SettingsAction::OpenKeybinds),
-                            settings_action_button(font.clone(), "Back to editor", SettingsAction::BackToEditor),
+                            settings_action_button(
+                                font.clone(),
+                                "Keybinds",
+                                SettingsAction::OpenKeybinds
+                            ),
+                            settings_action_button(
+                                font.clone(),
+                                "Back to editor",
+                                SettingsAction::BackToEditor
+                            ),
                         ],
                     )],
                 )],
@@ -293,109 +304,129 @@ fn setup(
                 BackgroundColor(state.app_bg_color),
                 KeybindsScreenRoot,
                 children![(
+                    Node {
+                        width: percent(100.0),
+                        height: percent(100.0),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Start,
+                        overflow: Overflow::scroll_y(),
+                        ..default()
+                    },
+                    ScrollPosition::default(),
+                    RelativeCursorPosition::default(),
+                    SettingsMenuScrollArea {
+                        screen: UiScreenState::Keybinds,
+                    },
+                    children![(
                         Node {
                             width: percent(100.0),
-                            height: percent(100.0),
+                            max_width: px(760.0),
+                            flex_shrink: 0.0,
                             flex_direction: FlexDirection::Column,
-                            align_items: AlignItems::Start,
-                            overflow: Overflow::scroll_y(),
+                            row_gap: px(8.0),
+                            padding: UiRect::new(px(18.0), px(18.0), px(16.0), px(24.0)),
                             ..default()
                         },
-                        ScrollPosition::default(),
-                        RelativeCursorPosition::default(),
-                        SettingsMenuScrollArea {
+                        SettingsMenuScrollContent {
                             screen: UiScreenState::Keybinds,
                         },
-                        children![(
-                            Node {
-                                width: percent(100.0),
-                                max_width: px(760.0),
-                                flex_shrink: 0.0,
-                                flex_direction: FlexDirection::Column,
-                                row_gap: px(8.0),
-                                padding: UiRect::new(px(18.0), px(18.0), px(16.0), px(24.0)),
-                                ..default()
-                            },
-                            SettingsMenuScrollContent {
-                                screen: UiScreenState::Keybinds,
-                            },
-                            children![
-                                settings_screen_heading(
-                                    font.clone(),
-                                    "Keybinds",
-                                    "Customize shortcuts and review editor controls.",
-                                ),
-                                (
-                                    Node {
-                                        flex_direction: FlexDirection::Row,
-                                        column_gap: px(8.0),
-                                        margin: UiRect::bottom(px(8.0)),
-                                        ..default()
-                                    },
-                                    children![
-                                        settings_action_button(
-                                            font.clone(),
-                                            "Back to settings",
-                                            SettingsAction::BackToSettings,
-                                        ),
-                                        settings_action_button(
-                                            font.clone(),
-                                            "Back to editor",
-                                            SettingsAction::BackToEditor,
-                                        ),
-                                    ],
-                                ),
-                                keybind_help_card(font.clone()),
-                                keybind_section_heading(font.clone(), "Editable shortcuts"),
-                                keybind_setting_row(font.clone(), ShortcutAction::NavigateForward),
-                                keybind_setting_row(font.clone(), ShortcutAction::OpenWorkspace),
-                                keybind_setting_row(font.clone(), ShortcutAction::Save),
-                                keybind_setting_row(font.clone(), ShortcutAction::SaveAs),
-                                keybind_setting_row(font.clone(), ShortcutAction::Undo),
-                                keybind_setting_row(font.clone(), ShortcutAction::Redo),
-                                keybind_setting_row(font.clone(), ShortcutAction::ZoomIn),
-                                keybind_setting_row(font.clone(), ShortcutAction::ZoomOut),
-                                keybind_setting_row(font.clone(), ShortcutAction::PlainView),
-                                keybind_setting_row(font.clone(), ShortcutAction::ProcessedView),
-                                keybind_setting_row(
-                                    font.clone(),
-                                    ShortcutAction::ProcessedRawCurrentLineView,
-                                ),
-                                keybind_setting_row(font.clone(), ShortcutAction::SplitView),
-                                keybind_setting_row(font.clone(), ShortcutAction::ToggleExplorer),
-                                keybind_setting_row(font.clone(), ShortcutAction::ToggleTopMenu),
-                                keybind_section_heading(font.clone(), "Editor navigation"),
-                                keybind_row(font.clone(), "Cmd/Ctrl + mouse wheel", "Zoom"),
-                                keybind_row(font.clone(), "Arrow keys", "Move cursor"),
-                                keybind_row(font.clone(), "Home / End", "Move to line start/end"),
-                                keybind_row(font.clone(), "Page Up / Page Down", "Move by viewport"),
-                                keybind_row(font.clone(), "Escape", "Cancel autoscroll"),
-                                keybind_section_heading(font.clone(), "Explorer"),
-                                keybind_row(font.clone(), "j / k", "Move selected row"),
-                                keybind_row(font.clone(), "Enter / o / l", "Open selected row"),
-                                keybind_row(font.clone(), "n", "New file or folder"),
-                                keybind_row(font.clone(), "r", "Rename selected row"),
-                                keybind_row(font.clone(), "d", "Delete selected row"),
-                                keybind_row(font.clone(), "Shift+R", "Refresh workspace tree"),
-                                keybind_row(font.clone(), "q / Esc", "Leave explorer focus"),
-                                keybind_section_heading(font.clone(), "Vim mode"),
-                                keybind_row(font.clone(), "Esc / i / a", "Normal / insert / append"),
-                                keybind_row(font.clone(), "h j k l", "Move left / down / up / right"),
-                                keybind_row(font.clone(), "v / V", "Visual / visual line mode"),
-                                keybind_row(font.clone(), "yy / y", "Yank line / visual selection"),
-                                keybind_row(font.clone(), "p", "Paste Vim register"),
-                                keybind_row(font.clone(), "dd / d", "Delete line / visual selection"),
-                                keybind_row(font.clone(), ":", "Open command menu"),
-                                keybind_section_heading(font.clone(), "Mouse"),
-                                keybind_row(font.clone(), "Mouse wheel", "Scroll active pane vertically"),
-                                keybind_row(font.clone(), "Shift + wheel", "Scroll active pane horizontally"),
-                                keybind_row(font.clone(), "Ctrl + left drag", "Scroll text; move canvas card"),
-                                keybind_row(font.clone(), "Space + left drag", "Pan canvas"),
-                                keybind_row(font.clone(), "Middle drag", "Pan canvas; autoscroll text panes"),
-                                keybind_row(font.clone(), "Left click", "Place cursor"),
-                                keybind_row(font.clone(), "Right click", "Cancel middle-click autoscroll"),
-                            ],
-                        )],
+                        children![
+                            settings_screen_heading(
+                                font.clone(),
+                                "Keybinds",
+                                "Customize shortcuts and review editor controls.",
+                            ),
+                            (
+                                Node {
+                                    flex_direction: FlexDirection::Row,
+                                    column_gap: px(8.0),
+                                    margin: UiRect::bottom(px(8.0)),
+                                    ..default()
+                                },
+                                children![
+                                    settings_action_button(
+                                        font.clone(),
+                                        "Back to settings",
+                                        SettingsAction::BackToSettings,
+                                    ),
+                                    settings_action_button(
+                                        font.clone(),
+                                        "Back to editor",
+                                        SettingsAction::BackToEditor,
+                                    ),
+                                ],
+                            ),
+                            keybind_help_card(font.clone()),
+                            keybind_section_heading(font.clone(), "Editable shortcuts"),
+                            keybind_setting_row(font.clone(), ShortcutAction::NavigateForward),
+                            keybind_setting_row(font.clone(), ShortcutAction::OpenWorkspace),
+                            keybind_setting_row(font.clone(), ShortcutAction::Save),
+                            keybind_setting_row(font.clone(), ShortcutAction::SaveAs),
+                            keybind_setting_row(font.clone(), ShortcutAction::Undo),
+                            keybind_setting_row(font.clone(), ShortcutAction::Redo),
+                            keybind_setting_row(font.clone(), ShortcutAction::ZoomIn),
+                            keybind_setting_row(font.clone(), ShortcutAction::ZoomOut),
+                            keybind_setting_row(font.clone(), ShortcutAction::PlainView),
+                            keybind_setting_row(font.clone(), ShortcutAction::ProcessedView),
+                            keybind_setting_row(
+                                font.clone(),
+                                ShortcutAction::ProcessedRawCurrentLineView,
+                            ),
+                            keybind_setting_row(font.clone(), ShortcutAction::SplitView),
+                            keybind_setting_row(font.clone(), ShortcutAction::ToggleExplorer),
+                            keybind_setting_row(font.clone(), ShortcutAction::ToggleTopMenu),
+                            keybind_section_heading(font.clone(), "Editor navigation"),
+                            keybind_row(font.clone(), "Cmd/Ctrl + mouse wheel", "Zoom"),
+                            keybind_row(font.clone(), "Arrow keys", "Move cursor"),
+                            keybind_row(font.clone(), "Home / End", "Move to line start/end"),
+                            keybind_row(font.clone(), "Page Up / Page Down", "Move by viewport"),
+                            keybind_row(font.clone(), "Escape", "Cancel autoscroll"),
+                            keybind_section_heading(font.clone(), "Explorer"),
+                            keybind_row(font.clone(), "j / k", "Move selected row"),
+                            keybind_row(font.clone(), "Enter / o / l", "Open selected row"),
+                            keybind_row(font.clone(), "n", "New file or folder"),
+                            keybind_row(font.clone(), "r", "Rename selected row"),
+                            keybind_row(font.clone(), "d", "Delete selected row"),
+                            keybind_row(font.clone(), "Shift+R", "Refresh workspace tree"),
+                            keybind_row(font.clone(), "q / Esc", "Leave explorer focus"),
+                            keybind_section_heading(font.clone(), "Vim mode"),
+                            keybind_row(font.clone(), "Esc / i / a", "Normal / insert / append"),
+                            keybind_row(font.clone(), "h j k l", "Move left / down / up / right"),
+                            keybind_row(font.clone(), "v / V", "Visual / visual line mode"),
+                            keybind_row(font.clone(), "yy / y", "Yank line / visual selection"),
+                            keybind_row(font.clone(), "p", "Paste Vim register"),
+                            keybind_row(font.clone(), "dd / d", "Delete line / visual selection"),
+                            keybind_row(font.clone(), ":", "Open command menu"),
+                            keybind_section_heading(font.clone(), "Mouse"),
+                            keybind_row(
+                                font.clone(),
+                                "Mouse wheel",
+                                "Scroll active pane vertically"
+                            ),
+                            keybind_row(
+                                font.clone(),
+                                "Shift + wheel",
+                                "Scroll active pane horizontally"
+                            ),
+                            keybind_row(
+                                font.clone(),
+                                "Ctrl + left drag",
+                                "Scroll text; move canvas card"
+                            ),
+                            keybind_row(font.clone(), "Space + left drag", "Pan canvas"),
+                            keybind_row(
+                                font.clone(),
+                                "Middle drag",
+                                "Pan canvas; autoscroll text panes"
+                            ),
+                            keybind_row(font.clone(), "Left click", "Place cursor"),
+                            keybind_row(
+                                font.clone(),
+                                "Right click",
+                                "Cancel middle-click autoscroll"
+                            ),
+                        ],
+                    )],
                 )],
             ));
 
@@ -448,10 +479,22 @@ fn setup(
                                 },
                                 children![
                                     theme_color_row(font.clone(), ThemeColorTarget::AppBackground),
-                                    theme_color_row(font.clone(), ThemeColorTarget::TopMenuBackground),
-                                    theme_color_row(font.clone(), ThemeColorTarget::ExplorerBackground),
-                                    theme_color_row(font.clone(), ThemeColorTarget::ProcessedBackground),
-                                    theme_color_row(font.clone(), ThemeColorTarget::SelectionBackground),
+                                    theme_color_row(
+                                        font.clone(),
+                                        ThemeColorTarget::TopMenuBackground
+                                    ),
+                                    theme_color_row(
+                                        font.clone(),
+                                        ThemeColorTarget::ExplorerBackground
+                                    ),
+                                    theme_color_row(
+                                        font.clone(),
+                                        ThemeColorTarget::ProcessedBackground
+                                    ),
+                                    theme_color_row(
+                                        font.clone(),
+                                        ThemeColorTarget::SelectionBackground
+                                    ),
                                     theme_only_setting_button(
                                         font.clone(),
                                         SettingsAction::ToggleProcessedGlass,
@@ -656,7 +699,7 @@ fn setup(
         });
 }
 
-fn load_workspace_icon_image(
+pub(crate) fn load_workspace_icon_image(
     images: &mut Assets<Image>,
     icon_path: &str,
     max_side_px: u32,
@@ -680,7 +723,10 @@ fn load_workspace_icon_image(
     }
 }
 
-fn generate_theme_color_wheel_image(images: &mut Assets<Image>, diameter: u32) -> Handle<Image> {
+pub(crate) fn generate_theme_color_wheel_image(
+    images: &mut Assets<Image>,
+    diameter: u32,
+) -> Handle<Image> {
     let size = diameter.max(2);
     let half = size as f32 * 0.5;
     let mut data = vec![0_u8; (size * size * 4) as usize];
@@ -725,7 +771,7 @@ fn generate_theme_color_wheel_image(images: &mut Assets<Image>, diameter: u32) -
     ))
 }
 
-fn load_font_with_fallback(
+pub(crate) fn load_font_with_fallback(
     asset_server: &AssetServer,
     preferred_path: &str,
     fallback_path: &str,
@@ -741,19 +787,15 @@ fn load_font_with_fallback(
     asset_server.load(fallback_path.to_owned())
 }
 
-fn rasterize_svg_to_image(
+pub(crate) fn rasterize_svg_to_image(
     images: &mut Assets<Image>,
     icon_path: &str,
     max_side_px: u32,
 ) -> Result<Handle<Image>, String> {
     let icon_fs_path = resolve_workspace_asset_path(icon_path)
         .ok_or_else(|| format!("cannot resolve icon path {}", icon_path))?;
-    let svg_data = fs::read(&icon_fs_path).map_err(|error| {
-        format!(
-            "cannot read icon file {}: {error}",
-            icon_fs_path.display()
-        )
-    })?;
+    let svg_data = fs::read(&icon_fs_path)
+        .map_err(|error| format!("cannot read icon file {}: {error}", icon_fs_path.display()))?;
     let options = resvg::usvg::Options::default();
     let tree = resvg::usvg::Tree::from_data(&svg_data, &options)
         .map_err(|error| format!("invalid svg {}: {error}", icon_fs_path.display()))?;
@@ -786,7 +828,7 @@ fn rasterize_svg_to_image(
     Ok(images.add(image))
 }
 
-fn resolve_workspace_asset_path(path: &str) -> Option<PathBuf> {
+pub(crate) fn resolve_workspace_asset_path(path: &str) -> Option<PathBuf> {
     let direct = PathBuf::from(path);
     if direct.exists() {
         return Some(direct);
@@ -800,7 +842,7 @@ fn resolve_workspace_asset_path(path: &str) -> Option<PathBuf> {
     None
 }
 
-fn setup_processed_papers(
+pub(crate) fn setup_processed_papers(
     mut commands: Commands,
     canvas_query: Query<(Entity, &PanelCanvas)>,
     paper_query: Query<(Entity, &PanelPaper)>,
@@ -1032,7 +1074,11 @@ fn setup_processed_papers(
     }
 }
 
-fn toolbar_button(font: Handle<Font>, label: &str, action: ToolbarAction) -> impl Bundle {
+pub(crate) fn toolbar_button(
+    font: Handle<Font>,
+    label: &str,
+    action: ToolbarAction,
+) -> impl Bundle {
     (
         Button,
         action,
@@ -1053,7 +1099,7 @@ fn toolbar_button(font: Handle<Font>, label: &str, action: ToolbarAction) -> imp
     )
 }
 
-fn settings_toggle_button(font: Handle<Font>, action: SettingsAction) -> impl Bundle {
+pub(crate) fn settings_toggle_button(font: Handle<Font>, action: SettingsAction) -> impl Bundle {
     (
         Button,
         action,
@@ -1075,11 +1121,18 @@ fn settings_toggle_button(font: Handle<Font>, action: SettingsAction) -> impl Bu
     )
 }
 
-fn theme_only_setting_button(font: Handle<Font>, action: SettingsAction) -> impl Bundle {
-    (settings_toggle_button(font, action), ThemeOnlySettingControl)
+pub(crate) fn theme_only_setting_button(font: Handle<Font>, action: SettingsAction) -> impl Bundle {
+    (
+        settings_toggle_button(font, action),
+        ThemeOnlySettingControl,
+    )
 }
 
-fn settings_action_button(font: Handle<Font>, label: &str, action: SettingsAction) -> impl Bundle {
+pub(crate) fn settings_action_button(
+    font: Handle<Font>,
+    label: &str,
+    action: SettingsAction,
+) -> impl Bundle {
     (
         Button,
         action,
@@ -1100,7 +1153,7 @@ fn settings_action_button(font: Handle<Font>, label: &str, action: SettingsActio
     )
 }
 
-fn keybind_setting_row(font: Handle<Font>, action: ShortcutAction) -> impl Bundle {
+pub(crate) fn keybind_setting_row(font: Handle<Font>, action: ShortcutAction) -> impl Bundle {
     (
         Node {
             width: percent(100.0),
@@ -1152,7 +1205,7 @@ fn keybind_setting_row(font: Handle<Font>, action: ShortcutAction) -> impl Bundl
     )
 }
 
-fn settings_screen_heading(
+pub(crate) fn settings_screen_heading(
     font: Handle<Font>,
     title: &str,
     description: &str,
@@ -1188,7 +1241,7 @@ fn settings_screen_heading(
     )
 }
 
-fn keybind_row(font: Handle<Font>, binding: &str, description: &str) -> impl Bundle {
+pub(crate) fn keybind_row(font: Handle<Font>, binding: &str, description: &str) -> impl Bundle {
     (
         Node {
             width: percent(100.0),
@@ -1225,7 +1278,7 @@ fn keybind_row(font: Handle<Font>, binding: &str, description: &str) -> impl Bun
     )
 }
 
-fn keybind_section_heading(font: Handle<Font>, label: &str) -> impl Bundle {
+pub(crate) fn keybind_section_heading(font: Handle<Font>, label: &str) -> impl Bundle {
     (
         Text::new(label),
         TextFont {
@@ -1242,7 +1295,7 @@ fn keybind_section_heading(font: Handle<Font>, label: &str) -> impl Bundle {
     )
 }
 
-fn keybind_help_card(font: Handle<Font>) -> impl Bundle {
+pub(crate) fn keybind_help_card(font: Handle<Font>) -> impl Bundle {
     (
         Node {
             width: percent(100.0),
@@ -1265,7 +1318,9 @@ fn keybind_help_card(font: Handle<Font>) -> impl Bundle {
                 TextColor(COLOR_TEXT_MAIN),
             ),
             (
-                Text::new("Click a binding, then press a key. Hold Ctrl, Alt, Super/Cmd, or Space to choose its modifier. Esc cancels capture or closes this screen."),
+                Text::new(
+                    "Click a binding, then press a key. Hold Ctrl, Alt, Super/Cmd, or Space to choose its modifier. Esc cancels capture or closes this screen."
+                ),
                 TextFont {
                     font: font.into(),
                     font_size: FontSize::Px(12.0),
@@ -1277,7 +1332,7 @@ fn keybind_help_card(font: Handle<Font>) -> impl Bundle {
     )
 }
 
-fn margin_setting_row(
+pub(crate) fn margin_setting_row(
     font: Handle<Font>,
     label: &str,
     edge: MarginEdge,
@@ -1317,7 +1372,7 @@ fn margin_setting_row(
     )
 }
 
-fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> impl Bundle {
+pub(crate) fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> impl Bundle {
     (
         Node {
             flex_direction: FlexDirection::Row,
@@ -1391,7 +1446,7 @@ fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> impl Bundle 
     )
 }
 
-fn theme_link_hover_setting_row(font: Handle<Font>) -> impl Bundle {
+pub(crate) fn theme_link_hover_setting_row(font: Handle<Font>) -> impl Bundle {
     (
         Node {
             flex_direction: FlexDirection::Row,
@@ -1414,11 +1469,7 @@ fn theme_link_hover_setting_row(font: Handle<Font>) -> impl Bundle {
                     ..default()
                 },
             ),
-            settings_action_button(
-                font.clone(),
-                "-",
-                SettingsAction::LinkHoverHsvValueDecrease,
-            ),
+            settings_action_button(font.clone(), "-", SettingsAction::LinkHoverHsvValueDecrease,),
             (
                 Text::new(""),
                 TextFont {
@@ -1438,11 +1489,11 @@ fn theme_link_hover_setting_row(font: Handle<Font>) -> impl Bundle {
     )
 }
 
-fn format_hsv_value_adjustment_label(value: f32) -> String {
+pub(crate) fn format_hsv_value_adjustment_label(value: f32) -> String {
     format!("{:+.1}%", value * 100.0)
 }
 
-fn theme_visual_picker(font: Handle<Font>, hue_sat_wheel: Handle<Image>) -> impl Bundle {
+pub(crate) fn theme_visual_picker(font: Handle<Font>, hue_sat_wheel: Handle<Image>) -> impl Bundle {
     (
         Node {
             flex_direction: FlexDirection::Row,
@@ -1487,11 +1538,7 @@ fn theme_visual_picker(font: Handle<Font>, hue_sat_wheel: Handle<Image>) -> impl
                 },
                 children![
                     theme_color_slider_row(font.clone(), "Hue", ThemeSliderChannel::Hue),
-                    theme_color_slider_row(
-                        font.clone(),
-                        "Sat",
-                        ThemeSliderChannel::Saturation,
-                    ),
+                    theme_color_slider_row(font.clone(), "Sat", ThemeSliderChannel::Saturation,),
                     theme_color_slider_row(font.clone(), "Value", ThemeSliderChannel::Value),
                     theme_color_slider_row(font.clone(), "Red", ThemeSliderChannel::Red),
                     theme_color_slider_row(font.clone(), "Green", ThemeSliderChannel::Green),
@@ -1503,7 +1550,7 @@ fn theme_visual_picker(font: Handle<Font>, hue_sat_wheel: Handle<Image>) -> impl
     )
 }
 
-fn theme_color_slider_row(
+pub(crate) fn theme_color_slider_row(
     font: Handle<Font>,
     label: &str,
     channel: ThemeSliderChannel,
@@ -1581,7 +1628,7 @@ fn theme_color_slider_row(
     )
 }
 
-fn panel_splitter_bundle(kind: PanelSplitter) -> impl Bundle {
+pub(crate) fn panel_splitter_bundle(kind: PanelSplitter) -> impl Bundle {
     (
         Node {
             width: px(PANEL_SPLITTER_WIDTH),
@@ -1594,7 +1641,7 @@ fn panel_splitter_bundle(kind: PanelSplitter) -> impl Bundle {
     )
 }
 
-fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
+pub(crate) fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
     let body_color = match kind {
         PanelKind::Plain => COLOR_PANEL_BODY_PLAIN,
         PanelKind::Processed => COLOR_PANEL_BODY_PROCESSED,
@@ -1613,32 +1660,31 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
         },
         PanelRoot { kind },
         BackgroundColor(root_color),
-        children![
-            (
-                Node {
-                    width: percent(100.0),
-                    flex_grow: 1.0,
-                    position_type: PositionType::Relative,
-                    overflow: Overflow::clip(),
-                    ..default()
-                },
-                BackgroundColor(body_color),
-                RelativeCursorPosition::default(),
-                PanelBody { kind },
-                children![
-                    (
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: px(0.0),
-                            top: px(0.0),
-                            width: percent(100.0),
-                            height: percent(100.0),
-                            ..default()
-                        },
-                        UiTransform::default(),
-                        ZIndex(1),
-                        PanelCanvas { kind },
-                        children![
+        children![(
+            Node {
+                width: percent(100.0),
+                flex_grow: 1.0,
+                position_type: PositionType::Relative,
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            BackgroundColor(body_color),
+            RelativeCursorPosition::default(),
+            PanelBody { kind },
+            children![
+                (
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(0.0),
+                        top: px(0.0),
+                        width: percent(100.0),
+                        height: percent(100.0),
+                        ..default()
+                    },
+                    UiTransform::default(),
+                    ZIndex(1),
+                    PanelCanvas { kind },
+                    children![
                         (
                             Node {
                                 position_type: PositionType::Absolute,
@@ -1699,16 +1745,18 @@ fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
                             ZIndex(3),
                             PanelText { kind },
                         )
-                        ],
-                    ),
-                    processed_link_color_toggle_bundle(font.clone(), kind),
-                ],
-            )
-        ],
+                    ],
+                ),
+                processed_link_color_toggle_bundle(font.clone(), kind),
+            ],
+        )],
     )
 }
 
-fn processed_link_color_toggle_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
+pub(crate) fn processed_link_color_toggle_bundle(
+    font: Handle<Font>,
+    kind: PanelKind,
+) -> impl Bundle {
     (
         Button,
         ProcessedLinkColorToggle { kind },
@@ -1743,7 +1791,7 @@ fn processed_link_color_toggle_bundle(font: Handle<Font>, kind: PanelKind) -> im
     )
 }
 
-fn handle_toolbar_buttons(
+pub(crate) fn handle_toolbar_buttons(
     _dialog_main_thread: NonSend<DialogMainThreadMarker>,
     interaction_query: Query<(&Interaction, &ToolbarAction), (Changed<Interaction>, With<Button>)>,
     primary_window_query: Query<&RawHandleWrapper, With<PrimaryWindow>>,
@@ -1800,7 +1848,7 @@ fn handle_toolbar_buttons(
     }
 }
 
-fn style_toolbar_buttons(
+pub(crate) fn style_toolbar_buttons(
     mut button_query: Query<
         (&Interaction, &mut BackgroundColor),
         (
@@ -1826,7 +1874,7 @@ fn style_toolbar_buttons(
     }
 }
 
-fn handle_processed_link_color_toggle(
+pub(crate) fn handle_processed_link_color_toggle(
     interaction_query: Query<
         (&Interaction, &ProcessedLinkColorToggle),
         (Changed<Interaction>, With<Button>),
@@ -1849,21 +1897,21 @@ fn handle_processed_link_color_toggle(
     }
 }
 
-fn sync_processed_link_color_toggle(
+pub(crate) fn sync_processed_link_color_toggle(
     time: Res<Time>,
     state: Res<EditorState>,
     panel_query: Query<(&PanelBody, &ComputedNode)>,
-    paper_query: Query<
-        (&PanelPaper, &Node, &Visibility),
-        Without<ProcessedLinkColorToggle>,
+    paper_query: Query<(&PanelPaper, &Node, &Visibility), Without<ProcessedLinkColorToggle>>,
+    mut toggle_query: Query<
+        (
+            &ProcessedLinkColorToggle,
+            &ComputedNode,
+            &mut ProcessedLinkColorToggleSpring,
+            &mut Node,
+            &mut ZIndex,
+        ),
+        Without<PanelPaper>,
     >,
-    mut toggle_query: Query<(
-        &ProcessedLinkColorToggle,
-        &ComputedNode,
-        &mut ProcessedLinkColorToggleSpring,
-        &mut Node,
-        &mut ZIndex,
-    ), Without<PanelPaper>>,
     mut label_query: Query<&mut Text, With<ProcessedLinkColorToggleLabel>>,
 ) {
     let processed_panel_size = panel_query
@@ -1874,8 +1922,7 @@ fn sync_processed_link_color_toggle(
 
     for (toggle, computed, mut spring, mut node, mut z_index) in toggle_query.iter_mut() {
         let Some(panel_size) = processed_panel_size.filter(|_| {
-            toggle.kind == PanelKind::Processed
-                && state.document_format != DocumentFormat::Canvas
+            toggle.kind == PanelKind::Processed && state.document_format != DocumentFormat::Canvas
         }) else {
             node.display = Display::None;
             *z_index = ZIndex(20);
@@ -1884,8 +1931,8 @@ fn sync_processed_link_color_toggle(
         };
 
         let geometry = processed_page_geometry(panel_size, &state);
-        let page_right = geometry.paper_left + geometry.paper_width
-            - state.processed_horizontal_scroll;
+        let page_right =
+            geometry.paper_left + geometry.paper_width - state.processed_horizontal_scroll;
         let toggle_width = (computed.size().x * computed.inverse_scale_factor()).max(116.0);
         let toggle_height = (computed.size().y * computed.inverse_scale_factor()).max(30.0);
         let base_x = (panel_size.x - toggle_width - 10.0).max(0.0);
@@ -1909,10 +1956,7 @@ fn sync_processed_link_color_toggle(
             let returning_below_page =
                 spring.phase == ProcessedLinkColorTogglePhase::ReturningUnderPage;
             if !returning_below_page
-                || link_toggle_has_cleared_page_border(
-                    spring.offset_x,
-                    page_border_offset,
-                )
+                || link_toggle_has_cleared_page_border(spring.offset_x, page_border_offset)
             {
                 spring.phase = ProcessedLinkColorTogglePhase::Idle;
             }
@@ -1924,17 +1968,12 @@ fn sync_processed_link_color_toggle(
 
         match spring.phase {
             ProcessedLinkColorTogglePhase::Idle => {
-                (spring.offset_x, spring.velocity_x) = step_link_toggle_return(
-                    spring.offset_x,
-                    spring.velocity_x,
-                    dt,
-                );
+                (spring.offset_x, spring.velocity_x) =
+                    step_link_toggle_return(spring.offset_x, spring.velocity_x, dt);
             }
             ProcessedLinkColorTogglePhase::Compressing => {
-                let compression_target = link_toggle_compression_target(
-                    page_border_offset,
-                    spring.compression_distance,
-                );
+                let compression_target =
+                    link_toggle_compression_target(page_border_offset, spring.compression_distance);
                 (spring.offset_x, spring.velocity_x) = step_link_toggle_spring(
                     spring.offset_x,
                     spring.velocity_x,
@@ -1950,22 +1989,17 @@ fn sync_processed_link_color_toggle(
                     spring.offset_x = compression_target;
                 }
                 if spring.offset_x <= compression_target + 0.5
-                    || (spring.velocity_x >= 0.0
-                        && spring.offset_x < page_border_offset)
+                    || (spring.velocity_x >= 0.0 && spring.offset_x < page_border_offset)
                 {
                     spring.velocity_x = (420.0 + impact_speed * 0.32).clamp(420.0, 1_000.0);
                     spring.phase = ProcessedLinkColorTogglePhase::Rebounding;
                 }
             }
             ProcessedLinkColorTogglePhase::Rebounding => {
-                let rebound_target = link_toggle_rebound_target(
-                    page_border_offset,
-                    spring.compression_distance,
-                );
-                let compression_limit = link_toggle_compression_target(
-                    page_border_offset,
-                    spring.compression_distance,
-                );
+                let rebound_target =
+                    link_toggle_rebound_target(page_border_offset, spring.compression_distance);
+                let compression_limit =
+                    link_toggle_compression_target(page_border_offset, spring.compression_distance);
                 (spring.offset_x, spring.velocity_x) = step_link_toggle_spring(
                     spring.offset_x,
                     spring.velocity_x,
@@ -1990,11 +2024,8 @@ fn sync_processed_link_color_toggle(
                 }
             }
             ProcessedLinkColorTogglePhase::ReturningUnderPage => {
-                (spring.offset_x, spring.velocity_x) = step_link_toggle_return(
-                    spring.offset_x,
-                    spring.velocity_x,
-                    dt,
-                );
+                (spring.offset_x, spring.velocity_x) =
+                    step_link_toggle_return(spring.offset_x, spring.velocity_x, dt);
             }
         }
         if spring.phase == ProcessedLinkColorTogglePhase::Idle
@@ -2021,28 +2052,26 @@ fn sync_processed_link_color_toggle(
             link_toggle_vertical_target(
                 10.0,
                 toggle_height,
-                paper_query.iter().filter_map(|(paper, paper_node, paper_visibility)| {
-                    if paper.kind != PanelKind::Processed
-                        || *paper_visibility != Visibility::Visible
-                    {
-                        return None;
-                    }
-                    match (paper_node.top, paper_node.height) {
-                        (Val::Px(top), Val::Px(height)) => Some((top, height)),
-                        _ => None,
-                    }
-                }),
+                paper_query
+                    .iter()
+                    .filter_map(|(paper, paper_node, paper_visibility)| {
+                        if paper.kind != PanelKind::Processed
+                            || *paper_visibility != Visibility::Visible
+                        {
+                            return None;
+                        }
+                        match (paper_node.top, paper_node.height) {
+                            (Val::Px(top), Val::Px(height)) => Some((top, height)),
+                            _ => None,
+                        }
+                    }),
             )
             .unwrap_or(10.0)
         } else {
             10.0
         };
-        let (next_top, next_velocity_y) = step_link_toggle_vertical_spring(
-            current_top,
-            spring.velocity_y,
-            target_top,
-            dt,
-        );
+        let (next_top, next_velocity_y) =
+            step_link_toggle_vertical_spring(current_top, spring.velocity_y, target_top, dt);
         node.top = px(next_top);
         spring.velocity_y = next_velocity_y;
 
@@ -2067,19 +2096,19 @@ fn sync_processed_link_color_toggle(
     }
 }
 
-fn link_toggle_compression_for_impact(impact_speed: f32) -> f32 {
+pub(crate) fn link_toggle_compression_for_impact(impact_speed: f32) -> f32 {
     (8.0 + impact_speed.max(0.0) * 0.015).clamp(8.0, 20.0)
 }
 
-fn link_toggle_compression_target(border_offset: f32, compression_distance: f32) -> f32 {
+pub(crate) fn link_toggle_compression_target(border_offset: f32, compression_distance: f32) -> f32 {
     border_offset - compression_distance.clamp(0.0, 20.0)
 }
 
-fn link_toggle_rebound_target(border_offset: f32, compression_distance: f32) -> f32 {
+pub(crate) fn link_toggle_rebound_target(border_offset: f32, compression_distance: f32) -> f32 {
     border_offset + (compression_distance.clamp(0.0, 20.0) * 2.0).min(40.0)
 }
 
-fn link_toggle_vertical_target(
+pub(crate) fn link_toggle_vertical_target(
     current_top: f32,
     toggle_height: f32,
     pages: impl Iterator<Item = (f32, f32)>,
@@ -2104,14 +2133,13 @@ fn link_toggle_vertical_target(
         .map(|(target, _)| target)
 }
 
-fn step_link_toggle_vertical_spring(
+pub(crate) fn step_link_toggle_vertical_spring(
     top: f32,
     velocity: f32,
     target: f32,
     dt: f32,
 ) -> (f32, f32) {
-    let (next_top, next_velocity) =
-        step_link_toggle_spring(top, velocity, target, 115.0, 11.0, dt);
+    let (next_top, next_velocity) = step_link_toggle_spring(top, velocity, target, 115.0, 11.0, dt);
     if (next_top - target).abs() < 0.08 && next_velocity.abs() < 0.8 {
         (target, 0.0)
     } else {
@@ -2119,7 +2147,7 @@ fn step_link_toggle_vertical_spring(
     }
 }
 
-fn link_toggle_rebound_has_reached_apex(
+pub(crate) fn link_toggle_rebound_has_reached_apex(
     offset: f32,
     velocity: f32,
     rebound_target: f32,
@@ -2128,11 +2156,11 @@ fn link_toggle_rebound_has_reached_apex(
     offset >= rebound_target - 0.5 || (velocity <= 0.0 && offset > border_offset)
 }
 
-fn link_toggle_has_cleared_page_border(offset: f32, border_offset: f32) -> bool {
+pub(crate) fn link_toggle_has_cleared_page_border(offset: f32, border_offset: f32) -> bool {
     offset >= border_offset
 }
 
-fn step_link_toggle_spring(
+pub(crate) fn step_link_toggle_spring(
     offset: f32,
     velocity: f32,
     target: f32,
@@ -2148,7 +2176,7 @@ fn step_link_toggle_spring(
     (next_offset, next_velocity)
 }
 
-fn step_link_toggle_return(offset: f32, velocity: f32, dt: f32) -> (f32, f32) {
+pub(crate) fn step_link_toggle_return(offset: f32, velocity: f32, dt: f32) -> (f32, f32) {
     let (mut next_offset, mut next_velocity) =
         step_link_toggle_spring(offset, velocity, 0.0, 130.0, 8.0, dt);
 
@@ -2167,7 +2195,7 @@ fn step_link_toggle_return(offset: f32, velocity: f32, dt: f32) -> (f32, f32) {
     }
 }
 
-fn handle_theme_color_picker_buttons(
+pub(crate) fn handle_theme_color_picker_buttons(
     interaction_query: Query<
         (&Interaction, &ThemeColorPickerButton),
         (Changed<Interaction>, With<Button>),
@@ -2190,7 +2218,7 @@ fn handle_theme_color_picker_buttons(
     }
 }
 
-fn handle_settings_buttons(
+pub(crate) fn handle_settings_buttons(
     interaction_query: Query<(&Interaction, &SettingsAction), (Changed<Interaction>, With<Button>)>,
     mut state: ResMut<EditorState>,
     mut next_screen_state: ResMut<NextState<UiScreenState>>,
@@ -2236,17 +2264,19 @@ fn handle_settings_buttons(
                 state.vim_visual_head = None;
                 state.selection_anchor = None;
                 settings_changed = true;
-                state.status_message = format!(
-                    "Vim mode: {}",
-                    if state.vim_enabled { "ON" } else { "OFF" }
-                );
+                state.status_message =
+                    format!("Vim mode: {}", if state.vim_enabled { "ON" } else { "OFF" });
             }
             SettingsAction::ShowSystemTitlebar => {
                 state.show_system_titlebar = !state.show_system_titlebar;
                 settings_changed = true;
                 state.status_message = format!(
                     "System titlebar: {}",
-                    if state.show_system_titlebar { "ON" } else { "OFF" }
+                    if state.show_system_titlebar {
+                        "ON"
+                    } else {
+                        "OFF"
+                    }
                 );
             }
             SettingsAction::ToggleProcessedGlass => {
@@ -2372,7 +2402,7 @@ fn handle_settings_buttons(
     }
 }
 
-fn handle_theme_color_picker_input(
+pub(crate) fn handle_theme_color_picker_input(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mut state: ResMut<EditorState>,
     wheel_query: Query<(&RelativeCursorPosition, &ComputedNode), With<ThemeHueSatWheel>>,
@@ -2438,7 +2468,8 @@ fn handle_theme_color_picker_input(
             .max(THEME_COLOR_SLIDER_KNOB_WIDTH + 1.0);
         let usable_width = (track_width - THEME_COLOR_SLIDER_KNOB_WIDTH).max(1.0);
         let cursor_x = (normalized.x + 0.5).clamp(0.0, 1.0) * track_width;
-        let next = ((cursor_x - THEME_COLOR_SLIDER_KNOB_WIDTH * 0.5) / usable_width).clamp(0.0, 1.0);
+        let next =
+            ((cursor_x - THEME_COLOR_SLIDER_KNOB_WIDTH * 0.5) / usable_width).clamp(0.0, 1.0);
         let mut next_rgba = active_theme_rgba(&state);
         match slider.channel {
             ThemeSliderChannel::Hue => {
@@ -2482,7 +2513,7 @@ fn handle_theme_color_picker_input(
     }
 }
 
-fn handle_keybind_buttons(
+pub(crate) fn handle_keybind_buttons(
     interaction_query: Query<
         (&Interaction, &KeybindRebindButton),
         (Changed<Interaction>, With<Button>),
@@ -2502,13 +2533,13 @@ fn handle_keybind_buttons(
     }
 }
 
-fn settings_menu_max_scroll(viewport: &ComputedNode, content: &ComputedNode) -> f32 {
+pub(crate) fn settings_menu_max_scroll(viewport: &ComputedNode, content: &ComputedNode) -> f32 {
     let viewport_height = viewport.size().y * viewport.inverse_scale_factor();
     let content_height = content.size().y * content.inverse_scale_factor();
     (content_height - viewport_height).max(0.0)
 }
 
-fn reset_settings_menu_scroll_on_open(
+pub(crate) fn reset_settings_menu_scroll_on_open(
     screen_state: Res<State<UiScreenState>>,
     mut previous_screen: Local<Option<UiScreenState>>,
     mut scroll_query: Query<(&SettingsMenuScrollArea, &mut ScrollPosition)>,
@@ -2527,17 +2558,15 @@ fn reset_settings_menu_scroll_on_open(
     }
 }
 
-fn handle_settings_menu_mouse_scroll(
+pub(crate) fn handle_settings_menu_mouse_scroll(
     mut mouse_wheels: MessageReader<MouseWheel>,
     screen_state: Res<State<UiScreenState>>,
-    mut scroll_query: Query<
-        (
-            &SettingsMenuScrollArea,
-            &RelativeCursorPosition,
-            &ComputedNode,
-            &mut ScrollPosition,
-        ),
-    >,
+    mut scroll_query: Query<(
+        &SettingsMenuScrollArea,
+        &RelativeCursorPosition,
+        &ComputedNode,
+        &mut ScrollPosition,
+    )>,
     content_query: Query<(&SettingsMenuScrollContent, &ComputedNode)>,
 ) {
     let screen = *screen_state.get();
@@ -2573,15 +2602,11 @@ fn handle_settings_menu_mouse_scroll(
     scroll_position.x = 0.0;
 }
 
-fn handle_keybind_screen_navigation(
+pub(crate) fn handle_keybind_screen_navigation(
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<EditorState>,
     mut next_screen_state: ResMut<NextState<UiScreenState>>,
-    mut scroll_query: Query<(
-        &SettingsMenuScrollArea,
-        &ComputedNode,
-        &mut ScrollPosition,
-    )>,
+    mut scroll_query: Query<(&SettingsMenuScrollArea, &ComputedNode, &mut ScrollPosition)>,
     content_query: Query<(&SettingsMenuScrollContent, &ComputedNode)>,
 ) {
     if state.pending_keybind_capture.is_some() {
@@ -2631,15 +2656,11 @@ fn handle_keybind_screen_navigation(
     }
 }
 
-fn handle_settings_screen_navigation(
+pub(crate) fn handle_settings_screen_navigation(
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<EditorState>,
     mut next_screen_state: ResMut<NextState<UiScreenState>>,
-    mut scroll_query: Query<(
-        &SettingsMenuScrollArea,
-        &ComputedNode,
-        &mut ScrollPosition,
-    )>,
+    mut scroll_query: Query<(&SettingsMenuScrollArea, &ComputedNode, &mut ScrollPosition)>,
     content_query: Query<(&SettingsMenuScrollContent, &ComputedNode)>,
 ) {
     if keys.just_pressed(KeyCode::Escape) {
@@ -2685,7 +2706,7 @@ fn handle_settings_screen_navigation(
     }
 }
 
-fn capture_keybind_input(
+pub(crate) fn capture_keybind_input(
     mut keyboard_inputs: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<EditorState>,
@@ -2774,7 +2795,7 @@ fn capture_keybind_input(
     }
 }
 
-fn sync_glass_surfaces(
+pub(crate) fn sync_glass_surfaces(
     state: Res<EditorState>,
     native_glass_state: Res<NativeGlassState>,
     mut color_queries: ParamSet<(
@@ -2844,7 +2865,9 @@ fn sync_glass_surfaces(
     for (panel_body, mut color) in color_queries.p4().iter_mut() {
         color.0 = match panel_body.kind {
             PanelKind::Plain => COLOR_PANEL_BODY_PLAIN,
-            PanelKind::Processed if state.document_format == DocumentFormat::Canvas => COLOR_CANVAS_BG,
+            PanelKind::Processed if state.document_format == DocumentFormat::Canvas => {
+                COLOR_CANVAS_BG
+            }
             PanelKind::Processed if processed_glass_active => Color::NONE,
             PanelKind::Processed => state.processed_bg_color,
         };
@@ -2859,7 +2882,7 @@ fn sync_glass_surfaces(
     }
 }
 
-fn sync_top_menu_visibility(
+pub(crate) fn sync_top_menu_visibility(
     state: Res<EditorState>,
     mut top_menu_query: Query<&mut Node, With<TopMenuSection>>,
 ) {
@@ -2874,7 +2897,7 @@ fn sync_top_menu_visibility(
     }
 }
 
-fn sync_rounded_window_surfaces(
+pub(crate) fn sync_rounded_window_surfaces(
     state: Res<EditorState>,
     screen_state: Res<State<UiScreenState>>,
     mut node_queries: ParamSet<(
@@ -2936,8 +2959,7 @@ fn sync_rounded_window_surfaces(
 ) {
     let round_window = !state.show_system_titlebar;
     let editor_screen_active = *screen_state.get() == UiScreenState::Editor;
-    let editor_top_radius_active =
-        round_window && editor_screen_active && state.top_menu_collapsed;
+    let editor_top_radius_active = round_window && editor_screen_active && state.top_menu_collapsed;
     let clipped_overflow = if round_window {
         window_surface_overflow(false)
     } else {
@@ -2981,20 +3003,22 @@ fn sync_rounded_window_surfaces(
     }
 
     if let Ok(mut top_menu) = node_queries.p4().single_mut() {
-        top_menu.border_radius = if round_window && editor_screen_active && !state.top_menu_collapsed {
-            window_surface_top_border_radius(true, true)
-        } else {
-            BorderRadius::ZERO
-        };
+        top_menu.border_radius =
+            if round_window && editor_screen_active && !state.top_menu_collapsed {
+                window_surface_top_border_radius(true, true)
+            } else {
+                BorderRadius::ZERO
+            };
         top_menu.overflow = clipped_overflow;
     }
 
     if let Ok(mut workspace_sidebar) = node_queries.p5().single_mut() {
-        workspace_sidebar.border_radius = if editor_top_radius_active && state.workspace_sidebar_visible {
-            window_surface_top_border_radius(true, false)
-        } else {
-            BorderRadius::ZERO
-        };
+        workspace_sidebar.border_radius =
+            if editor_top_radius_active && state.workspace_sidebar_visible {
+                window_surface_top_border_radius(true, false)
+            } else {
+                BorderRadius::ZERO
+            };
     }
 
     let plain_visible = state.panel_visible(PanelKind::Plain);
@@ -3033,7 +3057,7 @@ fn sync_rounded_window_surfaces(
     }
 }
 
-fn sync_panel_display_mode(
+pub(crate) fn sync_panel_display_mode(
     state: Res<EditorState>,
     mut panel_root_query: Query<(&PanelRoot, &mut Node)>,
 ) {
@@ -3046,7 +3070,7 @@ fn sync_panel_display_mode(
     }
 }
 
-fn sync_settings_ui(
+pub(crate) fn sync_settings_ui(
     state: Res<EditorState>,
     screen_state: Res<State<UiScreenState>>,
     mut editor_root_query: Query<
@@ -3162,10 +3186,9 @@ fn sync_settings_ui(
                     "OFF"
                 }
             ),
-            SettingsAction::ToggleVimMode => format!(
-                "Vim mode: {}",
-                if state.vim_enabled { "ON" } else { "OFF" }
-            ),
+            SettingsAction::ToggleVimMode => {
+                format!("Vim mode: {}", if state.vim_enabled { "ON" } else { "OFF" })
+            }
             SettingsAction::ShowSystemTitlebar => format!(
                 "Show system titlebar: {}",
                 if state.show_system_titlebar {
@@ -3209,7 +3232,7 @@ fn sync_settings_ui(
     }
 }
 
-fn sync_theme_picker_ui(
+pub(crate) fn sync_theme_picker_ui(
     state: Res<EditorState>,
     screen_state: Res<State<UiScreenState>>,
     mut node_queries: ParamSet<(
@@ -3440,3 +3463,5 @@ fn sync_theme_picker_ui(
         }
     }
 }
+#[allow(unused_imports)]
+use super::*;

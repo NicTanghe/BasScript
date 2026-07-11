@@ -1,4 +1,4 @@
-fn sync_panel_split_layout(
+pub(crate) fn sync_panel_split_layout(
     state: Res<EditorState>,
     mut layout: ResMut<PanelLayoutState>,
     body_row_query: Query<&ComputedNode, With<EditorBodyRow>>,
@@ -103,7 +103,7 @@ fn sync_panel_split_layout(
     }
 }
 
-fn handle_panel_splitter_drag(
+pub(crate) fn handle_panel_splitter_drag(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
@@ -183,17 +183,18 @@ fn handle_panel_splitter_drag(
             if !state.workspace_sidebar_visible {
                 return;
             }
-            let workspace_width =
-                effective_workspace_width(
-                    &mut layout,
-                    total_width,
-                    state.panel_layout_display_mode(),
-                    state.workspace_sidebar_visible,
-                ) + delta_x;
+            let workspace_width = effective_workspace_width(
+                &mut layout,
+                total_width,
+                state.panel_layout_display_mode(),
+                state.workspace_sidebar_visible,
+            ) + delta_x;
             let min_editor_width = min_editor_content_width(state.panel_layout_display_mode());
-            let max_workspace_width = (total_width - PANEL_SPLITTER_WIDTH - min_editor_width).max(0.0);
+            let max_workspace_width =
+                (total_width - PANEL_SPLITTER_WIDTH - min_editor_width).max(0.0);
             let min_workspace_width = WORKSPACE_WIDTH_MIN.min(max_workspace_width);
-            layout.workspace_width_px = workspace_width.clamp(min_workspace_width, max_workspace_width);
+            layout.workspace_width_px =
+                workspace_width.clamp(min_workspace_width, max_workspace_width);
         }
         PanelSplitter::Panels => {
             if state.panel_layout_display_mode() != DisplayMode::Split {
@@ -219,8 +220,10 @@ fn handle_panel_splitter_drag(
 
             let current_plain = layout.plain_ratio * split_available;
             let next_plain = if split_available > EDITOR_PANEL_MIN_WIDTH * 2.0 {
-                (current_plain + delta_x)
-                    .clamp(EDITOR_PANEL_MIN_WIDTH, split_available - EDITOR_PANEL_MIN_WIDTH)
+                (current_plain + delta_x).clamp(
+                    EDITOR_PANEL_MIN_WIDTH,
+                    split_available - EDITOR_PANEL_MIN_WIDTH,
+                )
             } else {
                 split_available * 0.5
             };
@@ -229,10 +232,14 @@ fn handle_panel_splitter_drag(
     }
 }
 
-fn style_panel_splitters(
+pub(crate) fn style_panel_splitters(
     state: Res<EditorState>,
     drag_state: Res<PanelSplitterDragState>,
-    mut splitter_query: Query<(&PanelSplitter, &RelativeCursorPosition, &mut BackgroundColor)>,
+    mut splitter_query: Query<(
+        &PanelSplitter,
+        &RelativeCursorPosition,
+        &mut BackgroundColor,
+    )>,
 ) {
     for (splitter, relative_cursor, mut color) in splitter_query.iter_mut() {
         color.0 = if !splitter_visible_for_mode(
@@ -251,7 +258,7 @@ fn style_panel_splitters(
     }
 }
 
-fn primary_cursor_x(window_query: &Query<&Window, With<PrimaryWindow>>) -> Option<f32> {
+pub(crate) fn primary_cursor_x(window_query: &Query<&Window, With<PrimaryWindow>>) -> Option<f32> {
     window_query
         .iter()
         .next()
@@ -259,7 +266,7 @@ fn primary_cursor_x(window_query: &Query<&Window, With<PrimaryWindow>>) -> Optio
         .map(|position| position.x)
 }
 
-fn splitter_visible_for_mode(
+pub(crate) fn splitter_visible_for_mode(
     splitter: PanelSplitter,
     display_mode: DisplayMode,
     workspace_sidebar_visible: bool,
@@ -270,7 +277,7 @@ fn splitter_visible_for_mode(
     }
 }
 
-fn min_editor_content_width(display_mode: DisplayMode) -> f32 {
+pub(crate) fn min_editor_content_width(display_mode: DisplayMode) -> f32 {
     if display_mode == DisplayMode::Split {
         EDITOR_PANEL_MIN_WIDTH * 2.0 + PANEL_SPLITTER_WIDTH
     } else {
@@ -278,7 +285,7 @@ fn min_editor_content_width(display_mode: DisplayMode) -> f32 {
     }
 }
 
-fn clamp_workspace_width(
+pub(crate) fn clamp_workspace_width(
     layout: &mut PanelLayoutState,
     total_width: f32,
     display_mode: DisplayMode,
@@ -292,15 +299,20 @@ fn clamp_workspace_width(
     layout.workspace_width_px
 }
 
-fn clamp_plain_width_from_ratio(layout: &mut PanelLayoutState, split_available: f32) -> f32 {
+pub(crate) fn clamp_plain_width_from_ratio(
+    layout: &mut PanelLayoutState,
+    split_available: f32,
+) -> f32 {
     if split_available <= 0.0 {
         layout.plain_ratio = 0.5;
         return 0.0;
     }
 
     let width = if split_available > EDITOR_PANEL_MIN_WIDTH * 2.0 {
-        (layout.plain_ratio * split_available)
-            .clamp(EDITOR_PANEL_MIN_WIDTH, split_available - EDITOR_PANEL_MIN_WIDTH)
+        (layout.plain_ratio * split_available).clamp(
+            EDITOR_PANEL_MIN_WIDTH,
+            split_available - EDITOR_PANEL_MIN_WIDTH,
+        )
     } else {
         split_available * 0.5
     };
@@ -308,7 +320,7 @@ fn clamp_plain_width_from_ratio(layout: &mut PanelLayoutState, split_available: 
     width
 }
 
-fn splitter_from_cursor_x(
+pub(crate) fn splitter_from_cursor_x(
     local_x: f32,
     total_width: f32,
     display_mode: DisplayMode,
@@ -335,10 +347,8 @@ fn splitter_from_cursor_x(
         let editor_width = (total_width - workspace_splitter_width - workspace_width).max(0.0);
         let split_available = (editor_width - PANEL_SPLITTER_WIDTH).max(0.0);
         let plain_width = clamp_plain_width_from_ratio(layout, split_available);
-        let panels_center = workspace_width
-            + workspace_splitter_width
-            + plain_width
-            + PANEL_SPLITTER_WIDTH * 0.5;
+        let panels_center =
+            workspace_width + workspace_splitter_width + plain_width + PANEL_SPLITTER_WIDTH * 0.5;
         let panel_distance = (local_x - panels_center).abs();
         if panel_distance < closest {
             closest = panel_distance;
@@ -353,7 +363,7 @@ fn splitter_from_cursor_x(
     }
 }
 
-fn effective_workspace_width(
+pub(crate) fn effective_workspace_width(
     layout: &mut PanelLayoutState,
     total_width: f32,
     display_mode: DisplayMode,
@@ -365,3 +375,5 @@ fn effective_workspace_width(
         0.0
     }
 }
+#[allow(unused_imports)]
+use super::*;

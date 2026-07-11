@@ -1,11 +1,11 @@
 use basscript_core::{StoryIndexAppearanceRecord, StoryIndexEntityRecord, StoryIndexSceneRecord};
 use serde::Deserialize;
 
-const STORY_QUERY_RESULT_WIDTH_PERCENT: f32 = 61.803;
-const STORY_QUERY_MENU_WIDTH_PERCENT: f32 = 38.197;
-const STORY_QUERY_DROPDOWN_VISIBLE_OPTIONS: usize = 8;
-const STORY_QUERY_MAX_CATEGORY_ROWS: usize = 8;
-const DEFAULT_STORY_TAXONOMY_RON: &str = r#"(
+pub(crate) const STORY_QUERY_RESULT_WIDTH_PERCENT: f32 = 61.803;
+pub(crate) const STORY_QUERY_MENU_WIDTH_PERCENT: f32 = 38.197;
+pub(crate) const STORY_QUERY_DROPDOWN_VISIBLE_OPTIONS: usize = 8;
+pub(crate) const STORY_QUERY_MAX_CATEGORY_ROWS: usize = 8;
+pub(crate) const DEFAULT_STORY_TAXONOMY_RON: &str = r#"(
 	categories: [
 		(
 			id: "props",
@@ -36,7 +36,7 @@ const DEFAULT_STORY_TAXONOMY_RON: &str = r#"(
 )"#;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum StoryQueryKind {
+pub(crate) enum StoryQueryKind {
     DialogueByCharacter,
     DialogueBetweenCharacters,
     DialogueBetweenAtScene,
@@ -44,7 +44,7 @@ enum StoryQueryKind {
     AppearancesOfEntity,
 }
 
-const STORY_QUERY_KINDS: [StoryQueryKind; 5] = [
+pub(crate) const STORY_QUERY_KINDS: [StoryQueryKind; 5] = [
     StoryQueryKind::DialogueByCharacter,
     StoryQueryKind::DialogueBetweenCharacters,
     StoryQueryKind::DialogueBetweenAtScene,
@@ -53,7 +53,7 @@ const STORY_QUERY_KINDS: [StoryQueryKind; 5] = [
 ];
 
 impl StoryQueryKind {
-    fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::DialogueByCharacter => "All dialogue by character",
             Self::DialogueBetweenCharacters => "Dialogue between characters",
@@ -63,7 +63,7 @@ impl StoryQueryKind {
         }
     }
 
-    fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         STORY_QUERY_KINDS
             .iter()
             .position(|kind| *kind == self)
@@ -72,20 +72,20 @@ impl StoryQueryKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum StoryQuerySceneScope {
+pub(crate) enum StoryQuerySceneScope {
     Current,
     Selected,
     All,
 }
 
-const STORY_QUERY_SCENE_SCOPES: [StoryQuerySceneScope; 3] = [
+pub(crate) const STORY_QUERY_SCENE_SCOPES: [StoryQuerySceneScope; 3] = [
     StoryQuerySceneScope::Current,
     StoryQuerySceneScope::Selected,
     StoryQuerySceneScope::All,
 ];
 
 impl StoryQuerySceneScope {
-    fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Current => "Current scene",
             Self::Selected => "Selected scene",
@@ -93,7 +93,7 @@ impl StoryQuerySceneScope {
         }
     }
 
-    fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         STORY_QUERY_SCENE_SCOPES
             .iter()
             .position(|scope| *scope == self)
@@ -102,23 +102,23 @@ impl StoryQuerySceneScope {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct StoryTaxonomyConfig {
+pub(crate) struct StoryTaxonomyConfig {
     #[serde(default)]
-    categories: Vec<StoryTaxonomyCategory>,
+    pub(crate) categories: Vec<StoryTaxonomyCategory>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct StoryTaxonomyCategory {
-    id: String,
+pub(crate) struct StoryTaxonomyCategory {
+    pub(crate) id: String,
     #[serde(default)]
-    label: String,
+    pub(crate) label: String,
     #[serde(default)]
-    types: Vec<String>,
+    pub(crate) types: Vec<String>,
 }
 
-struct StoryTaxonomyLoad {
-    taxonomy: StoryTaxonomyConfig,
-    notice: Option<String>,
+pub(crate) struct StoryTaxonomyLoad {
+    pub(crate) taxonomy: StoryTaxonomyConfig,
+    pub(crate) notice: Option<String>,
 }
 
 impl Default for StoryTaxonomyConfig {
@@ -129,7 +129,7 @@ impl Default for StoryTaxonomyConfig {
 }
 
 impl StoryTaxonomyConfig {
-    fn from_ron(contents: &str) -> Result<Self, String> {
+    pub(crate) fn from_ron(contents: &str) -> Result<Self, String> {
         let mut taxonomy = ron::from_str::<Self>(contents)
             .map_err(|error| format!("Could not parse taxonomy RON: {error}"))?;
         taxonomy.normalize();
@@ -139,7 +139,7 @@ impl StoryTaxonomyConfig {
         Ok(taxonomy)
     }
 
-    fn normalize(&mut self) {
+    pub(crate) fn normalize(&mut self) {
         for category in &mut self.categories {
             category.id = category.id.trim().to_ascii_lowercase();
             category.label = category.label.trim().to_string();
@@ -158,7 +158,7 @@ impl StoryTaxonomyConfig {
 }
 
 impl StoryTaxonomyCategory {
-    fn display_label(&self) -> &str {
+    pub(crate) fn display_label(&self) -> &str {
         if self.label.is_empty() {
             &self.id
         } else {
@@ -168,55 +168,55 @@ impl StoryTaxonomyCategory {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum StoryQueryOutputFormat {
+pub(crate) enum StoryQueryOutputFormat {
     Fountain,
     Markdown,
 }
 
 #[derive(Clone, Debug)]
-struct StoryQuerySheet {
-    open: bool,
-    query_kind: StoryQueryKind,
-    characters: Vec<StoryIndexEntityRecord>,
-    entities: Vec<StoryIndexEntityRecord>,
-    scenes: Vec<StoryIndexSceneRecord>,
-    character_a_index: usize,
-    character_b_index: usize,
-    entity_index: usize,
-    scene_index: usize,
-    scene_scope: StoryQuerySceneScope,
-    category_indices: Vec<usize>,
-    taxonomy: StoryTaxonomyConfig,
-    taxonomy_notice: Option<String>,
-    open_dropdown: Option<StoryQueryDropdownKind>,
-    result_scroll_visual: usize,
-    result_scroll_anchor_bias_px: f32,
-    result_horizontal_scroll: f32,
-    visual_lines: Vec<ProcessedVisualLine>,
-    visual_layout_signature: Option<StoryQueryLayoutSignature>,
-    result_title: String,
-    result_status: String,
-    result_text: String,
-    result_format: StoryQueryOutputFormat,
-    dialogue_double_space_newline: bool,
-    non_dialogue_double_space_newline: bool,
-    source_targets: Vec<StoryQuerySourceTarget>,
+pub(crate) struct StoryQuerySheet {
+    pub(crate) open: bool,
+    pub(crate) query_kind: StoryQueryKind,
+    pub(crate) characters: Vec<StoryIndexEntityRecord>,
+    pub(crate) entities: Vec<StoryIndexEntityRecord>,
+    pub(crate) scenes: Vec<StoryIndexSceneRecord>,
+    pub(crate) character_a_index: usize,
+    pub(crate) character_b_index: usize,
+    pub(crate) entity_index: usize,
+    pub(crate) scene_index: usize,
+    pub(crate) scene_scope: StoryQuerySceneScope,
+    pub(crate) category_indices: Vec<usize>,
+    pub(crate) taxonomy: StoryTaxonomyConfig,
+    pub(crate) taxonomy_notice: Option<String>,
+    pub(crate) open_dropdown: Option<StoryQueryDropdownKind>,
+    pub(crate) result_scroll_visual: usize,
+    pub(crate) result_scroll_anchor_bias_px: f32,
+    pub(crate) result_horizontal_scroll: f32,
+    pub(crate) visual_lines: Vec<ProcessedVisualLine>,
+    pub(crate) visual_layout_signature: Option<StoryQueryLayoutSignature>,
+    pub(crate) result_title: String,
+    pub(crate) result_status: String,
+    pub(crate) result_text: String,
+    pub(crate) result_format: StoryQueryOutputFormat,
+    pub(crate) dialogue_double_space_newline: bool,
+    pub(crate) non_dialogue_double_space_newline: bool,
+    pub(crate) source_targets: Vec<StoryQuerySourceTarget>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct StoryQueryLayoutSignature {
-    output_format: StoryQueryOutputFormat,
-    wrap_columns: usize,
-    lines_per_page: usize,
-    spacer_lines: usize,
-    dialogue_double_space_newline: bool,
-    non_dialogue_double_space_newline: bool,
+pub(crate) struct StoryQueryLayoutSignature {
+    pub(crate) output_format: StoryQueryOutputFormat,
+    pub(crate) wrap_columns: usize,
+    pub(crate) lines_per_page: usize,
+    pub(crate) spacer_lines: usize,
+    pub(crate) dialogue_double_space_newline: bool,
+    pub(crate) non_dialogue_double_space_newline: bool,
 }
 
 #[derive(Clone, Debug)]
-struct StoryQuerySourceTarget {
-    path: PathBuf,
-    line: usize,
+pub(crate) struct StoryQuerySourceTarget {
+    pub(crate) path: PathBuf,
+    pub(crate) line: usize,
 }
 
 impl Default for StoryQuerySheet {
@@ -253,10 +253,10 @@ impl Default for StoryQuerySheet {
 }
 
 #[derive(Component)]
-struct StoryQuerySheetRoot;
+pub(crate) struct StoryQuerySheetRoot;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-enum StoryQuerySheetTextSlot {
+pub(crate) enum StoryQuerySheetTextSlot {
     Title,
     Status,
     QueryKind,
@@ -271,7 +271,7 @@ enum StoryQuerySheetTextSlot {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum StoryQueryDropdownKind {
+pub(crate) enum StoryQueryDropdownKind {
     QueryKind,
     SceneScope,
     PrimaryCharacter,
@@ -282,7 +282,7 @@ enum StoryQueryDropdownKind {
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-enum StoryQuerySheetAction {
+pub(crate) enum StoryQuerySheetAction {
     ToggleDropdown(StoryQueryDropdownKind),
     SelectDropdownOption {
         kind: StoryQueryDropdownKind,
@@ -295,61 +295,62 @@ enum StoryQuerySheetAction {
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct StoryQueryControlRow {
-    slot: StoryQuerySheetTextSlot,
+pub(crate) struct StoryQueryControlRow {
+    pub(crate) slot: StoryQuerySheetTextSlot,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct StoryQueryDropdownOptionsRoot {
-    kind: StoryQueryDropdownKind,
+pub(crate) struct StoryQueryDropdownOptionsRoot {
+    pub(crate) kind: StoryQueryDropdownKind,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct StoryQueryDropdownOptionNode {
-    kind: StoryQueryDropdownKind,
-    slot_index: usize,
+pub(crate) struct StoryQueryDropdownOptionNode {
+    pub(crate) kind: StoryQueryDropdownKind,
+    pub(crate) slot_index: usize,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct StoryQueryDropdownOptionText {
-    kind: StoryQueryDropdownKind,
-    slot_index: usize,
+pub(crate) struct StoryQueryDropdownOptionText {
+    pub(crate) kind: StoryQueryDropdownKind,
+    pub(crate) slot_index: usize,
 }
 
 #[derive(Component)]
-struct StoryQueryResultPanel;
+pub(crate) struct StoryQueryResultPanel;
 
 #[derive(Component)]
-struct StoryQueryResultCanvas;
+pub(crate) struct StoryQueryResultCanvas;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct StoryQueryPaper {
-    slot: usize,
-}
-
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct StoryQueryRenderedText {
-    slot: usize,
+pub(crate) struct StoryQueryPaper {
+    pub(crate) slot: usize,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct StoryQueryRenderedLineSpan {
-    slot: usize,
-    line_offset: usize,
-    part_index: usize,
+pub(crate) struct StoryQueryRenderedText {
+    pub(crate) slot: usize,
 }
 
-struct StoryQueryRunOutput {
-    title: String,
-    status: String,
-    format: StoryQueryOutputFormat,
-    text: String,
-    source_targets: Vec<StoryQuerySourceTarget>,
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct StoryQueryRenderedLineSpan {
+    pub(crate) slot: usize,
+    pub(crate) line_offset: usize,
+    pub(crate) part_index: usize,
 }
 
-type StoryQueryCategoryGroup = BTreeMap<usize, BTreeMap<String, Vec<StoryIndexAppearanceRecord>>>;
+pub(crate) struct StoryQueryRunOutput {
+    pub(crate) title: String,
+    pub(crate) status: String,
+    pub(crate) format: StoryQueryOutputFormat,
+    pub(crate) text: String,
+    pub(crate) source_targets: Vec<StoryQuerySourceTarget>,
+}
 
-fn story_query_sheet_bundle(font: Handle<Font>) -> impl Bundle {
+pub(crate) type StoryQueryCategoryGroup =
+    BTreeMap<usize, BTreeMap<String, Vec<StoryIndexAppearanceRecord>>>;
+
+pub(crate) fn story_query_sheet_bundle(font: Handle<Font>) -> impl Bundle {
     (
         Node {
             position_type: PositionType::Absolute,
@@ -383,7 +384,7 @@ fn story_query_sheet_bundle(font: Handle<Font>) -> impl Bundle {
     )
 }
 
-fn story_query_sheet_page_bundle(_font: Handle<Font>) -> impl Bundle {
+pub(crate) fn story_query_sheet_page_bundle(_font: Handle<Font>) -> impl Bundle {
     (
         Node {
             width: percent(STORY_QUERY_RESULT_WIDTH_PERCENT),
@@ -410,7 +411,7 @@ fn story_query_sheet_page_bundle(_font: Handle<Font>) -> impl Bundle {
     )
 }
 
-fn story_query_sheet_menu_bundle(font: Handle<Font>) -> impl Bundle {
+pub(crate) fn story_query_sheet_menu_bundle(font: Handle<Font>) -> impl Bundle {
     (
         Node {
             width: percent(STORY_QUERY_MENU_WIDTH_PERCENT),
@@ -547,7 +548,7 @@ fn story_query_sheet_menu_bundle(font: Handle<Font>) -> impl Bundle {
     )
 }
 
-fn setup_story_query_sheet_result_spans(
+pub(crate) fn setup_story_query_sheet_result_spans(
     mut commands: Commands,
     canvas_query: Query<Entity, With<StoryQueryResultCanvas>>,
     fonts: Res<EditorFonts>,
@@ -631,7 +632,7 @@ fn setup_story_query_sheet_result_spans(
     }
 }
 
-fn story_query_dropdown_row(
+pub(crate) fn story_query_dropdown_row(
     font: Handle<Font>,
     slot: StoryQuerySheetTextSlot,
     kind: StoryQueryDropdownKind,
@@ -655,7 +656,7 @@ fn story_query_dropdown_row(
     )
 }
 
-fn story_query_add_category_button_row(font: Handle<Font>) -> impl Bundle {
+pub(crate) fn story_query_add_category_button_row(font: Handle<Font>) -> impl Bundle {
     (
         Node {
             flex_direction: FlexDirection::Column,
@@ -673,7 +674,7 @@ fn story_query_add_category_button_row(font: Handle<Font>) -> impl Bundle {
     )
 }
 
-fn story_query_dropdown_options_bundle(
+pub(crate) fn story_query_dropdown_options_bundle(
     font: Handle<Font>,
     kind: StoryQueryDropdownKind,
 ) -> impl Bundle {
@@ -702,7 +703,7 @@ fn story_query_dropdown_options_bundle(
     )
 }
 
-fn story_query_dropdown_option_button(
+pub(crate) fn story_query_dropdown_option_button(
     font: Handle<Font>,
     kind: StoryQueryDropdownKind,
     slot_index: usize,
@@ -733,7 +734,7 @@ fn story_query_dropdown_option_button(
     )
 }
 
-fn story_query_control_button(
+pub(crate) fn story_query_control_button(
     font: Handle<Font>,
     slot: StoryQuerySheetTextSlot,
     action: StoryQuerySheetAction,
@@ -763,7 +764,7 @@ fn story_query_control_button(
     )
 }
 
-fn story_query_static_button(
+pub(crate) fn story_query_static_button(
     font: Handle<Font>,
     label: &str,
     action: StoryQuerySheetAction,
@@ -789,7 +790,7 @@ fn story_query_static_button(
     )
 }
 
-fn story_query_text(
+pub(crate) fn story_query_text(
     font: Handle<Font>,
     text: &str,
     font_size: f32,
@@ -810,7 +811,7 @@ fn story_query_text(
     )
 }
 
-fn sync_story_query_sheet_ui(
+pub(crate) fn sync_story_query_sheet_ui(
     mut state: ResMut<EditorState>,
     fonts: Res<EditorFonts>,
     mut root_query: Query<
@@ -1145,7 +1146,7 @@ fn sync_story_query_sheet_ui(
     );
 }
 
-fn apply_story_query_rendered_page_styles(
+pub(crate) fn apply_story_query_rendered_page_styles(
     rendered_span_query: &mut Query<
         (
             &StoryQueryRenderedLineSpan,
@@ -1254,7 +1255,7 @@ fn apply_story_query_rendered_page_styles(
     }
 }
 
-fn handle_story_query_sheet_buttons(
+pub(crate) fn handle_story_query_sheet_buttons(
     interaction_query: Query<
         (&Interaction, &StoryQuerySheetAction),
         (Changed<Interaction>, With<Button>),
@@ -1305,7 +1306,7 @@ fn handle_story_query_sheet_buttons(
     }
 }
 
-fn handle_story_query_sheet_link_click(
+pub(crate) fn handle_story_query_sheet_link_click(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     rendered_text_query: Query<
         (
@@ -1374,7 +1375,7 @@ fn handle_story_query_sheet_link_click(
     }
 }
 
-fn handle_story_query_sheet_keyboard(
+pub(crate) fn handle_story_query_sheet_keyboard(
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<EditorState>,
 ) {
@@ -1402,7 +1403,7 @@ fn handle_story_query_sheet_keyboard(
     }
 }
 
-fn handle_story_query_sheet_mouse_scroll(
+pub(crate) fn handle_story_query_sheet_mouse_scroll(
     mut mouse_wheels: MessageReader<MouseWheel>,
     keys: Res<ButtonInput<KeyCode>>,
     result_panel_query: Query<
@@ -1486,12 +1487,12 @@ fn handle_story_query_sheet_mouse_scroll(
 }
 
 #[derive(Clone, Debug)]
-struct StoryQueryDropdownChoice {
-    value: usize,
-    label: String,
+pub(crate) struct StoryQueryDropdownChoice {
+    pub(crate) value: usize,
+    pub(crate) label: String,
 }
 
-fn story_query_dropdown_slot(kind: StoryQueryDropdownKind) -> StoryQuerySheetTextSlot {
+pub(crate) fn story_query_dropdown_slot(kind: StoryQueryDropdownKind) -> StoryQuerySheetTextSlot {
     match kind {
         StoryQueryDropdownKind::QueryKind => StoryQuerySheetTextSlot::QueryKind,
         StoryQueryDropdownKind::SceneScope => StoryQuerySheetTextSlot::SceneScope,
@@ -1505,7 +1506,10 @@ fn story_query_dropdown_slot(kind: StoryQueryDropdownKind) -> StoryQuerySheetTex
     }
 }
 
-fn story_query_control_visible(sheet: &StoryQuerySheet, slot: StoryQuerySheetTextSlot) -> bool {
+pub(crate) fn story_query_control_visible(
+    sheet: &StoryQuerySheet,
+    slot: StoryQuerySheetTextSlot,
+) -> bool {
     match slot {
         StoryQuerySheetTextSlot::Title
         | StoryQuerySheetTextSlot::Status
@@ -1538,7 +1542,7 @@ fn story_query_control_visible(sheet: &StoryQuerySheet, slot: StoryQuerySheetTex
     }
 }
 
-fn story_query_dropdown_choices(
+pub(crate) fn story_query_dropdown_choices(
     state: &EditorState,
     kind: StoryQueryDropdownKind,
 ) -> Vec<StoryQueryDropdownChoice> {
@@ -1616,7 +1620,7 @@ fn story_query_dropdown_choices(
     }
 }
 
-fn story_query_dropdown_current_value(
+pub(crate) fn story_query_dropdown_current_value(
     sheet: &StoryQuerySheet,
     kind: StoryQueryDropdownKind,
 ) -> usize {
@@ -1633,7 +1637,7 @@ fn story_query_dropdown_current_value(
     }
 }
 
-fn story_query_dropdown_window_start(
+pub(crate) fn story_query_dropdown_window_start(
     state: &EditorState,
     kind: StoryQueryDropdownKind,
     choices: &[StoryQueryDropdownChoice],
@@ -1654,7 +1658,7 @@ fn story_query_dropdown_window_start(
     )
 }
 
-fn apply_story_query_dropdown_choice(
+pub(crate) fn apply_story_query_dropdown_choice(
     sheet: &mut StoryQuerySheet,
     kind: StoryQueryDropdownKind,
     value: usize,
@@ -1683,7 +1687,7 @@ fn apply_story_query_dropdown_choice(
     clamp_story_query_dependencies(sheet);
 }
 
-fn step_open_story_query_dropdown(state: &mut EditorState, direction: isize) {
+pub(crate) fn step_open_story_query_dropdown(state: &mut EditorState, direction: isize) {
     let Some(kind) = state.story_query_sheet.open_dropdown else {
         return;
     };
@@ -1706,7 +1710,7 @@ fn step_open_story_query_dropdown(state: &mut EditorState, direction: isize) {
     state.story_query_sheet.result_status = "Selection changed.".to_string();
 }
 
-fn story_query_horizontal_scroll_bounds(
+pub(crate) fn story_query_horizontal_scroll_bounds(
     layout: &ProcessedPageLayout,
     panel_size: Vec2,
 ) -> (f32, f32) {
@@ -1723,7 +1727,7 @@ fn story_query_horizontal_scroll_bounds(
     (-(overflow_left + overscroll), overflow_right + overscroll)
 }
 
-fn apply_story_query_horizontal_scroll(
+pub(crate) fn apply_story_query_horizontal_scroll(
     state: &mut EditorState,
     result_panel_size: Vec2,
     horizontal_delta_px: f32,
@@ -1743,7 +1747,7 @@ fn apply_story_query_horizontal_scroll(
     changed
 }
 
-fn apply_story_query_vertical_scroll(
+pub(crate) fn apply_story_query_vertical_scroll(
     state: &mut EditorState,
     result_panel_size: Vec2,
     delta_lines: f32,
@@ -1816,7 +1820,7 @@ fn apply_story_query_vertical_scroll(
     actual_whole_lines != 0 || leftover_px.abs() > f32::EPSILON
 }
 
-fn story_query_page_label(
+pub(crate) fn story_query_page_label(
     sheet: &StoryQuerySheet,
     first_visible_page: usize,
     page_step_lines: usize,
@@ -1845,13 +1849,13 @@ fn story_query_page_label(
 }
 
 impl StoryQuerySheet {
-    fn reset_result_scroll(&mut self) {
+    pub(crate) fn reset_result_scroll(&mut self) {
         self.result_scroll_visual = 0;
         self.result_scroll_anchor_bias_px = 0.0;
         self.result_horizontal_scroll = 0.0;
     }
 
-    fn ensure_visual_lines_for_layout(&mut self, signature: StoryQueryLayoutSignature) {
+    pub(crate) fn ensure_visual_lines_for_layout(&mut self, signature: StoryQueryLayoutSignature) {
         if self.visual_layout_signature == Some(signature) && !self.visual_lines.is_empty() {
             return;
         }
@@ -1871,7 +1875,7 @@ impl StoryQuerySheet {
             .min(self.visual_lines.len().saturating_sub(1));
     }
 
-    fn set_output(
+    pub(crate) fn set_output(
         &mut self,
         output: StoryQueryRunOutput,
         dialogue_double_space_newline: bool,
@@ -1889,7 +1893,7 @@ impl StoryQuerySheet {
         self.reset_result_scroll();
     }
 
-    fn set_error(&mut self, title: &str, message: String) {
+    pub(crate) fn set_error(&mut self, title: &str, message: String) {
         self.set_output(
             StoryQueryRunOutput {
                 title: title.to_string(),
@@ -1905,7 +1909,7 @@ impl StoryQuerySheet {
 }
 
 impl EditorState {
-    fn open_story_query_sheet(&mut self) {
+    pub(crate) fn open_story_query_sheet(&mut self) {
         self.close_link_autocomplete();
         self.story_query_sheet.open = true;
         self.command_menu = None;
@@ -1945,7 +1949,7 @@ impl EditorState {
         }
     }
 
-    fn refresh_story_query_sheet_options(&mut self) -> Result<(), String> {
+    pub(crate) fn refresh_story_query_sheet_options(&mut self) -> Result<(), String> {
         let Some(workspace_root) = self.workspace_root.clone() else {
             return Err("Open a workspace before using the story query sheet.".to_string());
         };
@@ -1982,7 +1986,7 @@ impl EditorState {
         Ok(())
     }
 
-    fn clamp_story_query_sheet_selection(&mut self) {
+    pub(crate) fn clamp_story_query_sheet_selection(&mut self) {
         clamp_story_query_index(
             &mut self.story_query_sheet.character_a_index,
             self.story_query_sheet.characters.len(),
@@ -2005,7 +2009,7 @@ impl EditorState {
         clamp_story_query_dependencies(&mut self.story_query_sheet);
     }
 
-    fn run_story_query_sheet(&mut self) {
+    pub(crate) fn run_story_query_sheet(&mut self) {
         if let Err(error) = self.refresh_story_query_sheet_options() {
             self.story_query_sheet.set_error("Story Query Sheet", error);
             return;
@@ -2185,7 +2189,7 @@ impl EditorState {
         }
     }
 
-    fn open_first_story_query_source(&mut self) {
+    pub(crate) fn open_first_story_query_source(&mut self) {
         let Some(target) = self.story_query_sheet.source_targets.first().cloned() else {
             self.status_message = "No source target in current story sheet.".to_string();
             return;
@@ -2205,7 +2209,7 @@ impl EditorState {
         self.status_message = format!("Opened story query source at line {}.", line + 1);
     }
 
-    fn open_story_query_link_target(&mut self, target: String) {
+    pub(crate) fn open_story_query_link_target(&mut self, target: String) {
         match self.resolve_script_target_path(&target) {
             Ok(path) => {
                 let metadata_warning = basscript_core::EntityDocument::load(&path).err();
@@ -2228,7 +2232,7 @@ impl EditorState {
         }
     }
 
-    fn selected_story_query_scene(
+    pub(crate) fn selected_story_query_scene(
         &self,
         database: &basscript_core::StoryIndexDatabase,
     ) -> Result<Option<StoryIndexSceneRecord>, String> {
@@ -2252,7 +2256,7 @@ impl EditorState {
     }
 }
 
-fn build_dialogue_by_character_output(
+pub(crate) fn build_dialogue_by_character_output(
     database: &basscript_core::StoryIndexDatabase,
     character: &StoryIndexEntityRecord,
 ) -> Result<StoryQueryRunOutput, String> {
@@ -2269,7 +2273,7 @@ fn build_dialogue_by_character_output(
     })
 }
 
-fn build_dialogue_between_output(
+pub(crate) fn build_dialogue_between_output(
     database: &basscript_core::StoryIndexDatabase,
     character_a: &StoryIndexEntityRecord,
     character_b: &StoryIndexEntityRecord,
@@ -2322,7 +2326,7 @@ fn build_dialogue_between_output(
     })
 }
 
-fn build_category_scenes_output(
+pub(crate) fn build_category_scenes_output(
     database: &basscript_core::StoryIndexDatabase,
     taxonomy: &StoryTaxonomyConfig,
     selected_category_indices: &[usize],
@@ -2396,7 +2400,7 @@ fn build_category_scenes_output(
     })
 }
 
-fn write_category_scene_heading(
+pub(crate) fn write_category_scene_heading(
     text: &mut String,
     scene: &StoryIndexSceneRecord,
     include_separator: bool,
@@ -2413,7 +2417,7 @@ fn write_category_scene_heading(
     ));
 }
 
-fn write_category_group(
+pub(crate) fn write_category_group(
     text: &mut String,
     taxonomy: &StoryTaxonomyConfig,
     grouped: &StoryQueryCategoryGroup,
@@ -2452,11 +2456,11 @@ fn write_category_group(
     occurrence_count
 }
 
-fn human_story_query_role(role: &basscript_core::StoryIndexAppearanceRole) -> String {
+pub(crate) fn human_story_query_role(role: &basscript_core::StoryIndexAppearanceRole) -> String {
     role.as_database_value().replace('_', " ")
 }
 
-fn build_appearances_output(
+pub(crate) fn build_appearances_output(
     database: &basscript_core::StoryIndexDatabase,
     entity: &StoryIndexEntityRecord,
 ) -> Result<StoryQueryRunOutput, String> {
@@ -2499,12 +2503,12 @@ fn build_appearances_output(
     })
 }
 
-struct FountainDialogueExtract {
-    text: String,
-    source_targets: Vec<StoryQuerySourceTarget>,
+pub(crate) struct FountainDialogueExtract {
+    pub(crate) text: String,
+    pub(crate) source_targets: Vec<StoryQuerySourceTarget>,
 }
 
-fn fountain_dialogue_extract(
+pub(crate) fn fountain_dialogue_extract(
     scenes: &[StoryIndexSceneRecord],
     targets: &[String],
 ) -> Result<FountainDialogueExtract, String> {
@@ -2591,18 +2595,18 @@ fn fountain_dialogue_extract(
     }
 }
 
-fn linked_character_target(parsed_line: &ParsedLine) -> Option<String> {
+pub(crate) fn linked_character_target(parsed_line: &ParsedLine) -> Option<String> {
     let [link] = parsed_line.script_links.as_slice() else {
         return None;
     };
     Some(link.target.clone())
 }
 
-fn raw_fountain_query_line(parsed_line: &ParsedLine) -> String {
+pub(crate) fn raw_fountain_query_line(parsed_line: &ParsedLine) -> String {
     parsed_line.raw.clone()
 }
 
-fn load_story_taxonomy() -> StoryTaxonomyLoad {
+pub(crate) fn load_story_taxonomy() -> StoryTaxonomyLoad {
     let path = PathBuf::from(STORY_TAXONOMY_SETTINGS_PATH);
     match fs::read_to_string(&path) {
         Ok(contents) => match StoryTaxonomyConfig::from_ron(&contents) {
@@ -2678,11 +2682,11 @@ fn load_story_taxonomy() -> StoryTaxonomyLoad {
     }
 }
 
-fn normalize_story_taxonomy_key(value: &str) -> String {
+pub(crate) fn normalize_story_taxonomy_key(value: &str) -> String {
     value.trim().to_ascii_lowercase()
 }
 
-fn story_taxonomy_category_for_type(
+pub(crate) fn story_taxonomy_category_for_type(
     taxonomy: &StoryTaxonomyConfig,
     selected_category_indices: &[usize],
     entity_type: &str,
@@ -2702,7 +2706,7 @@ fn story_taxonomy_category_for_type(
     })
 }
 
-fn selected_category_indices(sheet: &StoryQuerySheet) -> Vec<usize> {
+pub(crate) fn selected_category_indices(sheet: &StoryQuerySheet) -> Vec<usize> {
     let mut selected = Vec::<usize>::new();
     for category_index in &sheet.category_indices {
         if *category_index < sheet.taxonomy.categories.len() && !selected.contains(category_index) {
@@ -2712,7 +2716,7 @@ fn selected_category_indices(sheet: &StoryQuerySheet) -> Vec<usize> {
     selected
 }
 
-fn selected_category_label(sheet: &StoryQuerySheet, index: usize) -> String {
+pub(crate) fn selected_category_label(sheet: &StoryQuerySheet, index: usize) -> String {
     sheet
         .taxonomy
         .categories
@@ -2721,27 +2725,33 @@ fn selected_category_label(sheet: &StoryQuerySheet, index: usize) -> String {
         .unwrap_or_else(|| "none".to_string())
 }
 
-fn selected_character(sheet: &StoryQuerySheet, index: usize) -> Option<&StoryIndexEntityRecord> {
+pub(crate) fn selected_character(
+    sheet: &StoryQuerySheet,
+    index: usize,
+) -> Option<&StoryIndexEntityRecord> {
     sheet.characters.get(index)
 }
 
-fn selected_entity(sheet: &StoryQuerySheet, index: usize) -> Option<&StoryIndexEntityRecord> {
+pub(crate) fn selected_entity(
+    sheet: &StoryQuerySheet,
+    index: usize,
+) -> Option<&StoryIndexEntityRecord> {
     sheet.entities.get(index)
 }
 
-fn selected_character_label(sheet: &StoryQuerySheet, index: usize) -> String {
+pub(crate) fn selected_character_label(sheet: &StoryQuerySheet, index: usize) -> String {
     selected_character(sheet, index)
         .map(entity_label)
         .unwrap_or_else(|| "none".to_string())
 }
 
-fn selected_entity_label(sheet: &StoryQuerySheet, index: usize) -> String {
+pub(crate) fn selected_entity_label(sheet: &StoryQuerySheet, index: usize) -> String {
     selected_entity(sheet, index)
         .map(entity_label)
         .unwrap_or_else(|| "none".to_string())
 }
 
-fn selected_scene_label(state: &EditorState) -> String {
+pub(crate) fn selected_scene_label(state: &EditorState) -> String {
     let sheet = &state.story_query_sheet;
     if sheet.scene_index == 0 {
         return "none".to_string();
@@ -2754,7 +2764,7 @@ fn selected_scene_label(state: &EditorState) -> String {
         .unwrap_or_else(|| "none".to_string())
 }
 
-fn scene_label(scene: &StoryIndexSceneRecord) -> String {
+pub(crate) fn scene_label(scene: &StoryIndexSceneRecord) -> String {
     scene
         .location_text
         .as_ref()
@@ -2762,11 +2772,11 @@ fn scene_label(scene: &StoryIndexSceneRecord) -> String {
         .unwrap_or_else(|| scene.heading_text.clone())
 }
 
-fn entity_label(entity: &StoryIndexEntityRecord) -> String {
+pub(crate) fn entity_label(entity: &StoryIndexEntityRecord) -> String {
     format!("{} ({})", entity.name, entity.target)
 }
 
-fn compact_story_query_label(label: &str) -> String {
+pub(crate) fn compact_story_query_label(label: &str) -> String {
     const LIMIT: usize = 34;
     if label.chars().count() <= LIMIT {
         return label.to_string();
@@ -2780,7 +2790,7 @@ fn compact_story_query_label(label: &str) -> String {
     out
 }
 
-fn merge_story_query_entities(
+pub(crate) fn merge_story_query_entities(
     entities: &mut Vec<StoryIndexEntityRecord>,
     incoming: Vec<StoryIndexEntityRecord>,
 ) {
@@ -2801,7 +2811,7 @@ fn merge_story_query_entities(
     });
 }
 
-fn trim_result_snippet(snippet: &str) -> String {
+pub(crate) fn trim_result_snippet(snippet: &str) -> String {
     let trimmed = snippet.trim();
     if trimmed.chars().count() <= 120 {
         return trimmed.to_string();
@@ -2812,7 +2822,7 @@ fn trim_result_snippet(snippet: &str) -> String {
     out
 }
 
-fn trim_category_result_snippet(snippet: &str) -> String {
+pub(crate) fn trim_category_result_snippet(snippet: &str) -> String {
     let trimmed = snippet.trim();
     if trimmed.chars().count() <= 72 {
         return trimmed.to_string();
@@ -2823,14 +2833,14 @@ fn trim_category_result_snippet(snippet: &str) -> String {
     out
 }
 
-fn story_query_document_format(format: StoryQueryOutputFormat) -> DocumentFormat {
+pub(crate) fn story_query_document_format(format: StoryQueryOutputFormat) -> DocumentFormat {
     match format {
         StoryQueryOutputFormat::Fountain => DocumentFormat::Fountain,
         StoryQueryOutputFormat::Markdown => DocumentFormat::Markdown,
     }
 }
 
-fn story_query_visual_lines(
+pub(crate) fn story_query_visual_lines(
     text: &str,
     output_format: StoryQueryOutputFormat,
     dialogue_double_space_newline: bool,
@@ -2956,7 +2966,7 @@ fn story_query_visual_lines(
     visual_lines
 }
 
-fn story_query_should_split_on_double_space(
+pub(crate) fn story_query_should_split_on_double_space(
     kind: &LineKind,
     dialogue_double_space_newline: bool,
     non_dialogue_double_space_newline: bool,
@@ -2980,7 +2990,7 @@ fn story_query_should_split_on_double_space(
     }
 }
 
-fn story_query_blank_visual_line() -> ProcessedVisualLine {
+pub(crate) fn story_query_blank_visual_line() -> ProcessedVisualLine {
     ProcessedVisualLine {
         source_line: 0,
         text: " ".to_string(),
@@ -3003,7 +3013,7 @@ fn story_query_blank_visual_line() -> ProcessedVisualLine {
     }
 }
 
-fn story_query_link_color_for_target(
+pub(crate) fn story_query_link_color_for_target(
     sheet: &StoryQuerySheet,
     state: &EditorState,
     target: Option<&str>,
@@ -3024,7 +3034,7 @@ fn story_query_link_color_for_target(
         .unwrap_or_else(|| state.processed_link_color_for_target(Some(target)))
 }
 
-fn story_query_link_target_at_position(
+pub(crate) fn story_query_link_target_at_position(
     sheet: &StoryQuerySheet,
     text_block: &ComputedTextBlock,
     inverse_scale: f32,
@@ -3066,7 +3076,7 @@ fn story_query_link_target_at_position(
     story_query_link_target_at_column(visual_line, display_column)
 }
 
-fn story_query_link_target_at_column(
+pub(crate) fn story_query_link_target_at_column(
     visual_line: &ProcessedVisualLine,
     display_column: usize,
 ) -> Option<String> {
@@ -3086,7 +3096,7 @@ fn story_query_link_target_at_column(
         .and_then(|fragment| fragment.link_target.clone())
 }
 
-fn story_query_entity_link(label: &str, target: &str) -> String {
+pub(crate) fn story_query_entity_link(label: &str, target: &str) -> String {
     if !basscript_core::is_valid_target_key(target) {
         return label.to_string();
     }
@@ -3094,7 +3104,7 @@ fn story_query_entity_link(label: &str, target: &str) -> String {
     format!("[{label}]({target})")
 }
 
-fn clamp_story_query_index(index: &mut usize, len: usize) {
+pub(crate) fn clamp_story_query_index(index: &mut usize, len: usize) {
     if len == 0 {
         *index = 0;
     } else {
@@ -3102,7 +3112,7 @@ fn clamp_story_query_index(index: &mut usize, len: usize) {
     }
 }
 
-fn story_query_can_add_category(sheet: &StoryQuerySheet) -> bool {
+pub(crate) fn story_query_can_add_category(sheet: &StoryQuerySheet) -> bool {
     if sheet.query_kind != StoryQueryKind::CategoriesInScene {
         return false;
     }
@@ -3111,7 +3121,7 @@ fn story_query_can_add_category(sheet: &StoryQuerySheet) -> bool {
     sheet.category_indices.len() < max_rows
 }
 
-fn add_story_query_category(sheet: &mut StoryQuerySheet) {
+pub(crate) fn add_story_query_category(sheet: &mut StoryQuerySheet) {
     if !story_query_can_add_category(sheet) {
         return;
     }
@@ -3128,7 +3138,7 @@ fn add_story_query_category(sheet: &mut StoryQuerySheet) {
     clamp_story_query_dependencies(sheet);
 }
 
-fn clamp_story_query_categories(sheet: &mut StoryQuerySheet) {
+pub(crate) fn clamp_story_query_categories(sheet: &mut StoryQuerySheet) {
     let category_count = sheet.taxonomy.categories.len();
     if category_count == 0 {
         sheet.category_indices.clear();
@@ -3162,7 +3172,7 @@ fn clamp_story_query_categories(sheet: &mut StoryQuerySheet) {
     sheet.category_indices = normalized;
 }
 
-fn clamp_story_query_dependencies(sheet: &mut StoryQuerySheet) {
+pub(crate) fn clamp_story_query_dependencies(sheet: &mut StoryQuerySheet) {
     if sheet.scene_index > sheet.scenes.len() {
         sheet.scene_index = sheet.scenes.len();
     }
@@ -3181,3 +3191,5 @@ fn clamp_story_query_dependencies(sheet: &mut StoryQuerySheet) {
         sheet.open_dropdown = None;
     }
 }
+#[allow(unused_imports)]
+use super::*;

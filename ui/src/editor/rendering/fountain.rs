@@ -1,7 +1,17 @@
-fn fountain_line_style(kind: &LineKind) -> Option<LineRenderStyle> {
+pub(crate) fn fountain_line_style(kind: &LineKind) -> Option<LineRenderStyle> {
     match kind {
-        LineKind::SceneHeading => Some(LineRenderStyle::new(FontVariant::Bold, COLOR_SCENE, 1.0, 1.0)),
-        LineKind::Action => Some(LineRenderStyle::new(FontVariant::Regular, COLOR_ACTION, 1.0, 1.0)),
+        LineKind::SceneHeading => Some(LineRenderStyle::new(
+            FontVariant::Bold,
+            COLOR_SCENE,
+            1.0,
+            1.0,
+        )),
+        LineKind::Action => Some(LineRenderStyle::new(
+            FontVariant::Regular,
+            COLOR_ACTION,
+            1.0,
+            1.0,
+        )),
         LineKind::Character => Some(LineRenderStyle::new(
             FontVariant::Bold,
             COLOR_CHARACTER,
@@ -29,3 +39,5 @@ fn fountain_line_style(kind: &LineKind) -> Option<LineRenderStyle> {
         _ => None,
     }
 }
+#[allow(unused_imports)]
+use super::*;

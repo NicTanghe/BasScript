@@ -1,67 +1,67 @@
-const WORKSPACE_ROOT_LABEL_EMPTY: &str = "No workspace opened.";
-const WORKSPACE_ROOT_LABEL_PREFIX: &str = "";
-const WORKSPACE_EMPTY_RESULTS_LABEL: &str = "No .fountain/.md/.txt/.canvas files found.";
+pub(crate) const WORKSPACE_ROOT_LABEL_EMPTY: &str = "No workspace opened.";
+pub(crate) const WORKSPACE_ROOT_LABEL_PREFIX: &str = "";
+pub(crate) const WORKSPACE_EMPTY_RESULTS_LABEL: &str = "No .fountain/.md/.txt/.canvas files found.";
 
 // pretty sure these arent really working
 
 // Horizontal gap between explorer left wall and the root label line.
-const WORKSPACE_ROOT_LABEL_LEFT_MARGIN: f32 = 0.0;
+pub(crate) const WORKSPACE_ROOT_LABEL_LEFT_MARGIN: f32 = 0.0;
 // Horizontal gap between explorer left wall and folder/file tree rows.
-const WORKSPACE_TREE_LIST_LEFT_MARGIN: f32 = 0.0;
-const WORKSPACE_TREE_DEPTH_INDENT: f32 = 14.0;
-const WORKSPACE_FILE_ROW_EXTRA_LEFT: f32 = 2.0;
-const WORKSPACE_TREE_VERTICAL_PADDING: f32 = 10.0;
-const WORKSPACE_TREE_ROW_HEIGHT: f32 = 24.0;
-const WORKSPACE_TREE_ROW_GAP: f32 = 4.0;
-const WORKSPACE_TREE_WHEEL_LINE_PX: f32 = 36.0;
+pub(crate) const WORKSPACE_TREE_LIST_LEFT_MARGIN: f32 = 0.0;
+pub(crate) const WORKSPACE_TREE_DEPTH_INDENT: f32 = 14.0;
+pub(crate) const WORKSPACE_FILE_ROW_EXTRA_LEFT: f32 = 2.0;
+pub(crate) const WORKSPACE_TREE_VERTICAL_PADDING: f32 = 10.0;
+pub(crate) const WORKSPACE_TREE_ROW_HEIGHT: f32 = 24.0;
+pub(crate) const WORKSPACE_TREE_ROW_GAP: f32 = 4.0;
+pub(crate) const WORKSPACE_TREE_WHEEL_LINE_PX: f32 = 36.0;
 
 // Set this to Some("C:/path/to/folder") to force the initial opened workspace root.
 // Keep as None to use the parent directory of the currently loaded document.
-const WORKSPACE_INITIAL_ROOT_OVERRIDE: Option<&str> = None;
+pub(crate) const WORKSPACE_INITIAL_ROOT_OVERRIDE: Option<&str> = None;
 
 #[derive(Component)]
-struct WorkspaceRootLabel;
+pub(crate) struct WorkspaceRootLabel;
 
 #[derive(Component)]
-struct WorkspaceFileList;
+pub(crate) struct WorkspaceFileList;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct WorkspaceFileButton {
-    index: usize,
+pub(crate) struct WorkspaceFileButton {
+    pub(crate) index: usize,
 }
 
 #[derive(Component, Clone, Debug, PartialEq, Eq)]
-struct WorkspaceFolderToggleButton {
-    folder_key: String,
+pub(crate) struct WorkspaceFolderToggleButton {
+    pub(crate) folder_key: String,
 }
 
 #[derive(Resource, Clone)]
-struct WorkspaceIcons {
-    folder_closed: Handle<Image>,
-    folder_open: Handle<Image>,
+pub(crate) struct WorkspaceIcons {
+    pub(crate) folder_closed: Handle<Image>,
+    pub(crate) folder_open: Handle<Image>,
 }
 
 #[derive(Clone, Debug)]
-struct WorkspaceFileEntry {
-    path: PathBuf,
-    relative_display: String,
+pub(crate) struct WorkspaceFileEntry {
+    pub(crate) path: PathBuf,
+    pub(crate) relative_display: String,
 }
 
 #[derive(Clone, Debug)]
-struct WorkspaceFolderEntry {
-    folder_key: String,
-    folder_name: String,
-    parent_key: String,
+pub(crate) struct WorkspaceFolderEntry {
+    pub(crate) folder_key: String,
+    pub(crate) folder_name: String,
+    pub(crate) parent_key: String,
 }
 
 #[derive(Clone, Debug, Default)]
-struct WorkspaceEntries {
-    folders: Vec<WorkspaceFolderEntry>,
-    files: Vec<WorkspaceFileEntry>,
+pub(crate) struct WorkspaceEntries {
+    pub(crate) folders: Vec<WorkspaceFolderEntry>,
+    pub(crate) files: Vec<WorkspaceFileEntry>,
 }
 
 #[derive(Clone, Debug)]
-enum WorkspaceSidebarRow {
+pub(crate) enum WorkspaceSidebarRow {
     Folder {
         folder_key: String,
         folder_name: String,
@@ -75,12 +75,13 @@ enum WorkspaceSidebarRow {
     },
 }
 
-fn apply_initial_workspace_root(
+pub(crate) fn apply_initial_workspace_root(
     state: &mut EditorState,
     initial_status: &str,
     saved_workspace_root: Option<&str>,
 ) {
-    let Some(root) = resolve_initial_workspace_root(&state.paths.load_path, saved_workspace_root) else {
+    let Some(root) = resolve_initial_workspace_root(&state.paths.load_path, saved_workspace_root)
+    else {
         return;
     };
 
@@ -88,7 +89,10 @@ fn apply_initial_workspace_root(
     state.status_message = initial_status.to_string();
 }
 
-fn resolve_initial_workspace_root(load_path: &Path, saved_workspace_root: Option<&str>) -> Option<PathBuf> {
+pub(crate) fn resolve_initial_workspace_root(
+    load_path: &Path,
+    saved_workspace_root: Option<&str>,
+) -> Option<PathBuf> {
     WORKSPACE_INITIAL_ROOT_OVERRIDE
         .map(PathBuf::from)
         .and_then(resolve_workspace_directory_candidate)
@@ -105,7 +109,7 @@ fn resolve_initial_workspace_root(load_path: &Path, saved_workspace_root: Option
         })
 }
 
-fn resolve_workspace_directory_candidate(path: PathBuf) -> Option<PathBuf> {
+pub(crate) fn resolve_workspace_directory_candidate(path: PathBuf) -> Option<PathBuf> {
     if path.is_dir() {
         return Some(path.canonicalize().unwrap_or(path));
     }
@@ -119,7 +123,7 @@ fn resolve_workspace_directory_candidate(path: PathBuf) -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "linux")]
-fn linux_windows_workspace_path(path: &Path) -> Option<PathBuf> {
+pub(crate) fn linux_windows_workspace_path(path: &Path) -> Option<PathBuf> {
     let normalized = path.to_string_lossy().replace('\\', "/");
     let windows_path = normalized.strip_prefix("//?/").unwrap_or(&normalized);
     let bytes = windows_path.as_bytes();
@@ -153,7 +157,7 @@ mod workspace_root_candidate_tests {
     }
 }
 
-fn workspace_root_label_text(root: Option<&Path>) -> String {
+pub(crate) fn workspace_root_label_text(root: Option<&Path>) -> String {
     root.map_or_else(
         || WORKSPACE_ROOT_LABEL_EMPTY.to_string(),
         |root| {
@@ -168,7 +172,7 @@ fn workspace_root_label_text(root: Option<&Path>) -> String {
 }
 
 impl EditorState {
-    fn set_workspace_root(&mut self, root: PathBuf) {
+    pub(crate) fn set_workspace_root(&mut self, root: PathBuf) {
         let normalized_root = root.canonicalize().unwrap_or(root);
         self.workspace_root = Some(normalized_root.clone());
         self.workspace_active_file = None;
@@ -179,8 +183,10 @@ impl EditorState {
             Ok(entries) => {
                 self.workspace_folders = entries.folders;
                 self.workspace_files = entries.files;
-                self.workspace_expanded_folders =
-                    default_expanded_workspace_folders(&self.workspace_folders, &self.workspace_files);
+                self.workspace_expanded_folders = default_expanded_workspace_folders(
+                    &self.workspace_folders,
+                    &self.workspace_files,
+                );
                 self.sync_workspace_active_file();
                 self.normalize_workspace_selected_row();
                 let story_index_status = self.open_story_index_for_workspace(&normalized_root);
@@ -213,8 +219,12 @@ impl EditorState {
         }
     }
 
-    fn open_workspace_file(&mut self, index: usize) {
-        let Some(path) = self.workspace_files.get(index).map(|entry| entry.path.clone()) else {
+    pub(crate) fn open_workspace_file(&mut self, index: usize) {
+        let Some(path) = self
+            .workspace_files
+            .get(index)
+            .map(|entry| entry.path.clone())
+        else {
             self.status_message = "Workspace file selection is out of range.".to_string();
             return;
         };
@@ -222,7 +232,7 @@ impl EditorState {
         self.navigate_to_path(path);
     }
 
-    fn refresh_workspace(&mut self) {
+    pub(crate) fn refresh_workspace(&mut self) {
         let Some(root) = self.workspace_root.clone() else {
             self.workspace_folders.clear();
             self.workspace_files.clear();
@@ -245,12 +255,13 @@ impl EditorState {
                 }
             }
             Err(error) => {
-                self.status_message = format!("Workspace refresh failed for {}: {error}", root.display());
+                self.status_message =
+                    format!("Workspace refresh failed for {}: {error}", root.display());
             }
         }
     }
 
-    fn refresh_workspace_after_path_change(&mut self) {
+    pub(crate) fn refresh_workspace_after_path_change(&mut self) {
         let Some(root) = self.workspace_root.as_ref() else {
             return;
         };
@@ -263,7 +274,7 @@ impl EditorState {
         }
     }
 
-    fn toggle_workspace_folder(&mut self, folder_key: &str) {
+    pub(crate) fn toggle_workspace_folder(&mut self, folder_key: &str) {
         if self.workspace_expanded_folders.contains(folder_key) {
             self.workspace_expanded_folders.remove(folder_key);
         } else {
@@ -273,7 +284,7 @@ impl EditorState {
         self.workspace_ui_dirty = true;
     }
 
-    fn sync_workspace_active_file(&mut self) {
+    pub(crate) fn sync_workspace_active_file(&mut self) {
         self.workspace_active_file = self
             .workspace_files
             .iter()
@@ -287,7 +298,7 @@ impl EditorState {
         self.workspace_ui_dirty = true;
     }
 
-    fn normalize_workspace_selected_row(&mut self) {
+    pub(crate) fn normalize_workspace_selected_row(&mut self) {
         if self.workspace_selected_row_exists() {
             return;
         }
@@ -304,7 +315,7 @@ impl EditorState {
             });
     }
 
-    fn workspace_selected_row_exists(&self) -> bool {
+    pub(crate) fn workspace_selected_row_exists(&self) -> bool {
         let Some(selection) = self.workspace_selected_row.as_ref() else {
             return false;
         };
@@ -314,7 +325,7 @@ impl EditorState {
     }
 }
 
-fn workspace_sidebar_rows(state: &EditorState) -> Vec<WorkspaceSidebarRow> {
+pub(crate) fn workspace_sidebar_rows(state: &EditorState) -> Vec<WorkspaceSidebarRow> {
     let mut folders_by_parent = BTreeMap::<String, Vec<(String, String)>>::new();
     let mut files_by_parent = BTreeMap::<String, Vec<(usize, String)>>::new();
 
@@ -353,7 +364,7 @@ fn workspace_sidebar_rows(state: &EditorState) -> Vec<WorkspaceSidebarRow> {
     rows
 }
 
-fn append_workspace_sidebar_rows(
+pub(crate) fn append_workspace_sidebar_rows(
     parent_key: &str,
     depth: usize,
     expanded_folders: &BTreeSet<String>,
@@ -394,20 +405,20 @@ fn append_workspace_sidebar_rows(
     }
 }
 
-fn workspace_parent_key(relative_display: &str) -> String {
+pub(crate) fn workspace_parent_key(relative_display: &str) -> String {
     relative_display
         .rsplit_once('/')
         .map_or_else(String::new, |(parent, _)| parent.to_owned())
 }
 
-fn workspace_base_name(relative_display: &str) -> String {
+pub(crate) fn workspace_base_name(relative_display: &str) -> String {
     relative_display
         .rsplit('/')
         .next()
         .map_or_else(String::new, str::to_owned)
 }
 
-fn workspace_sidebar_content_height(row_count: usize) -> f32 {
+pub(crate) fn workspace_sidebar_content_height(row_count: usize) -> f32 {
     if row_count == 0 {
         0.0
     } else {
@@ -416,15 +427,15 @@ fn workspace_sidebar_content_height(row_count: usize) -> f32 {
     }
 }
 
-fn workspace_sidebar_row_top(index: usize) -> f32 {
+pub(crate) fn workspace_sidebar_row_top(index: usize) -> f32 {
     index as f32 * (WORKSPACE_TREE_ROW_HEIGHT + WORKSPACE_TREE_ROW_GAP)
 }
 
-fn workspace_sidebar_max_scroll(row_count: usize, viewport_height: f32) -> f32 {
+pub(crate) fn workspace_sidebar_max_scroll(row_count: usize, viewport_height: f32) -> f32 {
     (workspace_sidebar_content_height(row_count) - viewport_height).max(0.0)
 }
 
-fn default_expanded_workspace_folders(
+pub(crate) fn default_expanded_workspace_folders(
     folders: &[WorkspaceFolderEntry],
     files: &[WorkspaceFileEntry],
 ) -> BTreeSet<String> {
@@ -443,7 +454,7 @@ fn default_expanded_workspace_folders(
     expanded
 }
 
-fn collect_workspace_entries(root: &Path) -> io::Result<WorkspaceEntries> {
+pub(crate) fn collect_workspace_entries(root: &Path) -> io::Result<WorkspaceEntries> {
     let mut folders = Vec::<WorkspaceFolderEntry>::new();
     let mut files = Vec::<WorkspaceFileEntry>::new();
     let mut stack = vec![root.to_path_buf()];
@@ -487,8 +498,12 @@ fn collect_workspace_entries(root: &Path) -> io::Result<WorkspaceEntries> {
     Ok(WorkspaceEntries { folders, files })
 }
 
-fn workspace_folder_entry(root: &Path, path: &Path) -> Option<WorkspaceFolderEntry> {
-    let folder_key = path.strip_prefix(root).ok()?.to_string_lossy().replace('\\', "/");
+pub(crate) fn workspace_folder_entry(root: &Path, path: &Path) -> Option<WorkspaceFolderEntry> {
+    let folder_key = path
+        .strip_prefix(root)
+        .ok()?
+        .to_string_lossy()
+        .replace('\\', "/");
     if folder_key.is_empty() {
         return None;
     }
@@ -502,7 +517,7 @@ fn workspace_folder_entry(root: &Path, path: &Path) -> Option<WorkspaceFolderEnt
     })
 }
 
-fn should_skip_workspace_dir(path: &Path) -> bool {
+pub(crate) fn should_skip_workspace_dir(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
         return false;
     };
@@ -510,7 +525,7 @@ fn should_skip_workspace_dir(path: &Path) -> bool {
     name.starts_with('.') || matches!(name, "target" | "node_modules")
 }
 
-fn is_workspace_file_candidate(path: &Path) -> bool {
+pub(crate) fn is_workspace_file_candidate(path: &Path) -> bool {
     let extension = path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -521,7 +536,7 @@ fn is_workspace_file_candidate(path: &Path) -> bool {
     )
 }
 
-fn workspace_sidebar_bundle(font: Handle<Font>, background: Color) -> impl Bundle {
+pub(crate) fn workspace_sidebar_bundle(font: Handle<Font>, background: Color) -> impl Bundle {
     (
         Node {
             width: px(WORKSPACE_WIDTH_DEFAULT),
@@ -570,7 +585,7 @@ fn workspace_sidebar_bundle(font: Handle<Font>, background: Color) -> impl Bundl
     )
 }
 
-fn handle_workspace_file_buttons(
+pub(crate) fn handle_workspace_file_buttons(
     interaction_query: Query<
         (&Interaction, &WorkspaceFileButton),
         (Changed<Interaction>, With<Button>),
@@ -591,7 +606,7 @@ fn handle_workspace_file_buttons(
     }
 }
 
-fn handle_workspace_folder_buttons(
+pub(crate) fn handle_workspace_folder_buttons(
     interaction_query: Query<
         (&Interaction, &WorkspaceFolderToggleButton),
         (Changed<Interaction>, With<Button>),
@@ -603,14 +618,15 @@ fn handle_workspace_folder_buttons(
             continue;
         }
 
-        state.workspace_selected_row =
-            Some(WorkspaceSelectedRow::Folder(folder_button.folder_key.clone()));
+        state.workspace_selected_row = Some(WorkspaceSelectedRow::Folder(
+            folder_button.folder_key.clone(),
+        ));
         state.workspace_focused = true;
         state.toggle_workspace_folder(&folder_button.folder_key);
     }
 }
 
-fn sync_workspace_sidebar(
+pub(crate) fn sync_workspace_sidebar(
     mut commands: Commands,
     fonts: Res<EditorFonts>,
     workspace_icons: Res<WorkspaceIcons>,
@@ -803,13 +819,13 @@ fn sync_workspace_sidebar(
     state.workspace_ui_dirty = false;
 }
 
-fn workspace_file_list_hovered(
+pub(crate) fn workspace_file_list_hovered(
     list_query: &Query<&RelativeCursorPosition, With<WorkspaceFileList>>,
 ) -> bool {
     list_query.iter().any(RelativeCursorPosition::cursor_over)
 }
 
-fn handle_workspace_mouse_scroll(
+pub(crate) fn handle_workspace_mouse_scroll(
     mut mouse_wheels: MessageReader<MouseWheel>,
     state: Res<EditorState>,
     mut list_query: Query<
@@ -841,12 +857,13 @@ fn handle_workspace_mouse_scroll(
     }
 
     let viewport_height = (computed.size().y * computed.inverse_scale_factor()).max(0.0);
-    let max_scroll = workspace_sidebar_max_scroll(workspace_sidebar_rows(&state).len(), viewport_height);
+    let max_scroll =
+        workspace_sidebar_max_scroll(workspace_sidebar_rows(&state).len(), viewport_height);
     scroll_position.y = (scroll_position.y + delta_y).clamp(0.0, max_scroll);
     scroll_position.x = 0.0;
 }
 
-fn sync_workspace_selected_row_scroll(
+pub(crate) fn sync_workspace_selected_row_scroll(
     state: Res<EditorState>,
     mut last_selection: Local<Option<WorkspaceSelectedRow>>,
     mut list_query: Query<(&ComputedNode, &mut ScrollPosition), With<WorkspaceFileList>>,
@@ -895,7 +912,7 @@ fn sync_workspace_selected_row_scroll(
     scroll_position.x = 0.0;
 }
 
-fn folder_contains_active_file(
+pub(crate) fn folder_contains_active_file(
     active_relative_display: Option<&str>,
     folder_key: &str,
 ) -> bool {
@@ -908,7 +925,7 @@ fn folder_contains_active_file(
         .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
-fn style_workspace_file_entry_text(
+pub(crate) fn style_workspace_file_entry_text(
     state: Res<EditorState>,
     mut file_button_query: Query<
         (&Interaction, &WorkspaceFileButton, &Children),
@@ -935,3 +952,5 @@ fn style_workspace_file_entry_text(
         }
     }
 }
+#[allow(unused_imports)]
+use super::*;

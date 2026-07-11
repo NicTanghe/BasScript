@@ -1,13 +1,13 @@
-const MIDDLE_AUTOSCROLL_INDICATOR_SIZE_PX: f32 = 40.0;
-const MIDDLE_AUTOSCROLL_DEAD_ZONE_PX: f32 = 12.0;
-const MIDDLE_AUTOSCROLL_HORIZONTAL_GAIN_PX: f32 = 280.0;
-const MIDDLE_AUTOSCROLL_VERTICAL_GAIN_LINES: f32 = 18.0;
-const MIDDLE_AUTOSCROLL_ACCEL_EXPONENT: f32 = 1.25;
-const MIDDLE_AUTOSCROLL_BASE_MAX_HORIZONTAL_SPEED_PX_PER_SEC: f32 = 2200.0;
-const MIDDLE_AUTOSCROLL_BASE_MAX_VERTICAL_SPEED_LINES_PER_SEC: f32 = 72.0;
-const MIDDLE_AUTOSCROLL_MAX_SPEED_MULTIPLIER: f32 = 3.0;
+pub(crate) const MIDDLE_AUTOSCROLL_INDICATOR_SIZE_PX: f32 = 40.0;
+pub(crate) const MIDDLE_AUTOSCROLL_DEAD_ZONE_PX: f32 = 12.0;
+pub(crate) const MIDDLE_AUTOSCROLL_HORIZONTAL_GAIN_PX: f32 = 280.0;
+pub(crate) const MIDDLE_AUTOSCROLL_VERTICAL_GAIN_LINES: f32 = 18.0;
+pub(crate) const MIDDLE_AUTOSCROLL_ACCEL_EXPONENT: f32 = 1.25;
+pub(crate) const MIDDLE_AUTOSCROLL_BASE_MAX_HORIZONTAL_SPEED_PX_PER_SEC: f32 = 2200.0;
+pub(crate) const MIDDLE_AUTOSCROLL_BASE_MAX_VERTICAL_SPEED_LINES_PER_SEC: f32 = 72.0;
+pub(crate) const MIDDLE_AUTOSCROLL_MAX_SPEED_MULTIPLIER: f32 = 3.0;
 
-fn autoscroll_axis_speed(
+pub(crate) fn autoscroll_axis_speed(
     axis_offset: f32,
     dead_zone: f32,
     gain: f32,
@@ -25,7 +25,7 @@ fn autoscroll_axis_speed(
     axis_offset.signum() * normalized * max_speed.max(0.0)
 }
 
-fn handle_middle_mouse_autoscroll(
+pub(crate) fn handle_middle_mouse_autoscroll(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
@@ -34,10 +34,7 @@ fn handle_middle_mouse_autoscroll(
     mut middle_autoscroll: ResMut<MiddleAutoscrollState>,
     mut state: ResMut<EditorState>,
 ) {
-    let cursor_position = window_query
-        .iter()
-        .next()
-        .and_then(Window::cursor_position);
+    let cursor_position = window_query.iter().next().and_then(Window::cursor_position);
     let panel_context = gather_scroll_panels_context(&panel_query, &state);
     state.clamp_horizontal_scrolls(
         panel_context.plain_panel_size,
@@ -99,10 +96,10 @@ fn handle_middle_mouse_autoscroll(
 
     let delta = cursor_position - middle_autoscroll.anchor_cursor_position;
     let line_height = state.measured_line_step.max(1.0);
-    let horizontal_max_speed =
-        MIDDLE_AUTOSCROLL_BASE_MAX_HORIZONTAL_SPEED_PX_PER_SEC * MIDDLE_AUTOSCROLL_MAX_SPEED_MULTIPLIER;
-    let vertical_max_speed =
-        MIDDLE_AUTOSCROLL_BASE_MAX_VERTICAL_SPEED_LINES_PER_SEC * MIDDLE_AUTOSCROLL_MAX_SPEED_MULTIPLIER;
+    let horizontal_max_speed = MIDDLE_AUTOSCROLL_BASE_MAX_HORIZONTAL_SPEED_PX_PER_SEC
+        * MIDDLE_AUTOSCROLL_MAX_SPEED_MULTIPLIER;
+    let vertical_max_speed = MIDDLE_AUTOSCROLL_BASE_MAX_VERTICAL_SPEED_LINES_PER_SEC
+        * MIDDLE_AUTOSCROLL_MAX_SPEED_MULTIPLIER;
     let horizontal_px_per_sec = autoscroll_axis_speed(
         delta.x,
         MIDDLE_AUTOSCROLL_DEAD_ZONE_PX,
@@ -150,12 +147,14 @@ fn handle_middle_mouse_autoscroll(
 
     match active_panel {
         PanelKind::Plain => {
-            let total_lines = middle_autoscroll.plain_vertical_remainder_lines + vertical_delta_lines;
+            let total_lines =
+                middle_autoscroll.plain_vertical_remainder_lines + vertical_delta_lines;
             let whole_lines = total_lines.trunc() as isize;
             middle_autoscroll.plain_vertical_remainder_lines = total_lines - whole_lines as f32;
 
             if whole_lines != 0 {
-                scrolled |= apply_plain_panel_vertical_scroll(&mut state, whole_lines, visible_lines);
+                scrolled |=
+                    apply_plain_panel_vertical_scroll(&mut state, whole_lines, visible_lines);
                 state.clamp_cursor_to_visible_range(visible_lines);
             }
         }
@@ -177,7 +176,7 @@ fn handle_middle_mouse_autoscroll(
     }
 }
 
-fn sync_middle_autoscroll_indicator(
+pub(crate) fn sync_middle_autoscroll_indicator(
     middle_autoscroll: Res<MiddleAutoscrollState>,
     mut indicator_query: Query<&mut Node, With<MiddleAutoscrollIndicator>>,
 ) {
@@ -195,3 +194,5 @@ fn sync_middle_autoscroll_indicator(
     indicator_node.left = px(middle_autoscroll.anchor_cursor_position.x - half);
     indicator_node.top = px(middle_autoscroll.anchor_cursor_position.y - half);
 }
+#[allow(unused_imports)]
+use super::*;

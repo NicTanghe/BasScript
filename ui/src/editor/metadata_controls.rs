@@ -1,11 +1,11 @@
-const MARKDOWN_METADATA_PANEL_HEIGHT: f32 = 94.0;
-const MARKDOWN_METADATA_PANEL_GAP: f32 = 10.0;
-const MARKDOWN_METADATA_PANEL_PADDING: f32 = 8.0;
-const MARKDOWN_METADATA_ROW_GAP: f32 = 6.0;
-const MARKDOWN_METADATA_COLUMN_GAP: f32 = 7.0;
-const MARKDOWN_METADATA_DROPDOWN_ROW_HEIGHT: f32 = 24.0;
-const MARKDOWN_METADATA_DROPDOWN_VISIBLE_ROWS: usize = 7;
-const COMMON_MARKDOWN_METADATA_TYPES: [&str; 7] = [
+pub(crate) const MARKDOWN_METADATA_PANEL_HEIGHT: f32 = 94.0;
+pub(crate) const MARKDOWN_METADATA_PANEL_GAP: f32 = 10.0;
+pub(crate) const MARKDOWN_METADATA_PANEL_PADDING: f32 = 8.0;
+pub(crate) const MARKDOWN_METADATA_ROW_GAP: f32 = 6.0;
+pub(crate) const MARKDOWN_METADATA_COLUMN_GAP: f32 = 7.0;
+pub(crate) const MARKDOWN_METADATA_DROPDOWN_ROW_HEIGHT: f32 = 24.0;
+pub(crate) const MARKDOWN_METADATA_DROPDOWN_VISIBLE_ROWS: usize = 7;
+pub(crate) const COMMON_MARKDOWN_METADATA_TYPES: [&str; 7] = [
     "character",
     "prop",
     "place",
@@ -14,10 +14,11 @@ const COMMON_MARKDOWN_METADATA_TYPES: [&str; 7] = [
     "scene",
     "plot",
 ];
-const COMMON_MARKDOWN_METADATA_STATUSES: [&str; 4] = ["draft", "active", "final", "archived"];
+pub(crate) const COMMON_MARKDOWN_METADATA_STATUSES: [&str; 4] =
+    ["draft", "active", "final", "archived"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum MarkdownMetadataField {
+pub(crate) enum MarkdownMetadataField {
     Id,
     Target,
     Type,
@@ -26,7 +27,7 @@ enum MarkdownMetadataField {
     Status,
 }
 
-const MARKDOWN_METADATA_FIELDS: [MarkdownMetadataField; 6] = [
+pub(crate) const MARKDOWN_METADATA_FIELDS: [MarkdownMetadataField; 6] = [
     MarkdownMetadataField::Id,
     MarkdownMetadataField::Target,
     MarkdownMetadataField::Type,
@@ -36,7 +37,7 @@ const MARKDOWN_METADATA_FIELDS: [MarkdownMetadataField; 6] = [
 ];
 
 impl MarkdownMetadataField {
-    fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Id => "id",
             Self::Target => "target",
@@ -47,23 +48,23 @@ impl MarkdownMetadataField {
         }
     }
 
-    fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         MARKDOWN_METADATA_FIELDS
             .iter()
             .position(|field| *field == self)
             .unwrap_or(0)
     }
 
-    fn is_dropdown(self) -> bool {
+    pub(crate) fn is_dropdown(self) -> bool {
         matches!(self, Self::Type | Self::Status)
     }
 
-    fn next(self) -> Self {
+    pub(crate) fn next(self) -> Self {
         let next = (self.index() + 1) % MARKDOWN_METADATA_FIELDS.len();
         MARKDOWN_METADATA_FIELDS[next]
     }
 
-    fn previous(self) -> Self {
+    pub(crate) fn previous(self) -> Self {
         let previous = self
             .index()
             .checked_sub(1)
@@ -73,31 +74,31 @@ impl MarkdownMetadataField {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct MarkdownMetadataFields {
-    id: String,
-    target: String,
-    entity_type: String,
-    name: String,
-    aliases: Vec<String>,
-    status: String,
-    unknown_lines: Vec<String>,
+pub(crate) struct MarkdownMetadataFields {
+    pub(crate) id: String,
+    pub(crate) target: String,
+    pub(crate) entity_type: String,
+    pub(crate) name: String,
+    pub(crate) aliases: Vec<String>,
+    pub(crate) status: String,
+    pub(crate) unknown_lines: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
-struct MarkdownFrontMatterDisplay {
-    closing_line_index: usize,
-    has_bom: bool,
-    fields: MarkdownMetadataFields,
+pub(crate) struct MarkdownFrontMatterDisplay {
+    pub(crate) closing_line_index: usize,
+    pub(crate) has_bom: bool,
+    pub(crate) fields: MarkdownMetadataFields,
 }
 
 #[derive(Clone, Debug, Default)]
-struct MarkdownMetadataChoiceSets {
-    type_choices: Vec<String>,
-    status_choices: Vec<String>,
+pub(crate) struct MarkdownMetadataChoiceSets {
+    pub(crate) type_choices: Vec<String>,
+    pub(crate) status_choices: Vec<String>,
 }
 
 impl MarkdownMetadataChoiceSets {
-    fn for_field(&self, field: MarkdownMetadataField) -> &[String] {
+    pub(crate) fn for_field(&self, field: MarkdownMetadataField) -> &[String] {
         match field {
             MarkdownMetadataField::Type => &self.type_choices,
             MarkdownMetadataField::Status => &self.status_choices,
@@ -107,36 +108,39 @@ impl MarkdownMetadataChoiceSets {
 }
 
 #[derive(Component)]
-struct MarkdownMetadataPanelRoot;
+pub(crate) struct MarkdownMetadataPanelRoot;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct MarkdownMetadataFieldButton {
-    field: MarkdownMetadataField,
+pub(crate) struct MarkdownMetadataFieldButton {
+    pub(crate) field: MarkdownMetadataField,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct MarkdownMetadataFieldText {
-    field: MarkdownMetadataField,
+pub(crate) struct MarkdownMetadataFieldText {
+    pub(crate) field: MarkdownMetadataField,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct MarkdownMetadataDropdownRoot {
-    field: MarkdownMetadataField,
+pub(crate) struct MarkdownMetadataDropdownRoot {
+    pub(crate) field: MarkdownMetadataField,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct MarkdownMetadataDropdownOptionButton {
-    field: MarkdownMetadataField,
-    slot_index: usize,
+pub(crate) struct MarkdownMetadataDropdownOptionButton {
+    pub(crate) field: MarkdownMetadataField,
+    pub(crate) slot_index: usize,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct MarkdownMetadataDropdownOptionText {
-    field: MarkdownMetadataField,
-    slot_index: usize,
+pub(crate) struct MarkdownMetadataDropdownOptionText {
+    pub(crate) field: MarkdownMetadataField,
+    pub(crate) slot_index: usize,
 }
 
-fn spawn_markdown_metadata_controls(parent: &mut ChildSpawnerCommands<'_>, font: Handle<Font>) {
+pub(crate) fn spawn_markdown_metadata_controls(
+    parent: &mut ChildSpawnerCommands<'_>,
+    font: Handle<Font>,
+) {
     parent
         .spawn((
             Node {
@@ -162,26 +166,24 @@ fn spawn_markdown_metadata_controls(parent: &mut ChildSpawnerCommands<'_>, font:
         ))
         .with_children(|root| {
             for row_index in 0..2 {
-                root.spawn((
-                    Node {
-                        width: percent(100.0),
-                        height: px(28.0),
-                        flex_direction: FlexDirection::Row,
-                        column_gap: px(MARKDOWN_METADATA_COLUMN_GAP),
-                        overflow: Overflow::visible(),
-                        ..default()
-                    },
-                ))
-                .with_children(|row| {
-                    for field in MARKDOWN_METADATA_FIELDS
-                        .iter()
-                        .copied()
-                        .skip(row_index * 3)
-                        .take(3)
-                    {
-                        row.spawn(markdown_metadata_field_button(font.clone(), field));
-                    }
-                });
+                root.spawn((Node {
+                    width: percent(100.0),
+                    height: px(28.0),
+                    flex_direction: FlexDirection::Row,
+                    column_gap: px(MARKDOWN_METADATA_COLUMN_GAP),
+                    overflow: Overflow::visible(),
+                    ..default()
+                },))
+                    .with_children(|row| {
+                        for field in MARKDOWN_METADATA_FIELDS
+                            .iter()
+                            .copied()
+                            .skip(row_index * 3)
+                            .take(3)
+                        {
+                            row.spawn(markdown_metadata_field_button(font.clone(), field));
+                        }
+                    });
             }
 
             for field in [MarkdownMetadataField::Type, MarkdownMetadataField::Status] {
@@ -190,7 +192,7 @@ fn spawn_markdown_metadata_controls(parent: &mut ChildSpawnerCommands<'_>, font:
         });
 }
 
-fn markdown_metadata_field_button(
+pub(crate) fn markdown_metadata_field_button(
     font: Handle<Font>,
     field: MarkdownMetadataField,
 ) -> impl Bundle {
@@ -224,7 +226,10 @@ fn markdown_metadata_field_button(
     )
 }
 
-fn markdown_metadata_dropdown(font: Handle<Font>, field: MarkdownMetadataField) -> impl Bundle {
+pub(crate) fn markdown_metadata_dropdown(
+    font: Handle<Font>,
+    field: MarkdownMetadataField,
+) -> impl Bundle {
     (
         Node {
             position_type: PositionType::Absolute,
@@ -254,7 +259,7 @@ fn markdown_metadata_dropdown(font: Handle<Font>, field: MarkdownMetadataField) 
     )
 }
 
-fn markdown_metadata_dropdown_option(
+pub(crate) fn markdown_metadata_dropdown_option(
     font: Handle<Font>,
     field: MarkdownMetadataField,
     slot_index: usize,
@@ -285,7 +290,7 @@ fn markdown_metadata_dropdown_option(
     )
 }
 
-fn sync_markdown_metadata_controls_ui(
+pub(crate) fn sync_markdown_metadata_controls_ui(
     state: Res<EditorState>,
     body_query: Query<(&PanelBody, &ComputedNode)>,
     mut root_query: Query<&mut Node, With<MarkdownMetadataPanelRoot>>,
@@ -322,7 +327,8 @@ fn sync_markdown_metadata_controls_ui(
         hide_markdown_metadata_controls(&mut root_query);
         return;
     };
-    if state.document_format != DocumentFormat::Markdown || !state.panel_visible(PanelKind::Processed)
+    if state.document_format != DocumentFormat::Markdown
+        || !state.panel_visible(PanelKind::Processed)
     {
         hide_markdown_metadata_controls(&mut root_query);
         return;
@@ -344,8 +350,9 @@ fn sync_markdown_metadata_controls_ui(
 
     let layout = processed_page_layout(processed_panel_size, &state);
     let choice_sets = markdown_metadata_choice_sets(&state, &front_matter.fields);
-    let anchor_line_in_page =
-        state.processed_top_visual.min(layout.page_step_lines.max(1).saturating_sub(1));
+    let anchor_line_in_page = state
+        .processed_top_visual
+        .min(layout.page_step_lines.max(1).saturating_sub(1));
     let anchor_offset_px =
         processed_anchor_scroll_offset_px(anchor_line_in_page, scaled_line_height(&state).max(1.0));
     let left = layout.geometry.paper_left - state.processed_horizontal_scroll;
@@ -378,9 +385,14 @@ fn sync_markdown_metadata_controls_ui(
         let choices = choice_sets.for_field(dropdown.field);
         let open = state.markdown_metadata_dropdown == Some(dropdown.field) && !choices.is_empty();
         node.display = if open { Display::Flex } else { Display::None };
-        node.left = px(markdown_metadata_dropdown_left(layout.geometry.paper_width, dropdown.field));
+        node.left = px(markdown_metadata_dropdown_left(
+            layout.geometry.paper_width,
+            dropdown.field,
+        ));
         node.top = px(markdown_metadata_dropdown_top(dropdown.field));
-        node.width = px(markdown_metadata_dropdown_width(layout.geometry.paper_width));
+        node.width = px(markdown_metadata_dropdown_width(
+            layout.geometry.paper_width,
+        ));
         node.height = px(
             (choices.len().min(MARKDOWN_METADATA_DROPDOWN_VISIBLE_ROWS) as f32)
                 * MARKDOWN_METADATA_DROPDOWN_ROW_HEIGHT,
@@ -390,7 +402,8 @@ fn sync_markdown_metadata_controls_ui(
     for (option, mut node, mut background) in option_button_query.iter_mut() {
         let choices = choice_sets.for_field(option.field);
         let choice = choices.get(option.slot_index);
-        node.display = if state.markdown_metadata_dropdown == Some(option.field) && choice.is_some() {
+        node.display = if state.markdown_metadata_dropdown == Some(option.field) && choice.is_some()
+        {
             Display::Flex
         } else {
             Display::None
@@ -410,7 +423,7 @@ fn sync_markdown_metadata_controls_ui(
     }
 }
 
-fn hide_markdown_metadata_controls(
+pub(crate) fn hide_markdown_metadata_controls(
     root_query: &mut Query<&mut Node, With<MarkdownMetadataPanelRoot>>,
 ) {
     if let Ok(mut root) = root_query.single_mut() {
@@ -418,7 +431,7 @@ fn hide_markdown_metadata_controls(
     }
 }
 
-fn markdown_metadata_field_label(
+pub(crate) fn markdown_metadata_field_label(
     fields: &MarkdownMetadataFields,
     field: MarkdownMetadataField,
     focused: bool,
@@ -428,40 +441,48 @@ fn markdown_metadata_field_label(
         value.push('_');
     }
     let suffix = if field.is_dropdown() { " v" } else { "" };
-    format!("{}: {}{}", field.label(), compact_markdown_metadata_value(&value), suffix)
+    format!(
+        "{}: {}{}",
+        field.label(),
+        compact_markdown_metadata_value(&value),
+        suffix
+    )
 }
 
-fn compact_markdown_metadata_value(value: &str) -> String {
+pub(crate) fn compact_markdown_metadata_value(value: &str) -> String {
     let mut compact = value.replace('\n', " ");
     const LIMIT: usize = 64;
     if compact.chars().count() > LIMIT {
-        compact = compact.chars().take(LIMIT.saturating_sub(1)).collect::<String>();
+        compact = compact
+            .chars()
+            .take(LIMIT.saturating_sub(1))
+            .collect::<String>();
         compact.push_str("...");
     }
     compact
 }
 
-fn markdown_metadata_dropdown_left(panel_width: f32, field: MarkdownMetadataField) -> f32 {
+pub(crate) fn markdown_metadata_dropdown_left(
+    panel_width: f32,
+    field: MarkdownMetadataField,
+) -> f32 {
     let usable = (panel_width - MARKDOWN_METADATA_PANEL_PADDING * 2.0).max(1.0);
     let column_width = ((usable - MARKDOWN_METADATA_COLUMN_GAP * 2.0) / 3.0).max(1.0);
     let column = field.index() % 3;
     MARKDOWN_METADATA_PANEL_PADDING + column as f32 * (column_width + MARKDOWN_METADATA_COLUMN_GAP)
 }
 
-fn markdown_metadata_dropdown_top(field: MarkdownMetadataField) -> f32 {
+pub(crate) fn markdown_metadata_dropdown_top(field: MarkdownMetadataField) -> f32 {
     let row = field.index() / 3;
-    MARKDOWN_METADATA_PANEL_PADDING
-        + row as f32 * (28.0 + MARKDOWN_METADATA_ROW_GAP)
-        + 28.0
-        + 2.0
+    MARKDOWN_METADATA_PANEL_PADDING + row as f32 * (28.0 + MARKDOWN_METADATA_ROW_GAP) + 28.0 + 2.0
 }
 
-fn markdown_metadata_dropdown_width(panel_width: f32) -> f32 {
+pub(crate) fn markdown_metadata_dropdown_width(panel_width: f32) -> f32 {
     let usable = (panel_width - MARKDOWN_METADATA_PANEL_PADDING * 2.0).max(1.0);
     ((usable - MARKDOWN_METADATA_COLUMN_GAP * 2.0) / 3.0).max(120.0)
 }
 
-fn handle_markdown_metadata_buttons(
+pub(crate) fn handle_markdown_metadata_buttons(
     field_query: Query<
         (&Interaction, &MarkdownMetadataFieldButton),
         (Changed<Interaction>, With<Button>),
@@ -485,7 +506,8 @@ fn handle_markdown_metadata_buttons(
             state.clear_markdown_metadata_focus();
             return;
         };
-        let choices = markdown_metadata_dropdown_choices(&state, &front_matter.fields, option.field);
+        let choices =
+            markdown_metadata_dropdown_choices(&state, &front_matter.fields, option.field);
         let Some(value) = choices.get(option.slot_index).cloned() else {
             continue;
         };
@@ -531,7 +553,7 @@ fn handle_markdown_metadata_buttons(
     }
 }
 
-fn handle_markdown_metadata_input(
+pub(crate) fn handle_markdown_metadata_input(
     mut keyboard_inputs: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<EditorState>,
@@ -694,7 +716,10 @@ fn handle_markdown_metadata_input(
     }
 }
 
-fn markdown_metadata_insert_text_allowed(field: MarkdownMetadataField, text: &str) -> bool {
+pub(crate) fn markdown_metadata_insert_text_allowed(
+    field: MarkdownMetadataField,
+    text: &str,
+) -> bool {
     match field {
         MarkdownMetadataField::Target => text
             .chars()
@@ -703,7 +728,7 @@ fn markdown_metadata_insert_text_allowed(field: MarkdownMetadataField, text: &st
     }
 }
 
-fn markdown_metadata_current_choice_index(
+pub(crate) fn markdown_metadata_current_choice_index(
     state: &EditorState,
     field: MarkdownMetadataField,
 ) -> Option<usize> {
@@ -714,7 +739,7 @@ fn markdown_metadata_current_choice_index(
         .position(|choice| choice == &current)
 }
 
-fn markdown_metadata_dropdown_choices(
+pub(crate) fn markdown_metadata_dropdown_choices(
     state: &EditorState,
     fields: &MarkdownMetadataFields,
     field: MarkdownMetadataField,
@@ -724,7 +749,7 @@ fn markdown_metadata_dropdown_choices(
         .to_vec()
 }
 
-fn markdown_metadata_choice_sets(
+pub(crate) fn markdown_metadata_choice_sets(
     state: &EditorState,
     fields: &MarkdownMetadataFields,
 ) -> MarkdownMetadataChoiceSets {
@@ -769,7 +794,7 @@ fn markdown_metadata_choice_sets(
     }
 }
 
-fn markdown_metadata_field_value(
+pub(crate) fn markdown_metadata_field_value(
     fields: &MarkdownMetadataFields,
     field: MarkdownMetadataField,
 ) -> String {
@@ -783,7 +808,7 @@ fn markdown_metadata_field_value(
     }
 }
 
-fn set_markdown_metadata_field_value(
+pub(crate) fn set_markdown_metadata_field_value(
     fields: &mut MarkdownMetadataFields,
     field: MarkdownMetadataField,
     value: &str,
@@ -798,7 +823,7 @@ fn set_markdown_metadata_field_value(
     }
 }
 
-fn parse_alias_input(input: &str) -> Vec<String> {
+pub(crate) fn parse_alias_input(input: &str) -> Vec<String> {
     input
         .split(',')
         .map(|part| part.trim().trim_matches('"').trim_matches('\'').to_string())
@@ -806,11 +831,11 @@ fn parse_alias_input(input: &str) -> Vec<String> {
         .collect()
 }
 
-fn markdown_metadata_controls_scroll_visible(state: &EditorState) -> bool {
+pub(crate) fn markdown_metadata_controls_scroll_visible(state: &EditorState) -> bool {
     state.processed_top_visual < processed_page_step_lines().max(1)
 }
 
-fn markdown_metadata_header_offset(state: &EditorState) -> f32 {
+pub(crate) fn markdown_metadata_header_offset(state: &EditorState) -> f32 {
     if state.document_format == DocumentFormat::Markdown
         && markdown_front_matter_display(&state.document).is_some()
         && markdown_metadata_controls_scroll_visible(state)
@@ -821,13 +846,15 @@ fn markdown_metadata_header_offset(state: &EditorState) -> f32 {
     }
 }
 
-fn markdown_metadata_hovered(
+pub(crate) fn markdown_metadata_hovered(
     query: &Query<&RelativeCursorPosition, With<MarkdownMetadataPanelRoot>>,
 ) -> bool {
     query.iter().any(RelativeCursorPosition::cursor_over)
 }
 
-fn markdown_front_matter_display(document: &Document) -> Option<MarkdownFrontMatterDisplay> {
+pub(crate) fn markdown_front_matter_display(
+    document: &Document,
+) -> Option<MarkdownFrontMatterDisplay> {
     let lines = document.lines();
     if lines.len() < 3 {
         return None;
@@ -839,11 +866,10 @@ fn markdown_front_matter_display(document: &Document) -> Option<MarkdownFrontMat
         return None;
     }
 
-    let closing_line_index = lines
-        .iter()
-        .enumerate()
-        .skip(1)
-        .find_map(|(index, line)| line_is_front_matter_delimiter(line, false).then_some(index))?;
+    let closing_line_index =
+        lines.iter().enumerate().skip(1).find_map(|(index, line)| {
+            line_is_front_matter_delimiter(line, false).then_some(index)
+        })?;
     let fields = parse_markdown_front_matter_fields(&lines[1..closing_line_index]);
     Some(MarkdownFrontMatterDisplay {
         closing_line_index,
@@ -852,7 +878,7 @@ fn markdown_front_matter_display(document: &Document) -> Option<MarkdownFrontMat
     })
 }
 
-fn line_is_front_matter_delimiter(line: &str, allow_bom: bool) -> bool {
+pub(crate) fn line_is_front_matter_delimiter(line: &str, allow_bom: bool) -> bool {
     let line = if allow_bom {
         line.trim_start_matches('\u{feff}')
     } else {
@@ -861,7 +887,7 @@ fn line_is_front_matter_delimiter(line: &str, allow_bom: bool) -> bool {
     line.trim() == "---"
 }
 
-fn parse_markdown_front_matter_fields(lines: &[String]) -> MarkdownMetadataFields {
+pub(crate) fn parse_markdown_front_matter_fields(lines: &[String]) -> MarkdownMetadataFields {
     let mut fields = MarkdownMetadataFields::default();
     let mut index = 0usize;
 
@@ -906,11 +932,10 @@ fn parse_markdown_front_matter_fields(lines: &[String]) -> MarkdownMetadataField
                     fields.aliases = aliases;
                     continue;
                 }
-                fields.aliases = parse_markdown_yaml_array(value)
-                    .unwrap_or_else(|| {
-                        let scalar = markdown_yaml_scalar(value);
-                        (!scalar.is_empty()).then_some(scalar).into_iter().collect()
-                    });
+                fields.aliases = parse_markdown_yaml_array(value).unwrap_or_else(|| {
+                    let scalar = markdown_yaml_scalar(value);
+                    (!scalar.is_empty()).then_some(scalar).into_iter().collect()
+                });
             }
             _ => fields.unknown_lines.push(line.clone()),
         }
@@ -921,7 +946,7 @@ fn parse_markdown_front_matter_fields(lines: &[String]) -> MarkdownMetadataField
     fields
 }
 
-fn parse_markdown_yaml_array(value: &str) -> Option<Vec<String>> {
+pub(crate) fn parse_markdown_yaml_array(value: &str) -> Option<Vec<String>> {
     let value = value.trim();
     if !(value.starts_with('[') && value.ends_with(']')) {
         return None;
@@ -968,20 +993,20 @@ fn parse_markdown_yaml_array(value: &str) -> Option<Vec<String>> {
     Some(items)
 }
 
-fn markdown_yaml_scalar(value: &str) -> String {
+pub(crate) fn markdown_yaml_scalar(value: &str) -> String {
     let trimmed = value.trim();
     match trimmed.chars().next() {
         Some('"') if trimmed.ends_with('"') && trimmed.len() >= 2 => {
             trimmed[1..trimmed.len().saturating_sub(1)].to_owned()
         }
-        Some('\'') if trimmed.ends_with('\'') && trimmed.len() >= 2 => trimmed
-            [1..trimmed.len().saturating_sub(1)]
-            .replace("''", "'"),
+        Some('\'') if trimmed.ends_with('\'') && trimmed.len() >= 2 => {
+            trimmed[1..trimmed.len().saturating_sub(1)].replace("''", "'")
+        }
         _ => trimmed.to_owned(),
     }
 }
 
-fn write_markdown_front_matter_fields(fields: &MarkdownMetadataFields) -> Vec<String> {
+pub(crate) fn write_markdown_front_matter_fields(fields: &MarkdownMetadataFields) -> Vec<String> {
     let mut lines = Vec::<String>::new();
     if !fields.id.trim().is_empty() {
         lines.push(format!("id: {}", yaml_scalar(&fields.id)));
@@ -997,7 +1022,7 @@ fn write_markdown_front_matter_fields(fields: &MarkdownMetadataFields) -> Vec<St
     lines
 }
 
-fn yaml_array(values: &[String]) -> String {
+pub(crate) fn yaml_array(values: &[String]) -> String {
     if values.is_empty() {
         return "[]".to_string();
     }
@@ -1011,7 +1036,7 @@ fn yaml_array(values: &[String]) -> String {
     )
 }
 
-fn yaml_scalar(value: &str) -> String {
+pub(crate) fn yaml_scalar(value: &str) -> String {
     let trimmed = value.trim();
     if yaml_plain_scalar_safe(trimmed) {
         return trimmed.to_string();
@@ -1019,7 +1044,7 @@ fn yaml_scalar(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
-fn yaml_plain_scalar_safe(value: &str) -> bool {
+pub(crate) fn yaml_plain_scalar_safe(value: &str) -> bool {
     if value.is_empty() {
         return false;
     }
@@ -1034,11 +1059,11 @@ fn yaml_plain_scalar_safe(value: &str) -> bool {
         .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
 }
 
-fn normalize_markdown_target_key(value: &str) -> String {
+pub(crate) fn normalize_markdown_target_key(value: &str) -> String {
     value.trim().to_ascii_lowercase()
 }
 
-fn normalize_markdown_front_matter_target(document: &Document) -> Option<Document> {
+pub(crate) fn normalize_markdown_front_matter_target(document: &Document) -> Option<Document> {
     let front_matter = markdown_front_matter_display(document)?;
     let normalized = normalize_markdown_target_key(&front_matter.fields.target);
     if normalized == front_matter.fields.target {
@@ -1068,17 +1093,17 @@ fn normalize_markdown_front_matter_target(document: &Document) -> Option<Documen
 }
 
 impl EditorState {
-    fn clear_markdown_metadata_focus(&mut self) {
+    pub(crate) fn clear_markdown_metadata_focus(&mut self) {
         self.markdown_metadata_focus = None;
         self.markdown_metadata_dropdown = None;
         self.markdown_metadata_dropdown_highlight = 0;
     }
 
-    fn markdown_metadata_input_active(&self) -> bool {
+    pub(crate) fn markdown_metadata_input_active(&self) -> bool {
         self.markdown_metadata_focus.is_some() || self.markdown_metadata_dropdown.is_some()
     }
 
-    fn set_markdown_metadata_field(
+    pub(crate) fn set_markdown_metadata_field(
         &mut self,
         field: MarkdownMetadataField,
         value: &str,
@@ -1180,3 +1205,5 @@ mod markdown_metadata_tests {
         );
     }
 }
+#[allow(unused_imports)]
+use super::*;

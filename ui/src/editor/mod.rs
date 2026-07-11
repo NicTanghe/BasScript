@@ -1,50 +1,101 @@
-// Core types, state, constants, plugin wiring.
-include!("core.rs");
-// Canvas document state, viewport helpers, and canvas panel components.
-include!("canvas.rs");
-// Story index database workspace wiring.
-include!("story_index.rs");
-// Story query sheet overlay and result formatting.
-include!("story_query_sheet.rs");
-// Status bar formatting and layout.
-include!("status_line.rs");
-// In-app command menu prompt and command dispatch.
-include!("command_menu.rs");
-// Link autocomplete trigger context state.
-include!("autocomplete.rs");
-// Processed pane pagination/cache/styling and text layout helpers.
-include!("processed.rs");
-// Rendered Markdown frontmatter controls and write-back.
-include!("metadata_controls.rs");
-// Caret component, blink timer, and caret placement logic.
-include!("caret.rs");
-// UI hierarchy and toolbar/settings widgets.
-include!("ui_setup.rs");
-// Draggable panel splitters and pane sizing.
-include!("splitters.rs");
-// Persistent settings I/O and margin/scale helpers.
-include!("settings.rs");
-// Internal script linking navigation and click handling.
-include!("linking/mod.rs");
-// Selection state, pointer behavior, and selection rendering.
-include!("selection.rs");
-// Text panel-specific logic.
-include!("../pannels/text/explorer.rs");
-include!("../pannels/text/explorer_actions.rs");
-include!("../pannels/text/plain.rs");
-include!("../pannels/text/processed.rs");
-// Scroll mode input handlers and overlays.
-include!("../pannels/text/scrolling/modes/shared.rs");
-include!("../pannels/text/scrolling/modes/wheel.rs");
-include!("../pannels/text/scrolling/modes/ctrl_left_drag.rs");
-include!("../pannels/text/scrolling/modes/middle_autoscroll.rs");
-// Native file dialog and shortcut handling.
-include!("dialogs.rs");
-// System clipboard read helpers for paste commands.
-include!("clipboard.rs");
-// Optional Vim-style modal editing commands.
-include!("vim.rs");
-// Text editing/navigation/mouse interaction systems.
-include!("editing.rs");
-// Rendering systems.
-include!("rendering/mod.rs");
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs, io,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, mpsc},
+    time::{Duration, Instant, SystemTime},
+};
+
+use basscript_core::{
+    CanvasDocument, CanvasNodeKind, Cursor, Document, DocumentFormat, DocumentPath, ImageEmbed,
+    LineKind, LinkDisplayText, ParsedLine, Position, ScriptLink, StoryIndexDatabase,
+    parse_canvas_document, parse_document_with_format, update_canvas_node_position,
+    update_canvas_text_node_content,
+};
+use bevy::{
+    app::AppExit,
+    asset::{LoadState, RenderAssetUsages},
+    image::{CompressedImageFormats, ImageSampler, ImageType},
+    input::{
+        keyboard::{Key, KeyboardInput},
+        mouse::{MouseScrollUnit, MouseWheel},
+    },
+    log::{info, warn},
+    prelude::*,
+    text::{ComputedTextBlock, FontStyle, FontWeight, LineHeight},
+    ui::{RelativeCursorPosition, UiGlobalTransform, UiTransform, Val2},
+    window::{PrimaryWindow, RawHandleWrapper},
+};
+use parley::{Affinity, Cursor as ParleyCursor};
+use rfd::FileDialog;
+
+mod core;
+use core::*;
+
+mod canvas;
+use canvas::*;
+mod story_index;
+use story_index::*;
+mod story_query_sheet;
+use story_query_sheet::*;
+mod status_line;
+use status_line::*;
+mod command_menu;
+use command_menu::*;
+mod autocomplete;
+use autocomplete::*;
+mod processed;
+use processed::*;
+mod metadata_controls;
+use metadata_controls::*;
+mod caret;
+use caret::*;
+mod ui_setup;
+use ui_setup::*;
+mod splitters;
+use splitters::*;
+mod settings;
+use settings::*;
+mod linking;
+use linking::*;
+mod selection;
+use selection::*;
+
+#[path = "../pannels/text/explorer.rs"]
+mod explorer;
+use explorer::*;
+#[path = "../pannels/text/explorer_actions.rs"]
+mod explorer_actions;
+use explorer_actions::*;
+#[path = "../pannels/text/plain.rs"]
+mod plain;
+use plain::*;
+#[path = "../pannels/text/processed.rs"]
+mod processed_panel;
+use processed_panel::*;
+
+#[path = "../pannels/text/scrolling/modes/shared.rs"]
+mod scrolling_shared;
+use scrolling_shared::*;
+#[path = "../pannels/text/scrolling/modes/wheel.rs"]
+mod scrolling_wheel;
+use scrolling_wheel::*;
+#[path = "../pannels/text/scrolling/modes/ctrl_left_drag.rs"]
+mod scrolling_ctrl_left_drag;
+use scrolling_ctrl_left_drag::*;
+#[path = "../pannels/text/scrolling/modes/middle_autoscroll.rs"]
+mod scrolling_middle_autoscroll;
+use scrolling_middle_autoscroll::*;
+
+mod dialogs;
+use dialogs::*;
+mod clipboard;
+use clipboard::*;
+mod vim;
+use vim::*;
+mod editing;
+use editing::*;
+mod rendering;
+use rendering::*;
+
+pub use core::UiPlugin;

@@ -1,13 +1,13 @@
 #[derive(Component)]
-struct CommandMenuRoot;
+pub(crate) struct CommandMenuRoot;
 
 #[derive(Component)]
-struct CommandMenuInputText;
+pub(crate) struct CommandMenuInputText;
 
 #[derive(Component)]
-struct CommandMenuHintText;
+pub(crate) struct CommandMenuHintText;
 
-fn command_menu_bundle(font: Handle<Font>) -> impl Bundle {
+pub(crate) fn command_menu_bundle(font: Handle<Font>) -> impl Bundle {
     (
         Node {
             position_type: PositionType::Absolute,
@@ -54,7 +54,7 @@ fn command_menu_bundle(font: Handle<Font>) -> impl Bundle {
     )
 }
 
-fn sync_command_menu_ui(
+pub(crate) fn sync_command_menu_ui(
     state: Res<EditorState>,
     mut root_query: Query<&mut Node, With<CommandMenuRoot>>,
     mut text_queries: ParamSet<(
@@ -80,7 +80,7 @@ fn sync_command_menu_ui(
     }
 }
 
-fn handle_command_menu_open_input(
+pub(crate) fn handle_command_menu_open_input(
     mut keyboard_inputs: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<EditorState>,
@@ -107,7 +107,7 @@ fn handle_command_menu_open_input(
     }
 }
 
-fn handle_command_menu_input(
+pub(crate) fn handle_command_menu_input(
     mut keyboard_inputs: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
     mut app_exit: MessageWriter<AppExit>,
@@ -174,7 +174,7 @@ fn handle_command_menu_input(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CommandMenuParsedCommand<'a> {
+pub(crate) enum CommandMenuParsedCommand<'a> {
     Write,
     Quit,
     WriteQuit,
@@ -182,7 +182,7 @@ enum CommandMenuParsedCommand<'a> {
     Unknown(&'a str),
 }
 
-fn parse_command_menu_command(command: &str) -> CommandMenuParsedCommand<'_> {
+pub(crate) fn parse_command_menu_command(command: &str) -> CommandMenuParsedCommand<'_> {
     let command = command.trim();
     let command = command.strip_prefix(':').unwrap_or(command).trim();
 
@@ -195,7 +195,7 @@ fn parse_command_menu_command(command: &str) -> CommandMenuParsedCommand<'_> {
     }
 }
 
-fn run_command_menu_command(
+pub(crate) fn run_command_menu_command(
     state: &mut EditorState,
     app_exit: &mut MessageWriter<AppExit>,
     command: &str,
@@ -218,12 +218,12 @@ fn run_command_menu_command(
     }
 }
 
-fn keyboard_input_text_is(input: &KeyboardInput, expected: &str) -> bool {
+pub(crate) fn keyboard_input_text_is(input: &KeyboardInput, expected: &str) -> bool {
     input.text.as_ref().is_some_and(|text| text == expected)
 }
 
 impl EditorState {
-    fn open_command_menu(&mut self) {
+    pub(crate) fn open_command_menu(&mut self) {
         self.close_link_autocomplete();
         self.command_menu = Some(CommandMenu {
             input: String::new(),
@@ -239,7 +239,10 @@ mod command_menu_tests {
 
     #[test]
     fn parses_quit_aliases() {
-        assert_eq!(parse_command_menu_command("q"), CommandMenuParsedCommand::Quit);
+        assert_eq!(
+            parse_command_menu_command("q"),
+            CommandMenuParsedCommand::Quit
+        );
         assert_eq!(
             parse_command_menu_command(":q"),
             CommandMenuParsedCommand::Quit
@@ -274,3 +277,5 @@ mod command_menu_tests {
         );
     }
 }
+#[allow(unused_imports)]
+use super::*;

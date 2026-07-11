@@ -1,4 +1,6 @@
-fn markdown_visual_text(parsed_line: &ParsedLine) -> Option<(usize, String, Option<bool>)> {
+pub(crate) fn markdown_visual_text(
+    parsed_line: &ParsedLine,
+) -> Option<(usize, String, Option<bool>)> {
     markdown_visual_text_for_kind(
         &parsed_line.raw,
         &parsed_line.kind,
@@ -6,7 +8,7 @@ fn markdown_visual_text(parsed_line: &ParsedLine) -> Option<(usize, String, Opti
     )
 }
 
-fn markdown_visual_text_for_kind(
+pub(crate) fn markdown_visual_text_for_kind(
     raw: &str,
     kind: &LineKind,
     _markdown_heading_level: Option<u8>,
@@ -27,11 +29,15 @@ fn markdown_visual_text_for_kind(
     }
 }
 
-fn markdown_render_override_for_raw(raw: &str) -> Option<ProcessedLineRenderOverride> {
-    let parsed_line = parse_document_with_format(&Document::from_text(raw), DocumentFormat::Markdown)
-        .into_iter()
-        .next()?;
-    if matches!(parsed_line.kind, LineKind::MarkdownParagraph | LineKind::Empty) {
+pub(crate) fn markdown_render_override_for_raw(raw: &str) -> Option<ProcessedLineRenderOverride> {
+    let parsed_line =
+        parse_document_with_format(&Document::from_text(raw), DocumentFormat::Markdown)
+            .into_iter()
+            .next()?;
+    if matches!(
+        parsed_line.kind,
+        LineKind::MarkdownParagraph | LineKind::Empty
+    ) {
         return None;
     }
 
@@ -41,7 +47,7 @@ fn markdown_render_override_for_raw(raw: &str) -> Option<ProcessedLineRenderOver
     })
 }
 
-fn markdown_line_style(
+pub(crate) fn markdown_line_style(
     kind: &LineKind,
     markdown_heading_level: Option<u8>,
 ) -> Option<LineRenderStyle> {
@@ -84,7 +90,7 @@ fn markdown_line_style(
     }
 }
 
-fn markdown_heading_style(level: u8) -> LineRenderStyle {
+pub(crate) fn markdown_heading_style(level: u8) -> LineRenderStyle {
     let (font_scale, line_height_scale) = match level.clamp(1, 6) {
         1 => (1.80, 2.15),
         2 => (1.55, 1.85),
@@ -102,7 +108,7 @@ fn markdown_heading_style(level: u8) -> LineRenderStyle {
     )
 }
 
-fn markdown_heading_visual(raw: &str) -> (usize, String) {
+pub(crate) fn markdown_heading_visual(raw: &str) -> (usize, String) {
     let leading = leading_markdown_whitespace(raw);
     let trimmed = raw.chars().skip(leading).collect::<Vec<_>>();
     let mut hashes = 0usize;
@@ -119,7 +125,7 @@ fn markdown_heading_visual(raw: &str) -> (usize, String) {
     (leading.saturating_add(consumed), text)
 }
 
-fn markdown_quote_visual(raw: &str) -> (usize, String) {
+pub(crate) fn markdown_quote_visual(raw: &str) -> (usize, String) {
     let leading = leading_markdown_whitespace(raw);
     let trimmed = raw.chars().skip(leading).collect::<Vec<_>>();
     let mut consumed = 0usize;
@@ -133,7 +139,7 @@ fn markdown_quote_visual(raw: &str) -> (usize, String) {
     (leading.saturating_add(consumed), text)
 }
 
-fn markdown_list_item_visual(raw: &str) -> (usize, String, Option<bool>) {
+pub(crate) fn markdown_list_item_visual(raw: &str) -> (usize, String, Option<bool>) {
     let leading = leading_markdown_whitespace(raw);
     let trimmed = raw.chars().skip(leading).collect::<Vec<_>>();
     if trimmed.is_empty() {
@@ -181,7 +187,10 @@ fn markdown_list_item_visual(raw: &str) -> (usize, String, Option<bool>) {
     (0, raw.to_string(), None)
 }
 
-fn markdown_checklist_marker(chars: &[char], start: usize) -> Option<(usize, bool, usize)> {
+pub(crate) fn markdown_checklist_marker(
+    chars: &[char],
+    start: usize,
+) -> Option<(usize, bool, usize)> {
     let checked_char = *chars.get(start + 1)?;
     let checked = matches!(checked_char, 'x' | 'X');
     if chars.get(start).is_some_and(|ch| *ch == '[')
@@ -198,13 +207,13 @@ fn markdown_checklist_marker(chars: &[char], start: usize) -> Option<(usize, boo
     None
 }
 
-fn leading_markdown_whitespace(raw: &str) -> usize {
+pub(crate) fn leading_markdown_whitespace(raw: &str) -> usize {
     raw.chars()
         .take_while(|ch| matches!(*ch, ' ' | '\t'))
         .count()
 }
 
-fn unordered_list_content_start(chars: &[char]) -> Option<usize> {
+pub(crate) fn unordered_list_content_start(chars: &[char]) -> Option<usize> {
     if chars.is_empty() || !matches!(chars[0], '-' | '*' | '+') {
         return None;
     }
@@ -219,7 +228,7 @@ fn unordered_list_content_start(chars: &[char]) -> Option<usize> {
     saw_whitespace.then_some(index)
 }
 
-fn ordered_list_content_start(chars: &[char]) -> Option<(String, usize)> {
+pub(crate) fn ordered_list_content_start(chars: &[char]) -> Option<(String, usize)> {
     let mut digits = 0usize;
     while chars.get(digits).is_some_and(|ch| ch.is_ascii_digit()) {
         digits += 1;
@@ -300,3 +309,5 @@ mod tests {
         assert!(markdown_render_override_for_raw("plain text").is_none());
     }
 }
+#[allow(unused_imports)]
+use super::*;

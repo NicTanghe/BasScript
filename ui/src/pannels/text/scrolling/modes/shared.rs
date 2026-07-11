@@ -1,12 +1,12 @@
 #[derive(Clone, Copy)]
-struct ScrollPanelsContext {
-    plain_panel_size: Option<Vec2>,
-    processed_panel_size: Option<Vec2>,
-    hovered_panel: Option<PanelKind>,
-    processed_cursor_pos: Option<Vec2>,
+pub(crate) struct ScrollPanelsContext {
+    pub(crate) plain_panel_size: Option<Vec2>,
+    pub(crate) processed_panel_size: Option<Vec2>,
+    pub(crate) hovered_panel: Option<PanelKind>,
+    pub(crate) processed_cursor_pos: Option<Vec2>,
 }
 
-fn gather_scroll_panels_context(
+pub(crate) fn gather_scroll_panels_context(
     panel_query: &Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
     state: &EditorState,
 ) -> ScrollPanelsContext {
@@ -46,3 +46,5 @@ fn gather_scroll_panels_context(
         processed_cursor_pos,
     }
 }
+#[allow(unused_imports)]
+use super::*;

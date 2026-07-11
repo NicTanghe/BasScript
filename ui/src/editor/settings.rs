@@ -1,4 +1,4 @@
-fn load_persistent_settings() -> PersistentSettings {
+pub(crate) fn load_persistent_settings() -> PersistentSettings {
     let path = PathBuf::from(EDITOR_SETTINGS_PATH);
     let defaults = PersistentSettings::default();
     let contents = match fs::read_to_string(&path) {
@@ -43,7 +43,7 @@ fn load_persistent_settings() -> PersistentSettings {
     persistent_settings_from_ron(&contents, &defaults)
 }
 
-fn load_keybind_settings() -> KeybindSettings {
+pub(crate) fn load_keybind_settings() -> KeybindSettings {
     let path = PathBuf::from(KEYBINDS_SETTINGS_PATH);
     let mut keybinds = KeybindSettings::default();
     let contents = match fs::read_to_string(&path) {
@@ -81,7 +81,7 @@ fn load_keybind_settings() -> KeybindSettings {
     keybinds
 }
 
-fn load_persistent_ui_state() -> PersistentUiState {
+pub(crate) fn load_persistent_ui_state() -> PersistentUiState {
     let path = PathBuf::from(UI_STATE_PATH);
     let defaults = PersistentUiState::default();
     let contents = match fs::read_to_string(&path) {
@@ -109,7 +109,7 @@ fn load_persistent_ui_state() -> PersistentUiState {
     persistent_ui_state_from_ron(&contents, &defaults)
 }
 
-fn load_theme_settings() -> ThemeSettings {
+pub(crate) fn load_theme_settings() -> ThemeSettings {
     let path = PathBuf::from(THEME_SETTINGS_PATH);
     let defaults = ThemeSettings::default();
     let contents = match fs::read_to_string(&path) {
@@ -158,7 +158,7 @@ fn load_theme_settings() -> ThemeSettings {
     theme
 }
 
-fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
+pub(crate) fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
     let path = PathBuf::from(EDITOR_SETTINGS_PATH);
     let workspace_root_path = settings
         .workspace_root_path
@@ -198,7 +198,7 @@ fn save_persistent_settings(settings: &PersistentSettings) -> io::Result<()> {
     Ok(())
 }
 
-fn save_keybind_settings(keybinds: &KeybindSettings) -> io::Result<()> {
+pub(crate) fn save_keybind_settings(keybinds: &KeybindSettings) -> io::Result<()> {
     let path = PathBuf::from(KEYBINDS_SETTINGS_PATH);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -219,7 +219,7 @@ fn save_keybind_settings(keybinds: &KeybindSettings) -> io::Result<()> {
     Ok(())
 }
 
-fn save_persistent_ui_state(ui_state: &PersistentUiState) -> io::Result<()> {
+pub(crate) fn save_persistent_ui_state(ui_state: &PersistentUiState) -> io::Result<()> {
     let path = PathBuf::from(UI_STATE_PATH);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -241,7 +241,7 @@ fn save_persistent_ui_state(ui_state: &PersistentUiState) -> io::Result<()> {
     Ok(())
 }
 
-fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
+pub(crate) fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
     let path = PathBuf::from(THEME_SETTINGS_PATH);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -332,7 +332,7 @@ fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
     Ok(())
 }
 
-fn parse_ron_value(contents: &str, key: &str) -> Option<String> {
+pub(crate) fn parse_ron_value(contents: &str, key: &str) -> Option<String> {
     for line in contents.lines() {
         let line = line.trim();
 
@@ -353,24 +353,24 @@ fn parse_ron_value(contents: &str, key: &str) -> Option<String> {
     None
 }
 
-fn parse_ron_bool(contents: &str, key: &str) -> Option<bool> {
+pub(crate) fn parse_ron_bool(contents: &str, key: &str) -> Option<bool> {
     match parse_ron_value(contents, key)?.as_str() {
-            "true" => Some(true),
-            "false" => Some(false),
-            _ => None,
-        }
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
 }
 
-fn parse_ron_f32(contents: &str, key: &str) -> Option<f32> {
+pub(crate) fn parse_ron_f32(contents: &str, key: &str) -> Option<f32> {
     parse_ron_value(contents, key)?.parse::<f32>().ok()
 }
 
-fn parse_ron_vec4(contents: &str, key: &str) -> Option<Vec4> {
+pub(crate) fn parse_ron_vec4(contents: &str, key: &str) -> Option<Vec4> {
     let raw = parse_ron_value(contents, key)?;
     parse_ron_vec4_value(&raw)
 }
 
-fn parse_ron_vec4_value(raw: &str) -> Option<Vec4> {
+pub(crate) fn parse_ron_vec4_value(raw: &str) -> Option<Vec4> {
     let trimmed = raw.trim();
     let stripped = trimmed
         .strip_prefix("Vec4(")
@@ -393,16 +393,24 @@ fn parse_ron_vec4_value(raw: &str) -> Option<Vec4> {
         .unwrap_or(stripped);
 
     if inner.contains(':') {
-        let x = parse_named_vec_component(inner, "x").or_else(|| parse_named_vec_component(inner, "r"))?;
-        let y = parse_named_vec_component(inner, "y").or_else(|| parse_named_vec_component(inner, "g"))?;
-        let z = parse_named_vec_component(inner, "z").or_else(|| parse_named_vec_component(inner, "b"))?;
-        let w = parse_named_vec_component(inner, "w").or_else(|| parse_named_vec_component(inner, "a"))?;
+        let x = parse_named_vec_component(inner, "x")
+            .or_else(|| parse_named_vec_component(inner, "r"))?;
+        let y = parse_named_vec_component(inner, "y")
+            .or_else(|| parse_named_vec_component(inner, "g"))?;
+        let z = parse_named_vec_component(inner, "z")
+            .or_else(|| parse_named_vec_component(inner, "b"))?;
+        let w = parse_named_vec_component(inner, "w")
+            .or_else(|| parse_named_vec_component(inner, "a"))?;
         return Some(Vec4::new(x, y, z, w));
     }
 
     let mut values = [0.0_f32; 4];
     let mut index = 0usize;
-    for token in inner.split(',').map(str::trim).filter(|token| !token.is_empty()) {
+    for token in inner
+        .split(',')
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+    {
         if index >= values.len() {
             return None;
         }
@@ -417,8 +425,12 @@ fn parse_ron_vec4_value(raw: &str) -> Option<Vec4> {
     }
 }
 
-fn parse_named_vec_component(raw: &str, key: &str) -> Option<f32> {
-    for entry in raw.split(',').map(str::trim).filter(|entry| !entry.is_empty()) {
+pub(crate) fn parse_named_vec_component(raw: &str, key: &str) -> Option<f32> {
+    for entry in raw
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+    {
         let (lhs, rhs) = entry.split_once(':')?;
         if lhs.trim() != key {
             continue;
@@ -428,7 +440,7 @@ fn parse_named_vec_component(raw: &str, key: &str) -> Option<f32> {
     None
 }
 
-fn parse_ron_string(contents: &str, key: &str) -> Option<String> {
+pub(crate) fn parse_ron_string(contents: &str, key: &str) -> Option<String> {
     let value = parse_ron_value(contents, key)?;
     if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
         return Some(value[1..value.len().saturating_sub(1)].to_string());
@@ -436,21 +448,32 @@ fn parse_ron_string(contents: &str, key: &str) -> Option<String> {
     None
 }
 
-fn persistent_settings_from_ron(contents: &str, defaults: &PersistentSettings) -> PersistentSettings {
+pub(crate) fn persistent_settings_from_ron(
+    contents: &str,
+    defaults: &PersistentSettings,
+) -> PersistentSettings {
     let dialogue_value = parse_ron_bool(contents, "dialogue_double_space_newline")
         .unwrap_or(defaults.dialogue_double_space_newline);
     let non_dialogue_value = parse_ron_bool(contents, "non_dialogue_double_space_newline")
         .unwrap_or(defaults.non_dialogue_double_space_newline);
     let show_system_titlebar =
         parse_ron_bool(contents, "show_system_titlebar").unwrap_or(defaults.show_system_titlebar);
-    let page_margin_left = parse_ron_f32(contents, "page_margin_left").unwrap_or(defaults.page_margin_left);
+    let page_margin_left =
+        parse_ron_f32(contents, "page_margin_left").unwrap_or(defaults.page_margin_left);
     let page_margin_right =
         parse_ron_f32(contents, "page_margin_right").unwrap_or(defaults.page_margin_right);
-    let page_margin_top = parse_ron_f32(contents, "page_margin_top").unwrap_or(defaults.page_margin_top);
+    let page_margin_top =
+        parse_ron_f32(contents, "page_margin_top").unwrap_or(defaults.page_margin_top);
     let page_margin_bottom =
         parse_ron_f32(contents, "page_margin_bottom").unwrap_or(defaults.page_margin_bottom);
     let workspace_root_path = parse_ron_string(contents, "workspace_root_path")
-        .and_then(|value| if value.trim().is_empty() { None } else { Some(value) })
+        .and_then(|value| {
+            if value.trim().is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        })
         .or_else(|| defaults.workspace_root_path.clone());
     let vim_mode_enabled =
         parse_ron_bool(contents, "vim_mode_enabled").unwrap_or(defaults.vim_mode_enabled);
@@ -468,7 +491,7 @@ fn persistent_settings_from_ron(contents: &str, defaults: &PersistentSettings) -
     }
 }
 
-fn persistent_ui_state_from_ron(
+pub(crate) fn persistent_ui_state_from_ron(
     contents: &str,
     defaults: &PersistentUiState,
 ) -> PersistentUiState {
@@ -497,29 +520,30 @@ fn persistent_ui_state_from_ron(
     }
 }
 
-fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSettings {
+pub(crate) fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSettings {
     let app_background =
         parse_ron_vec4(contents, "app_background").unwrap_or(defaults.app_background);
     let top_menu_background =
         parse_ron_vec4(contents, "top_menu_background").unwrap_or(defaults.top_menu_background);
     let explorer_background =
         parse_ron_vec4(contents, "explorer_background").unwrap_or(defaults.explorer_background);
-    let processed_background = parse_ron_vec4(contents, "processed_background")
-        .unwrap_or(defaults.processed_background);
-    let selection_background = parse_ron_vec4(contents, "selection_background").unwrap_or_else(|| {
-        Vec4::new(
-            parse_ron_f32(contents, "selection_background_r")
-                .unwrap_or(defaults.selection_background.x),
-            parse_ron_f32(contents, "selection_background_g")
-                .unwrap_or(defaults.selection_background.y),
-            parse_ron_f32(contents, "selection_background_b")
-                .unwrap_or(defaults.selection_background.z),
-            parse_ron_f32(contents, "selection_background_a")
-                .unwrap_or(defaults.selection_background.w),
-        )
-    });
-    let legacy_processed_link = parse_ron_vec4(contents, "processed_link")
-        .unwrap_or(defaults.link_fallback);
+    let processed_background =
+        parse_ron_vec4(contents, "processed_background").unwrap_or(defaults.processed_background);
+    let selection_background =
+        parse_ron_vec4(contents, "selection_background").unwrap_or_else(|| {
+            Vec4::new(
+                parse_ron_f32(contents, "selection_background_r")
+                    .unwrap_or(defaults.selection_background.x),
+                parse_ron_f32(contents, "selection_background_g")
+                    .unwrap_or(defaults.selection_background.y),
+                parse_ron_f32(contents, "selection_background_b")
+                    .unwrap_or(defaults.selection_background.z),
+                parse_ron_f32(contents, "selection_background_a")
+                    .unwrap_or(defaults.selection_background.w),
+            )
+        });
+    let legacy_processed_link =
+        parse_ron_vec4(contents, "processed_link").unwrap_or(defaults.link_fallback);
     let link_fallback = parse_ron_vec4(contents, "link_fallback").unwrap_or(legacy_processed_link);
     let link_prop = parse_ron_vec4(contents, "link_prop").unwrap_or(defaults.link_prop);
     let link_place = parse_ron_vec4(contents, "link_place").unwrap_or(defaults.link_place);
@@ -564,7 +588,7 @@ fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSet
     }
 }
 
-fn apply_keybind_settings_from_ron(contents: &str, keybinds: &mut KeybindSettings) {
+pub(crate) fn apply_keybind_settings_from_ron(contents: &str, keybinds: &mut KeybindSettings) {
     for action in SHORTCUT_ACTIONS {
         let key = shortcut_action_settings_key(action);
         let Some(raw) = parse_ron_string(contents, key) else {
@@ -582,14 +606,14 @@ fn apply_keybind_settings_from_ron(contents: &str, keybinds: &mut KeybindSetting
     }
 }
 
-fn load_legacy_persistent_settings_ron() -> Option<PersistentSettings> {
+pub(crate) fn load_legacy_persistent_settings_ron() -> Option<PersistentSettings> {
     let path = PathBuf::from(LEGACY_EDITOR_SETTINGS_PATH);
     let contents = fs::read_to_string(path).ok()?;
     let defaults = PersistentSettings::default();
     Some(persistent_settings_from_ron(&contents, &defaults))
 }
 
-fn load_legacy_keybind_settings_ron() -> Option<KeybindSettings> {
+pub(crate) fn load_legacy_keybind_settings_ron() -> Option<KeybindSettings> {
     let path = PathBuf::from(LEGACY_KEYBINDS_SETTINGS_PATH);
     let contents = fs::read_to_string(path).ok()?;
     let mut keybinds = KeybindSettings::default();
@@ -597,7 +621,7 @@ fn load_legacy_keybind_settings_ron() -> Option<KeybindSettings> {
     Some(keybinds)
 }
 
-fn load_legacy_toml_settings() -> Option<PersistentSettings> {
+pub(crate) fn load_legacy_toml_settings() -> Option<PersistentSettings> {
     let path = PathBuf::from(LEGACY_SETTINGS_PATH);
     let contents = fs::read_to_string(&path).ok()?;
     let defaults = PersistentSettings::default();
@@ -626,7 +650,7 @@ fn load_legacy_toml_settings() -> Option<PersistentSettings> {
     })
 }
 
-fn parse_toml_bool(contents: &str, key: &str) -> Option<bool> {
+pub(crate) fn parse_toml_bool(contents: &str, key: &str) -> Option<bool> {
     for line in contents.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -647,7 +671,7 @@ fn parse_toml_bool(contents: &str, key: &str) -> Option<bool> {
     None
 }
 
-fn parse_toml_f32(contents: &str, key: &str) -> Option<f32> {
+pub(crate) fn parse_toml_f32(contents: &str, key: &str) -> Option<f32> {
     for line in contents.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -664,7 +688,7 @@ fn parse_toml_f32(contents: &str, key: &str) -> Option<f32> {
     None
 }
 
-fn persistent_settings_from_state(state: &EditorState) -> PersistentSettings {
+pub(crate) fn persistent_settings_from_state(state: &EditorState) -> PersistentSettings {
     PersistentSettings {
         dialogue_double_space_newline: state.dialogue_double_space_newline,
         non_dialogue_double_space_newline: state.non_dialogue_double_space_newline,
@@ -681,7 +705,7 @@ fn persistent_settings_from_state(state: &EditorState) -> PersistentSettings {
     }
 }
 
-fn persistent_ui_state_from_state(state: &EditorState) -> PersistentUiState {
+pub(crate) fn persistent_ui_state_from_state(state: &EditorState) -> PersistentUiState {
     PersistentUiState {
         workspace_sidebar_visible: state.workspace_sidebar_visible,
         top_menu_collapsed: state.top_menu_collapsed,
@@ -689,7 +713,7 @@ fn persistent_ui_state_from_state(state: &EditorState) -> PersistentUiState {
     }
 }
 
-fn theme_settings_from_state(state: &EditorState) -> ThemeSettings {
+pub(crate) fn theme_settings_from_state(state: &EditorState) -> ThemeSettings {
     ThemeSettings {
         app_background: clamp_vec4_rgba(state.app_bg_rgba),
         top_menu_background: clamp_vec4_rgba(state.top_menu_bg_rgba),
@@ -716,7 +740,7 @@ fn theme_settings_from_state(state: &EditorState) -> ThemeSettings {
     }
 }
 
-fn sync_theme_colors(state: &mut EditorState) {
+pub(crate) fn sync_theme_colors(state: &mut EditorState) {
     state.app_bg_rgba = clamp_vec4_rgba(state.app_bg_rgba);
     state.app_bg_color = color_from_rgba(state.app_bg_rgba);
     state.top_menu_bg_rgba = clamp_vec4_rgba(state.top_menu_bg_rgba);
@@ -753,11 +777,11 @@ fn sync_theme_colors(state: &mut EditorState) {
         clamp_link_hover_hsv_value_adjustment(state.link_hover_hsv_value_adjustment);
 }
 
-fn active_theme_rgba(state: &EditorState) -> Vec4 {
+pub(crate) fn active_theme_rgba(state: &EditorState) -> Vec4 {
     theme_rgba_for_target(state, state.theme_color_target)
 }
 
-fn theme_rgba_for_target(state: &EditorState, target: ThemeColorTarget) -> Vec4 {
+pub(crate) fn theme_rgba_for_target(state: &EditorState, target: ThemeColorTarget) -> Vec4 {
     match target {
         ThemeColorTarget::AppBackground => state.app_bg_rgba,
         ThemeColorTarget::TopMenuBackground => state.top_menu_bg_rgba,
@@ -773,7 +797,7 @@ fn theme_rgba_for_target(state: &EditorState, target: ThemeColorTarget) -> Vec4 
     }
 }
 
-fn theme_color_for_target(state: &EditorState, target: ThemeColorTarget) -> Color {
+pub(crate) fn theme_color_for_target(state: &EditorState, target: ThemeColorTarget) -> Color {
     match target {
         ThemeColorTarget::AppBackground => state.app_bg_color,
         ThemeColorTarget::TopMenuBackground => state.top_menu_bg_color,
@@ -789,7 +813,7 @@ fn theme_color_for_target(state: &EditorState, target: ThemeColorTarget) -> Colo
     }
 }
 
-fn set_active_theme_rgba(state: &mut EditorState, rgba: Vec4) {
+pub(crate) fn set_active_theme_rgba(state: &mut EditorState, rgba: Vec4) {
     match state.theme_color_target {
         ThemeColorTarget::AppBackground => state.app_bg_rgba = rgba,
         ThemeColorTarget::TopMenuBackground => state.top_menu_bg_rgba = rgba,
@@ -807,7 +831,7 @@ fn set_active_theme_rgba(state: &mut EditorState, rgba: Vec4) {
 }
 
 impl EditorState {
-    fn processed_link_rgba_for_target(&self, target: Option<&str>) -> Vec4 {
+    pub(crate) fn processed_link_rgba_for_target(&self, target: Option<&str>) -> Vec4 {
         let Some(target) = target else {
             return self.link_fallback_rgba;
         };
@@ -818,19 +842,18 @@ impl EditorState {
         self.link_rgba_for_type(entity_type)
     }
 
-    fn processed_link_color_for_target(&self, target: Option<&str>) -> Color {
+    pub(crate) fn processed_link_color_for_target(&self, target: Option<&str>) -> Color {
         color_from_rgba(self.processed_link_rgba_for_target(target))
     }
 
-    fn hovered_processed_link_color_for_target(&self, target: Option<&str>) -> Color {
+    pub(crate) fn hovered_processed_link_color_for_target(&self, target: Option<&str>) -> Color {
         color_from_rgba(adjust_hsv_value_rgba(
             self.processed_link_rgba_for_target(target),
             self.link_hover_hsv_value_adjustment,
         ))
     }
 
-
-    fn link_rgba_for_type(&self, entity_type: &str) -> Vec4 {
+    pub(crate) fn link_rgba_for_type(&self, entity_type: &str) -> Vec4 {
         match link_color_target_for_entity_type(entity_type) {
             ThemeColorTarget::LinkFallback => self.link_fallback_rgba,
             ThemeColorTarget::LinkProp => self.link_prop_rgba,
@@ -847,7 +870,7 @@ impl EditorState {
     }
 }
 
-fn link_color_target_for_entity_type(entity_type: &str) -> ThemeColorTarget {
+pub(crate) fn link_color_target_for_entity_type(entity_type: &str) -> ThemeColorTarget {
     match normalize_entity_type_key(entity_type).as_str() {
         "" | "unknown" => ThemeColorTarget::LinkFallback,
         "prop" | "object" | "item" | "vehicle" | "costume" | "wardrobe" => {
@@ -856,14 +879,12 @@ fn link_color_target_for_entity_type(entity_type: &str) -> ThemeColorTarget {
         "location" | "place" | "setting" | "room" => ThemeColorTarget::LinkPlace,
         "character" | "person" | "cast" | "npc" => ThemeColorTarget::LinkCharacter,
         "group" | "faction" | "organization" | "org" => ThemeColorTarget::LinkFaction,
-        "note" | "concept" | "theme" | "event" | "beat" | "moment" => {
-            ThemeColorTarget::LinkConcept
-        }
+        "note" | "concept" | "theme" | "event" | "beat" | "moment" => ThemeColorTarget::LinkConcept,
         _ => ThemeColorTarget::LinkFallback,
     }
 }
 
-fn normalize_entity_type_key(entity_type: &str) -> String {
+pub(crate) fn normalize_entity_type_key(entity_type: &str) -> String {
     entity_type
         .chars()
         .map(|ch| {
@@ -880,7 +901,7 @@ fn normalize_entity_type_key(entity_type: &str) -> String {
         .join("-")
 }
 
-fn clamp_vec4_rgba(value: Vec4) -> Vec4 {
+pub(crate) fn clamp_vec4_rgba(value: Vec4) -> Vec4 {
     Vec4::new(
         value.x.clamp(0.0, 1.0),
         value.y.clamp(0.0, 1.0),
@@ -889,26 +910,22 @@ fn clamp_vec4_rgba(value: Vec4) -> Vec4 {
     )
 }
 
-fn clamp_link_hover_hsv_value_adjustment(value: f32) -> f32 {
+pub(crate) fn clamp_link_hover_hsv_value_adjustment(value: f32) -> f32 {
     value.clamp(0.0, LINK_HOVER_HSV_VALUE_MAX)
 }
 
-fn color_from_rgba(value: Vec4) -> Color {
+pub(crate) fn color_from_rgba(value: Vec4) -> Color {
     Color::srgba(value.x, value.y, value.z, value.w)
 }
 
-fn adjust_hsv_value_rgba(rgba: Vec4, value_adjustment: f32) -> Vec4 {
+pub(crate) fn adjust_hsv_value_rgba(rgba: Vec4, value_adjustment: f32) -> Vec4 {
     let rgb = Vec3::new(rgba.x, rgba.y, rgba.z);
     let (hue, saturation, value) = rgb_to_hsv(rgb);
-    let adjusted_rgb = hsv_to_rgb(
-        hue,
-        saturation,
-        (value + value_adjustment).clamp(0.0, 1.0),
-    );
+    let adjusted_rgb = hsv_to_rgb(hue, saturation, (value + value_adjustment).clamp(0.0, 1.0));
     Vec4::new(adjusted_rgb.x, adjusted_rgb.y, adjusted_rgb.z, rgba.w)
 }
 
-fn rgb_to_hsv(rgb: Vec3) -> (f32, f32, f32) {
+pub(crate) fn rgb_to_hsv(rgb: Vec3) -> (f32, f32, f32) {
     let r = rgb.x.clamp(0.0, 1.0);
     let g = rgb.y.clamp(0.0, 1.0);
     let b = rgb.z.clamp(0.0, 1.0);
@@ -918,7 +935,11 @@ fn rgb_to_hsv(rgb: Vec3) -> (f32, f32, f32) {
     let delta = max - min;
 
     let value = max;
-    let saturation = if max <= f32::EPSILON { 0.0 } else { delta / max };
+    let saturation = if max <= f32::EPSILON {
+        0.0
+    } else {
+        delta / max
+    };
 
     let hue = if delta <= f32::EPSILON {
         0.0
@@ -930,10 +951,14 @@ fn rgb_to_hsv(rgb: Vec3) -> (f32, f32, f32) {
         (((r - g) / delta) + 4.0) / 6.0
     };
 
-    (hue.rem_euclid(1.0), saturation.clamp(0.0, 1.0), value.clamp(0.0, 1.0))
+    (
+        hue.rem_euclid(1.0),
+        saturation.clamp(0.0, 1.0),
+        value.clamp(0.0, 1.0),
+    )
 }
 
-fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> Vec3 {
+pub(crate) fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> Vec3 {
     let h = hue.rem_euclid(1.0);
     let s = saturation.clamp(0.0, 1.0);
     let v = value.clamp(0.0, 1.0);
@@ -959,11 +984,11 @@ fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> Vec3 {
     }
 }
 
-fn save_editor_ui_state(state: &EditorState) -> io::Result<()> {
+pub(crate) fn save_editor_ui_state(state: &EditorState) -> io::Result<()> {
     save_persistent_ui_state(&persistent_ui_state_from_state(state))
 }
 
-fn normalize_page_margins(state: &mut EditorState) {
+pub(crate) fn normalize_page_margins(state: &mut EditorState) {
     state.page_margin_left = state.page_margin_left.max(0.0);
     state.page_margin_right = state.page_margin_right.max(0.0);
     state.page_margin_top = state.page_margin_top.max(0.0);
@@ -982,7 +1007,7 @@ fn normalize_page_margins(state: &mut EditorState) {
     }
 }
 
-fn adjust_page_margin(state: &mut EditorState, edge: MarginEdge, delta: f32) {
+pub(crate) fn adjust_page_margin(state: &mut EditorState, edge: MarginEdge, delta: f32) {
     match edge {
         MarginEdge::Left => {
             let max_left =
@@ -1009,15 +1034,15 @@ fn adjust_page_margin(state: &mut EditorState, edge: MarginEdge, delta: f32) {
     normalize_page_margins(state);
 }
 
-fn scaled_font_size(state: &EditorState) -> f32 {
+pub(crate) fn scaled_font_size(state: &EditorState) -> f32 {
     FONT_SIZE * state.zoom
 }
 
-fn scaled_line_height(state: &EditorState) -> f32 {
+pub(crate) fn scaled_line_height(state: &EditorState) -> f32 {
     LINE_HEIGHT * state.zoom
 }
 
-fn default_char_width_for_format(format: DocumentFormat) -> f32 {
+pub(crate) fn default_char_width_for_format(format: DocumentFormat) -> f32 {
     match format {
         DocumentFormat::Markdown => DEFAULT_MARKDOWN_CHAR_WIDTH,
         DocumentFormat::Fountain => DEFAULT_CHAR_WIDTH,
@@ -1025,19 +1050,22 @@ fn default_char_width_for_format(format: DocumentFormat) -> f32 {
     }
 }
 
-fn scaled_char_width(state: &EditorState) -> f32 {
+pub(crate) fn scaled_char_width(state: &EditorState) -> f32 {
     default_char_width_for_format(state.document_format) * state.zoom
 }
 
-fn scaled_text_padding_x(state: &EditorState) -> f32 {
+pub(crate) fn scaled_text_padding_x(state: &EditorState) -> f32 {
     TEXT_PADDING_X * state.zoom
 }
 
-fn scaled_text_padding_y(state: &EditorState) -> f32 {
+pub(crate) fn scaled_text_padding_y(state: &EditorState) -> f32 {
     TEXT_PADDING_Y * state.zoom
 }
 
-fn plain_horizontal_scroll_max(state: &EditorState, plain_panel_size: Option<Vec2>) -> f32 {
+pub(crate) fn plain_horizontal_scroll_max(
+    state: &EditorState,
+    plain_panel_size: Option<Vec2>,
+) -> f32 {
     let Some(panel_size) = plain_panel_size else {
         return 0.0;
     };
@@ -1055,9 +1083,11 @@ fn plain_horizontal_scroll_max(state: &EditorState, plain_panel_size: Option<Vec
     (content_width - panel_size.x).max(0.0)
 }
 
-fn processed_horizontal_scroll_bounds(
+pub(crate) fn processed_horizontal_scroll_bounds(
     state: &EditorState,
     processed_panel_size: Option<Vec2>,
 ) -> (f32, f32) {
     processed_horizontal_scroll_bounds_with_overscroll(state, processed_panel_size)
 }
+#[allow(unused_imports)]
+use super::*;

@@ -1,139 +1,112 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs, io,
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex, mpsc},
-    time::{Duration, Instant, SystemTime},
-};
+use super::*;
 
-use basscript_core::{
-    CanvasDocument, CanvasNodeKind, Cursor, Document, DocumentFormat, DocumentPath, ImageEmbed,
-    LineKind, LinkDisplayText, ParsedLine, Position, ScriptLink, parse_canvas_document,
-    parse_document_with_format, update_canvas_node_position, update_canvas_text_node_content,
-};
-use bevy::{
-    app::AppExit,
-    asset::{LoadState, RenderAssetUsages},
-    image::{CompressedImageFormats, ImageSampler, ImageType},
-    input::{
-        keyboard::{Key, KeyboardInput},
-        mouse::{MouseScrollUnit, MouseWheel},
-    },
-    log::{info, warn},
-    prelude::*,
-    text::{ComputedTextBlock, FontStyle, FontWeight, LineHeight},
-    ui::{RelativeCursorPosition, UiGlobalTransform, UiTransform, Val2},
-    window::{PrimaryWindow, RawHandleWrapper},
-};
-use parley::{Affinity, Cursor as ParleyCursor};
-use rfd::FileDialog;
+pub(crate) const FONT_PATH: &str = "fonts/Courier Prime/Courier Prime.ttf";
+pub(crate) const FONT_BOLD_PATH: &str = "fonts/Courier Prime/Courier Prime Bold.ttf";
+pub(crate) const FONT_ITALIC_PATH: &str = "fonts/Courier Prime/Courier Prime Italic.ttf";
+pub(crate) const FONT_BOLD_ITALIC_PATH: &str = "fonts/Courier Prime/Courier Prime Bold Italic.ttf";
+pub(crate) const FONT_MARKDOWN_PATH: &str = "fonts/SegoeUIVF.ttf";
+pub(crate) const FONT_MARKDOWN_BOLD_PATH: &str = "fonts/SegoeUIVF.ttf";
+pub(crate) const FONT_MARKDOWN_ITALIC_PATH: &str = "fonts/segoe-ui-4/Segoe UI Italic.ttf";
+pub(crate) const FONT_MARKDOWN_BOLD_ITALIC_PATH: &str = "fonts/segoe-ui-4/Segoe UI Bold Italic.ttf";
+pub(crate) const DEFAULT_LOAD_PATH: &str = "docs/humanDOC.md";
+pub(crate) const DEFAULT_SAVE_PATH: &str = "scripts/session.fountain";
+pub(crate) const EDITOR_SETTINGS_PATH: &str = "settings/editor_settings.ron";
+pub(crate) const KEYBINDS_SETTINGS_PATH: &str = "settings/keybinds.ron";
+pub(crate) const UI_STATE_PATH: &str = "settings/state.ron";
+pub(crate) const THEME_SETTINGS_PATH: &str = "settings/theme.ron";
+pub(crate) const STORY_TAXONOMY_SETTINGS_PATH: &str = "settings/story_taxonomy.ron";
+pub(crate) const LEGACY_EDITOR_SETTINGS_PATH: &str = "scripts/editor_settings.ron";
+pub(crate) const LEGACY_KEYBINDS_SETTINGS_PATH: &str = "scripts/keybinds.ron";
+pub(crate) const LEGACY_SETTINGS_PATH: &str = "scripts/settings.toml";
+pub(crate) const PROCESSED_PAPER_CAPACITY: usize = 16;
+pub(crate) const SELECTION_RECT_CAPACITY: usize = 512;
 
-const FONT_PATH: &str = "fonts/Courier Prime/Courier Prime.ttf";
-const FONT_BOLD_PATH: &str = "fonts/Courier Prime/Courier Prime Bold.ttf";
-const FONT_ITALIC_PATH: &str = "fonts/Courier Prime/Courier Prime Italic.ttf";
-const FONT_BOLD_ITALIC_PATH: &str = "fonts/Courier Prime/Courier Prime Bold Italic.ttf";
-const FONT_MARKDOWN_PATH: &str = "fonts/SegoeUIVF.ttf";
-const FONT_MARKDOWN_BOLD_PATH: &str = "fonts/SegoeUIVF.ttf";
-const FONT_MARKDOWN_ITALIC_PATH: &str = "fonts/segoe-ui-4/Segoe UI Italic.ttf";
-const FONT_MARKDOWN_BOLD_ITALIC_PATH: &str = "fonts/segoe-ui-4/Segoe UI Bold Italic.ttf";
-const DEFAULT_LOAD_PATH: &str = "docs/humanDOC.md";
-const DEFAULT_SAVE_PATH: &str = "scripts/session.fountain";
-const EDITOR_SETTINGS_PATH: &str = "settings/editor_settings.ron";
-const KEYBINDS_SETTINGS_PATH: &str = "settings/keybinds.ron";
-const UI_STATE_PATH: &str = "settings/state.ron";
-const THEME_SETTINGS_PATH: &str = "settings/theme.ron";
-const STORY_TAXONOMY_SETTINGS_PATH: &str = "settings/story_taxonomy.ron";
-const LEGACY_EDITOR_SETTINGS_PATH: &str = "scripts/editor_settings.ron";
-const LEGACY_KEYBINDS_SETTINGS_PATH: &str = "scripts/keybinds.ron";
-const LEGACY_SETTINGS_PATH: &str = "scripts/settings.toml";
-const PROCESSED_PAPER_CAPACITY: usize = 16;
-const SELECTION_RECT_CAPACITY: usize = 512;
+pub(crate) const FONT_SIZE: f32 = 12.0;
+pub(crate) const LINE_HEIGHT: f32 = 12.0;
+pub(crate) const DEFAULT_CHAR_WIDTH: f32 = 7.2;
+pub(crate) const DEFAULT_MARKDOWN_CHAR_WIDTH: f32 = 6.2;
+pub(crate) const TEXT_PADDING_X: f32 = 14.0;
+pub(crate) const TEXT_PADDING_Y: f32 = 10.0;
+pub(crate) const ZOOM_MIN: f32 = 0.6;
+pub(crate) const ZOOM_MAX: f32 = 1.8;
+pub(crate) const ZOOM_STEP: f32 = 0.1;
+pub(crate) const NAVIGATION_REPEAT_INITIAL_DELAY_SECS: f32 = 0.30;
+pub(crate) const NAVIGATION_REPEAT_INTERVAL_SECS: f32 = 0.045;
+pub(crate) const WORKSPACE_SELECTION_REPEAT_INITIAL_DELAY_SECS: f32 = 0.10;
+pub(crate) const WORKSPACE_SELECTION_REPEAT_INTERVAL_SECS: f32 = 0.045;
+pub(crate) const HISTORY_LIMIT: usize = 512;
+pub(crate) const DOCUMENT_NAVIGATION_HISTORY_LIMIT: usize = 128;
+pub(crate) const MM_PER_INCH: f32 = 25.4;
+pub(crate) const POINTS_PER_INCH: f32 = 72.0;
+pub(crate) const A4_WIDTH_MM: f32 = 210.0;
+pub(crate) const A4_HEIGHT_MM: f32 = 297.0;
+pub(crate) const A4_WIDTH_POINTS: f32 = A4_WIDTH_MM / MM_PER_INCH * POINTS_PER_INCH;
+pub(crate) const A4_HEIGHT_POINTS: f32 = A4_HEIGHT_MM / MM_PER_INCH * POINTS_PER_INCH;
+pub(crate) const PAGE_OUTER_MARGIN: f32 = 14.0;
+pub(crate) const PAGE_TEXT_MARGIN_LEFT: f32 = 42.0;
+pub(crate) const PAGE_TEXT_MARGIN_RIGHT: f32 = 34.0;
+pub(crate) const PAGE_TEXT_MARGIN_TOP: f32 = 30.0;
+pub(crate) const PAGE_TEXT_MARGIN_BOTTOM: f32 = 30.0;
+pub(crate) const PAGE_GAP: f32 = 24.0;
+pub(crate) const PAGE_MARGIN_STEP: f32 = 8.0;
+pub(crate) const THEME_COLOR_WHEEL_SIZE_PX: u32 = 192;
+pub(crate) const THEME_COLOR_WHEEL_SIZE: f32 = THEME_COLOR_WHEEL_SIZE_PX as f32;
+pub(crate) const THEME_COLOR_SLIDER_WIDTH: f32 = 180.0;
+pub(crate) const THEME_COLOR_SLIDER_HEIGHT: f32 = 14.0;
+pub(crate) const THEME_COLOR_SLIDER_KNOB_WIDTH: f32 = 8.0;
+pub(crate) const LINK_HOVER_HSV_VALUE_STEP: f32 = 0.02;
+pub(crate) const LINK_HOVER_HSV_VALUE_MAX: f32 = 0.50;
+pub(crate) const PROCESSED_LINE_SPAN_PARTS: usize = 24;
+pub(crate) const PROCESSED_IMAGE_BLOCK_LINES: usize = 14;
+pub(crate) const PROCESSED_IMAGE_BLOCK_GAP: f32 = 4.0;
+pub(crate) const MIN_TEXT_BOX_WIDTH: f32 = 120.0;
+pub(crate) const MIN_TEXT_BOX_HEIGHT: f32 = 120.0;
+pub(crate) const PANEL_SPLITTER_WIDTH: f32 = 0.0;
+pub(crate) const PANEL_SPLITTER_PICK_RADIUS: f32 = 18.0;
+pub(crate) const WORKSPACE_WIDTH_DEFAULT: f32 = 280.0;
+pub(crate) const WORKSPACE_WIDTH_MIN: f32 = 180.0;
+pub(crate) const EDITOR_PANEL_MIN_WIDTH: f32 = 220.0;
+pub(crate) const UNDECORATED_WINDOW_CORNER_RADIUS: f32 = 8.0;
 
-const FONT_SIZE: f32 = 12.0;
-const LINE_HEIGHT: f32 = 12.0;
-const DEFAULT_CHAR_WIDTH: f32 = 7.2;
-const DEFAULT_MARKDOWN_CHAR_WIDTH: f32 = 6.2;
-const TEXT_PADDING_X: f32 = 14.0;
-const TEXT_PADDING_Y: f32 = 10.0;
-const ZOOM_MIN: f32 = 0.6;
-const ZOOM_MAX: f32 = 1.8;
-const ZOOM_STEP: f32 = 0.1;
-const NAVIGATION_REPEAT_INITIAL_DELAY_SECS: f32 = 0.30;
-const NAVIGATION_REPEAT_INTERVAL_SECS: f32 = 0.045;
-const WORKSPACE_SELECTION_REPEAT_INITIAL_DELAY_SECS: f32 = 0.10;
-const WORKSPACE_SELECTION_REPEAT_INTERVAL_SECS: f32 = 0.045;
-const HISTORY_LIMIT: usize = 512;
-const DOCUMENT_NAVIGATION_HISTORY_LIMIT: usize = 128;
-const MM_PER_INCH: f32 = 25.4;
-const POINTS_PER_INCH: f32 = 72.0;
-const A4_WIDTH_MM: f32 = 210.0;
-const A4_HEIGHT_MM: f32 = 297.0;
-const A4_WIDTH_POINTS: f32 = A4_WIDTH_MM / MM_PER_INCH * POINTS_PER_INCH;
-const A4_HEIGHT_POINTS: f32 = A4_HEIGHT_MM / MM_PER_INCH * POINTS_PER_INCH;
-const PAGE_OUTER_MARGIN: f32 = 14.0;
-const PAGE_TEXT_MARGIN_LEFT: f32 = 42.0;
-const PAGE_TEXT_MARGIN_RIGHT: f32 = 34.0;
-const PAGE_TEXT_MARGIN_TOP: f32 = 30.0;
-const PAGE_TEXT_MARGIN_BOTTOM: f32 = 30.0;
-const PAGE_GAP: f32 = 24.0;
-const PAGE_MARGIN_STEP: f32 = 8.0;
-const THEME_COLOR_WHEEL_SIZE_PX: u32 = 192;
-const THEME_COLOR_WHEEL_SIZE: f32 = THEME_COLOR_WHEEL_SIZE_PX as f32;
-const THEME_COLOR_SLIDER_WIDTH: f32 = 180.0;
-const THEME_COLOR_SLIDER_HEIGHT: f32 = 14.0;
-const THEME_COLOR_SLIDER_KNOB_WIDTH: f32 = 8.0;
-const LINK_HOVER_HSV_VALUE_STEP: f32 = 0.02;
-const LINK_HOVER_HSV_VALUE_MAX: f32 = 0.50;
-const PROCESSED_LINE_SPAN_PARTS: usize = 24;
-const PROCESSED_IMAGE_BLOCK_LINES: usize = 14;
-const PROCESSED_IMAGE_BLOCK_GAP: f32 = 4.0;
-const MIN_TEXT_BOX_WIDTH: f32 = 120.0;
-const MIN_TEXT_BOX_HEIGHT: f32 = 120.0;
-const PANEL_SPLITTER_WIDTH: f32 = 0.0;
-const PANEL_SPLITTER_PICK_RADIUS: f32 = 18.0;
-const WORKSPACE_WIDTH_DEFAULT: f32 = 280.0;
-const WORKSPACE_WIDTH_MIN: f32 = 180.0;
-const EDITOR_PANEL_MIN_WIDTH: f32 = 220.0;
-const UNDECORATED_WINDOW_CORNER_RADIUS: f32 = 8.0;
-
-const BUTTON_NORMAL: Color = Color::srgb(0.80, 0.82, 0.84);
-const BUTTON_HOVER: Color = Color::srgb(0.74, 0.77, 0.80);
-const BUTTON_PRESSED: Color = Color::srgb(0.68, 0.72, 0.76);
-const COLOR_ACTION: Color = Color::srgb(0.12, 0.13, 0.15);
-const COLOR_SCENE: Color = Color::srgb(0.10, 0.10, 0.12);
-const COLOR_CHARACTER: Color = Color::srgb(0.20, 0.16, 0.12);
-const COLOR_DIALOGUE: Color = Color::srgb(0.11, 0.12, 0.13);
-const COLOR_PARENTHETICAL: Color = Color::srgb(0.24, 0.28, 0.32);
-const COLOR_TRANSITION: Color = Color::srgb(0.15, 0.23, 0.31);
-const COLOR_MARKDOWN_HEADING: Color = Color::srgb(0.18, 0.24, 0.40);
-const COLOR_MARKDOWN_LIST: Color = Color::srgb(0.16, 0.22, 0.31);
-const COLOR_MARKDOWN_QUOTE: Color = Color::srgb(0.22, 0.29, 0.26);
-const COLOR_MARKDOWN_CODE: Color = Color::srgb(0.29, 0.17, 0.18);
-const COLOR_MARKDOWN_RULE: Color = Color::srgb(0.35, 0.35, 0.38);
-const COLOR_PANEL_BG: Color = Color::srgb(0.89, 0.90, 0.91);
-const COLOR_PANEL_BODY_PLAIN: Color = Color::srgb(0.96, 0.96, 0.97);
-const COLOR_PANEL_BODY_PROCESSED: Color = Color::srgb(0.82, 0.83, 0.84);
-const COLOR_PAPER: Color = Color::srgb(1.0, 1.0, 1.0);
-const COLOR_TEXT_MAIN: Color = Color::srgb(0.18, 0.19, 0.20);
-const COLOR_TEXT_MUTED: Color = Color::srgb(0.34, 0.36, 0.39);
-const COLOR_WORKSPACE_FILE: Color = Color::srgb(0.18, 0.19, 0.20);
-const COLOR_WORKSPACE_FILE_HOVER: Color = Color::srgb(0.10, 0.35, 0.62);
-const COLOR_WORKSPACE_FILE_SELECTED: Color = Color::srgb(0.69, 0.28, 0.22);
-const COLOR_WORKSPACE_ROW_ACTIVE_BG: Color = Color::srgba(0.69, 0.28, 0.22, 0.15);
-const COLOR_WORKSPACE_ROW_SELECTED_BG: Color = Color::srgba(0.10, 0.35, 0.62, 0.16);
-const COLOR_WORKSPACE_ROW_SELECTED_ACTIVE_BG: Color = Color::srgba(0.69, 0.28, 0.22, 0.24);
-const COLOR_WORKSPACE_PROMPT_BACKDROP: Color = Color::srgba(0.0, 0.0, 0.0, 0.28);
-const COLOR_WORKSPACE_PROMPT_BG: Color = Color::srgb(0.94, 0.95, 0.96);
-const COLOR_WORKSPACE_PROMPT_INPUT_BG: Color = Color::srgb(0.99, 0.99, 1.0);
-const COLOR_SPLITTER_IDLE: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
-const COLOR_SPLITTER_HOVER: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
-const COLOR_SPLITTER_ACTIVE: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
-const COLOR_IMAGE_PLACEHOLDER: Color = Color::srgb(0.72, 0.74, 0.77);
+pub(crate) const BUTTON_NORMAL: Color = Color::srgb(0.80, 0.82, 0.84);
+pub(crate) const BUTTON_HOVER: Color = Color::srgb(0.74, 0.77, 0.80);
+pub(crate) const BUTTON_PRESSED: Color = Color::srgb(0.68, 0.72, 0.76);
+pub(crate) const COLOR_ACTION: Color = Color::srgb(0.12, 0.13, 0.15);
+pub(crate) const COLOR_SCENE: Color = Color::srgb(0.10, 0.10, 0.12);
+pub(crate) const COLOR_CHARACTER: Color = Color::srgb(0.20, 0.16, 0.12);
+pub(crate) const COLOR_DIALOGUE: Color = Color::srgb(0.11, 0.12, 0.13);
+pub(crate) const COLOR_PARENTHETICAL: Color = Color::srgb(0.24, 0.28, 0.32);
+pub(crate) const COLOR_TRANSITION: Color = Color::srgb(0.15, 0.23, 0.31);
+pub(crate) const COLOR_MARKDOWN_HEADING: Color = Color::srgb(0.18, 0.24, 0.40);
+pub(crate) const COLOR_MARKDOWN_LIST: Color = Color::srgb(0.16, 0.22, 0.31);
+pub(crate) const COLOR_MARKDOWN_QUOTE: Color = Color::srgb(0.22, 0.29, 0.26);
+pub(crate) const COLOR_MARKDOWN_CODE: Color = Color::srgb(0.29, 0.17, 0.18);
+pub(crate) const COLOR_MARKDOWN_RULE: Color = Color::srgb(0.35, 0.35, 0.38);
+pub(crate) const COLOR_PANEL_BG: Color = Color::srgb(0.89, 0.90, 0.91);
+pub(crate) const COLOR_PANEL_BODY_PLAIN: Color = Color::srgb(0.96, 0.96, 0.97);
+pub(crate) const COLOR_PANEL_BODY_PROCESSED: Color = Color::srgb(0.82, 0.83, 0.84);
+pub(crate) const COLOR_PAPER: Color = Color::srgb(1.0, 1.0, 1.0);
+pub(crate) const COLOR_TEXT_MAIN: Color = Color::srgb(0.18, 0.19, 0.20);
+pub(crate) const COLOR_TEXT_MUTED: Color = Color::srgb(0.34, 0.36, 0.39);
+pub(crate) const COLOR_WORKSPACE_FILE: Color = Color::srgb(0.18, 0.19, 0.20);
+pub(crate) const COLOR_WORKSPACE_FILE_HOVER: Color = Color::srgb(0.10, 0.35, 0.62);
+pub(crate) const COLOR_WORKSPACE_FILE_SELECTED: Color = Color::srgb(0.69, 0.28, 0.22);
+pub(crate) const COLOR_WORKSPACE_ROW_ACTIVE_BG: Color = Color::srgba(0.69, 0.28, 0.22, 0.15);
+pub(crate) const COLOR_WORKSPACE_ROW_SELECTED_BG: Color = Color::srgba(0.10, 0.35, 0.62, 0.16);
+pub(crate) const COLOR_WORKSPACE_ROW_SELECTED_ACTIVE_BG: Color =
+    Color::srgba(0.69, 0.28, 0.22, 0.24);
+pub(crate) const COLOR_WORKSPACE_PROMPT_BACKDROP: Color = Color::srgba(0.0, 0.0, 0.0, 0.28);
+pub(crate) const COLOR_WORKSPACE_PROMPT_BG: Color = Color::srgb(0.94, 0.95, 0.96);
+pub(crate) const COLOR_WORKSPACE_PROMPT_INPUT_BG: Color = Color::srgb(0.99, 0.99, 1.0);
+pub(crate) const COLOR_SPLITTER_IDLE: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
+pub(crate) const COLOR_SPLITTER_HOVER: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
+pub(crate) const COLOR_SPLITTER_ACTIVE: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
+pub(crate) const COLOR_IMAGE_PLACEHOLDER: Color = Color::srgb(0.72, 0.74, 0.77);
 
 pub struct UiPlugin;
 
 #[derive(States, Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-enum UiScreenState {
+pub(crate) enum UiScreenState {
     #[default]
     Editor,
     Settings,
@@ -208,8 +181,7 @@ impl Plugin for UiPlugin {
                 Update,
                 (
                     handle_settings_buttons,
-                    handle_settings_screen_navigation
-                        .run_if(in_state(UiScreenState::Settings)),
+                    handle_settings_screen_navigation.run_if(in_state(UiScreenState::Settings)),
                 )
                     .run_if(
                         in_state(UiScreenState::Settings)
@@ -354,13 +326,13 @@ impl Plugin for UiPlugin {
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-enum PanelKind {
+pub(crate) enum PanelKind {
     Plain,
     Processed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DisplayMode {
+pub(crate) enum DisplayMode {
     Split,
     Plain,
     Processed,
@@ -368,14 +340,14 @@ enum DisplayMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ProcessedLinkColorMode {
+pub(crate) enum ProcessedLinkColorMode {
     Colored,
     Hovered,
     Plain,
 }
 
 impl ProcessedLinkColorMode {
-    fn next(self) -> Self {
+    pub(crate) fn next(self) -> Self {
         match self {
             Self::Colored => Self::Hovered,
             Self::Hovered => Self::Plain,
@@ -383,7 +355,7 @@ impl ProcessedLinkColorMode {
         }
     }
 
-    fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Colored => "colored",
             Self::Hovered => "hovered",
@@ -391,11 +363,11 @@ impl ProcessedLinkColorMode {
         }
     }
 
-    fn settings_value(self) -> &'static str {
+    pub(crate) fn settings_value(self) -> &'static str {
         self.label()
     }
 
-    fn from_settings_value(value: &str) -> Option<Self> {
+    pub(crate) fn from_settings_value(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "colored" => Some(Self::Colored),
             "hovered" => Some(Self::Hovered),
@@ -406,7 +378,7 @@ impl ProcessedLinkColorMode {
 }
 
 impl DisplayMode {
-    fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             DisplayMode::Split => "Split",
             DisplayMode::Plain => "Plain",
@@ -415,7 +387,7 @@ impl DisplayMode {
         }
     }
 
-    fn panel_visible(self, panel: PanelKind) -> bool {
+    pub(crate) fn panel_visible(self, panel: PanelKind) -> bool {
         match self {
             DisplayMode::Split => true,
             DisplayMode::Plain => panel == PanelKind::Plain,
@@ -427,34 +399,34 @@ impl DisplayMode {
 }
 
 #[derive(Component)]
-struct PanelRoot {
-    kind: PanelKind,
+pub(crate) struct PanelRoot {
+    pub(crate) kind: PanelKind,
 }
 
 #[derive(Component)]
-struct PanelBody {
-    kind: PanelKind,
+pub(crate) struct PanelBody {
+    pub(crate) kind: PanelKind,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct ProcessedLinkColorToggle {
-    kind: PanelKind,
+pub(crate) struct ProcessedLinkColorToggle {
+    pub(crate) kind: PanelKind,
 }
 
 #[derive(Component, Clone, Copy, Debug, Default)]
-struct ProcessedLinkColorToggleSpring {
-    offset_x: f32,
-    velocity_x: f32,
-    velocity_y: f32,
-    touching_page: bool,
-    initialized: bool,
-    phase: ProcessedLinkColorTogglePhase,
-    compression_distance: f32,
-    previous_page_right: f32,
+pub(crate) struct ProcessedLinkColorToggleSpring {
+    pub(crate) offset_x: f32,
+    pub(crate) velocity_x: f32,
+    pub(crate) velocity_y: f32,
+    pub(crate) touching_page: bool,
+    pub(crate) initialized: bool,
+    pub(crate) phase: ProcessedLinkColorTogglePhase,
+    pub(crate) compression_distance: f32,
+    pub(crate) previous_page_right: f32,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum ProcessedLinkColorTogglePhase {
+pub(crate) enum ProcessedLinkColorTogglePhase {
     #[default]
     Idle,
     Compressing,
@@ -463,85 +435,85 @@ enum ProcessedLinkColorTogglePhase {
 }
 
 #[derive(Component)]
-struct ProcessedLinkColorToggleLabel;
+pub(crate) struct ProcessedLinkColorToggleLabel;
 
 #[derive(Resource, Default)]
-struct DocumentNavigationInputCapture {
-    captured: bool,
+pub(crate) struct DocumentNavigationInputCapture {
+    pub(crate) captured: bool,
 }
 
 #[derive(Component)]
-struct EditorBodyRow;
+pub(crate) struct EditorBodyRow;
 
 #[derive(Component)]
-struct WorkspaceSidebarPane;
+pub(crate) struct WorkspaceSidebarPane;
 
 #[derive(Component)]
-struct EditorPanelsContainer;
+pub(crate) struct EditorPanelsContainer;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct PanelPaneSlot {
-    kind: PanelKind,
+pub(crate) struct PanelPaneSlot {
+    pub(crate) kind: PanelKind,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-enum PanelSplitter {
+pub(crate) enum PanelSplitter {
     Workspace,
     Panels,
 }
 
 #[derive(Component)]
-struct PanelText {
-    kind: PanelKind,
+pub(crate) struct PanelText {
+    pub(crate) kind: PanelKind,
 }
 
 #[derive(Component)]
-struct PanelPaper {
-    kind: PanelKind,
-    slot: usize,
+pub(crate) struct PanelPaper {
+    pub(crate) kind: PanelKind,
+    pub(crate) slot: usize,
 }
 
 #[derive(Component)]
-struct PanelSelectionLayer {
-    kind: PanelKind,
+pub(crate) struct PanelSelectionLayer {
+    pub(crate) kind: PanelKind,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct PanelSelectionRect {
-    kind: PanelKind,
-    index: usize,
+pub(crate) struct PanelSelectionRect {
+    pub(crate) kind: PanelKind,
+    pub(crate) index: usize,
 }
 
 #[derive(Component)]
-struct MiddleAutoscrollIndicator;
+pub(crate) struct MiddleAutoscrollIndicator;
 
 #[derive(Component)]
-struct ProcessedPaperText {
-    slot: usize,
-    line_offset: usize,
+pub(crate) struct ProcessedPaperText {
+    pub(crate) slot: usize,
+    pub(crate) line_offset: usize,
 }
 
 #[derive(Component)]
-struct ProcessedPaperLineSpan {
-    slot: usize,
-    line_offset: usize,
-    part_index: usize,
+pub(crate) struct ProcessedPaperLineSpan {
+    pub(crate) slot: usize,
+    pub(crate) line_offset: usize,
+    pub(crate) part_index: usize,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct ProcessedChecklistIcon {
-    slot: usize,
-    line_offset: usize,
+pub(crate) struct ProcessedChecklistIcon {
+    pub(crate) slot: usize,
+    pub(crate) line_offset: usize,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct ProcessedImageBlockNode {
-    slot: usize,
-    line_offset: usize,
+pub(crate) struct ProcessedImageBlockNode {
+    pub(crate) slot: usize,
+    pub(crate) line_offset: usize,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-enum ToolbarAction {
+pub(crate) enum ToolbarAction {
     OpenWorkspace,
     Save,
     SaveAs,
@@ -552,7 +524,7 @@ enum ToolbarAction {
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-enum SettingsAction {
+pub(crate) enum SettingsAction {
     DialogueDoubleSpaceNewline,
     NonDialogueDoubleSpaceNewline,
     ToggleVimMode,
@@ -578,7 +550,7 @@ enum SettingsAction {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum ShortcutAction {
+pub(crate) enum ShortcutAction {
     NavigateForward,
     OpenWorkspace,
     Save,
@@ -595,7 +567,7 @@ enum ShortcutAction {
     ToggleTopMenu,
 }
 
-const SHORTCUT_ACTIONS: [ShortcutAction; 14] = [
+pub(crate) const SHORTCUT_ACTIONS: [ShortcutAction; 14] = [
     ShortcutAction::NavigateForward,
     ShortcutAction::OpenWorkspace,
     ShortcutAction::Save,
@@ -613,7 +585,7 @@ const SHORTCUT_ACTIONS: [ShortcutAction; 14] = [
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ShortcutModifier {
+pub(crate) enum ShortcutModifier {
     None,
     Platform,
     Ctrl,
@@ -623,28 +595,28 @@ enum ShortcutModifier {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct ShortcutBinding {
-    key: KeyCode,
-    shift: bool,
-    modifier: ShortcutModifier,
+pub(crate) struct ShortcutBinding {
+    pub(crate) key: KeyCode,
+    pub(crate) shift: bool,
+    pub(crate) modifier: ShortcutModifier,
 }
 
 #[derive(Clone, Debug)]
-struct KeybindSettings {
-    navigate_forward: ShortcutBinding,
-    open_workspace: ShortcutBinding,
-    save: ShortcutBinding,
-    save_as: ShortcutBinding,
-    undo: ShortcutBinding,
-    redo: ShortcutBinding,
-    zoom_in: ShortcutBinding,
-    zoom_out: ShortcutBinding,
-    plain_view: ShortcutBinding,
-    processed_view: ShortcutBinding,
-    processed_raw_current_line_view: ShortcutBinding,
-    split_view: ShortcutBinding,
-    toggle_explorer: ShortcutBinding,
-    toggle_top_menu: ShortcutBinding,
+pub(crate) struct KeybindSettings {
+    pub(crate) navigate_forward: ShortcutBinding,
+    pub(crate) open_workspace: ShortcutBinding,
+    pub(crate) save: ShortcutBinding,
+    pub(crate) save_as: ShortcutBinding,
+    pub(crate) undo: ShortcutBinding,
+    pub(crate) redo: ShortcutBinding,
+    pub(crate) zoom_in: ShortcutBinding,
+    pub(crate) zoom_out: ShortcutBinding,
+    pub(crate) plain_view: ShortcutBinding,
+    pub(crate) processed_view: ShortcutBinding,
+    pub(crate) processed_raw_current_line_view: ShortcutBinding,
+    pub(crate) split_view: ShortcutBinding,
+    pub(crate) toggle_explorer: ShortcutBinding,
+    pub(crate) toggle_top_menu: ShortcutBinding,
 }
 
 impl Default for KeybindSettings {
@@ -669,7 +641,7 @@ impl Default for KeybindSettings {
 }
 
 impl ShortcutBinding {
-    const fn unmodified(key: KeyCode) -> Self {
+    pub(crate) const fn unmodified(key: KeyCode) -> Self {
         Self {
             key,
             shift: false,
@@ -677,7 +649,7 @@ impl ShortcutBinding {
         }
     }
 
-    const fn platform(key: KeyCode, shift: bool) -> Self {
+    pub(crate) const fn platform(key: KeyCode, shift: bool) -> Self {
         Self {
             key,
             shift,
@@ -687,7 +659,7 @@ impl ShortcutBinding {
 }
 
 impl KeybindSettings {
-    fn binding(&self, action: ShortcutAction) -> ShortcutBinding {
+    pub(crate) fn binding(&self, action: ShortcutAction) -> ShortcutBinding {
         match action {
             ShortcutAction::NavigateForward => self.navigate_forward,
             ShortcutAction::OpenWorkspace => self.open_workspace,
@@ -706,7 +678,7 @@ impl KeybindSettings {
         }
     }
 
-    fn set_binding(&mut self, action: ShortcutAction, binding: ShortcutBinding) {
+    pub(crate) fn set_binding(&mut self, action: ShortcutAction, binding: ShortcutBinding) {
         match action {
             ShortcutAction::NavigateForward => self.navigate_forward = binding,
             ShortcutAction::OpenWorkspace => self.open_workspace = binding,
@@ -728,7 +700,7 @@ impl KeybindSettings {
     }
 }
 
-fn shortcut_action_label(action: ShortcutAction) -> &'static str {
+pub(crate) fn shortcut_action_label(action: ShortcutAction) -> &'static str {
     match action {
         ShortcutAction::NavigateForward => "Navigate Forward",
         ShortcutAction::OpenWorkspace => "Open Workspace Folder",
@@ -747,7 +719,7 @@ fn shortcut_action_label(action: ShortcutAction) -> &'static str {
     }
 }
 
-fn shortcut_action_description(action: ShortcutAction) -> &'static str {
+pub(crate) fn shortcut_action_description(action: ShortcutAction) -> &'static str {
     match action {
         ShortcutAction::NavigateForward => "Move forward through page history",
         ShortcutAction::OpenWorkspace => "Open workspace folder",
@@ -766,7 +738,7 @@ fn shortcut_action_description(action: ShortcutAction) -> &'static str {
     }
 }
 
-fn shortcut_action_settings_key(action: ShortcutAction) -> &'static str {
+pub(crate) fn shortcut_action_settings_key(action: ShortcutAction) -> &'static str {
     match action {
         ShortcutAction::NavigateForward => "navigate_forward",
         ShortcutAction::OpenWorkspace => "open_workspace",
@@ -785,7 +757,7 @@ fn shortcut_action_settings_key(action: ShortcutAction) -> &'static str {
     }
 }
 
-fn binding_key_name(key: KeyCode) -> Option<&'static str> {
+pub(crate) fn binding_key_name(key: KeyCode) -> Option<&'static str> {
     match key {
         KeyCode::KeyA => Some("A"),
         KeyCode::KeyB => Some("B"),
@@ -831,7 +803,7 @@ fn binding_key_name(key: KeyCode) -> Option<&'static str> {
     }
 }
 
-fn binding_key_from_name(name: &str) -> Option<KeyCode> {
+pub(crate) fn binding_key_from_name(name: &str) -> Option<KeyCode> {
     match name.trim().to_ascii_uppercase().as_str() {
         "A" => Some(KeyCode::KeyA),
         "B" => Some(KeyCode::KeyB),
@@ -877,7 +849,7 @@ fn binding_key_from_name(name: &str) -> Option<KeyCode> {
     }
 }
 
-fn parse_binding_spec(spec: &str) -> Option<ShortcutBinding> {
+pub(crate) fn parse_binding_spec(spec: &str) -> Option<ShortcutBinding> {
     let trimmed = spec.trim();
     if trimmed.is_empty() {
         return None;
@@ -914,7 +886,7 @@ fn parse_binding_spec(spec: &str) -> Option<ShortcutBinding> {
     })
 }
 
-fn binding_spec(binding: ShortcutBinding) -> String {
+pub(crate) fn binding_spec(binding: ShortcutBinding) -> String {
     let mut parts = Vec::new();
     if binding.modifier != ShortcutModifier::None {
         parts.push(binding_modifier_spec(binding.modifier).to_string());
@@ -926,7 +898,7 @@ fn binding_spec(binding: ShortcutBinding) -> String {
     parts.join("+")
 }
 
-fn binding_modifier_spec(modifier: ShortcutModifier) -> &'static str {
+pub(crate) fn binding_modifier_spec(modifier: ShortcutModifier) -> &'static str {
     match modifier {
         ShortcutModifier::None => "",
         ShortcutModifier::Platform => "Mod",
@@ -937,7 +909,7 @@ fn binding_modifier_spec(modifier: ShortcutModifier) -> &'static str {
     }
 }
 
-fn binding_modifier_display(modifier: ShortcutModifier) -> &'static str {
+pub(crate) fn binding_modifier_display(modifier: ShortcutModifier) -> &'static str {
     match modifier {
         ShortcutModifier::None => "",
         ShortcutModifier::Platform => "Cmd/Ctrl",
@@ -948,7 +920,7 @@ fn binding_modifier_display(modifier: ShortcutModifier) -> &'static str {
     }
 }
 
-fn capture_shortcut_modifier(
+pub(crate) fn capture_shortcut_modifier(
     keys: &ButtonInput<KeyCode>,
     primary_key: KeyCode,
 ) -> Result<ShortcutModifier, &'static str> {
@@ -973,7 +945,7 @@ fn capture_shortcut_modifier(
     }
 }
 
-fn binding_display(binding: ShortcutBinding) -> String {
+pub(crate) fn binding_display(binding: ShortcutBinding) -> String {
     let mut parts = Vec::new();
     if binding.modifier != ShortcutModifier::None {
         parts.push(binding_modifier_display(binding.modifier).to_string());
@@ -986,55 +958,55 @@ fn binding_display(binding: ShortcutBinding) -> String {
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct KeybindRebindButton {
-    action: ShortcutAction,
+pub(crate) struct KeybindRebindButton {
+    pub(crate) action: ShortcutAction,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct KeybindBindingLabel {
-    action: ShortcutAction,
+pub(crate) struct KeybindBindingLabel {
+    pub(crate) action: ShortcutAction,
 }
 
 #[derive(Component)]
-struct EditorScreenRoot;
+pub(crate) struct EditorScreenRoot;
 
 #[derive(Component)]
-struct WindowSurfaceRoot;
+pub(crate) struct WindowSurfaceRoot;
 
 #[derive(Component)]
-struct StatusLineRoot;
+pub(crate) struct StatusLineRoot;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct SettingToggleLabel {
-    action: SettingsAction,
+pub(crate) struct SettingToggleLabel {
+    pub(crate) action: SettingsAction,
 }
 
 #[derive(Component)]
-struct SettingsScreenRoot;
+pub(crate) struct SettingsScreenRoot;
 
 #[derive(Component)]
-struct KeybindsScreenRoot;
+pub(crate) struct KeybindsScreenRoot;
 
 #[derive(Component)]
-struct SettingsMenuScrollArea {
-    screen: UiScreenState,
+pub(crate) struct SettingsMenuScrollArea {
+    pub(crate) screen: UiScreenState,
 }
 
 #[derive(Component)]
-struct SettingsMenuScrollContent {
-    screen: UiScreenState,
+pub(crate) struct SettingsMenuScrollContent {
+    pub(crate) screen: UiScreenState,
 }
 
 #[derive(Component)]
-struct ThemeScreenRoot;
+pub(crate) struct ThemeScreenRoot;
 
 #[derive(Component)]
-struct TopMenuSection;
+pub(crate) struct TopMenuSection;
 
 #[derive(Component)]
-struct ThemeOnlySettingControl;
+pub(crate) struct ThemeOnlySettingControl;
 
-fn window_surface_border_radius(show_system_titlebar: bool) -> BorderRadius {
+pub(crate) fn window_surface_border_radius(show_system_titlebar: bool) -> BorderRadius {
     let radius = if show_system_titlebar {
         0.0
     } else {
@@ -1043,7 +1015,7 @@ fn window_surface_border_radius(show_system_titlebar: bool) -> BorderRadius {
     BorderRadius::all(px(radius))
 }
 
-fn window_surface_overflow(show_system_titlebar: bool) -> Overflow {
+pub(crate) fn window_surface_overflow(show_system_titlebar: bool) -> Overflow {
     if show_system_titlebar {
         Overflow::visible()
     } else {
@@ -1051,7 +1023,10 @@ fn window_surface_overflow(show_system_titlebar: bool) -> Overflow {
     }
 }
 
-fn window_surface_top_border_radius(round_left: bool, round_right: bool) -> BorderRadius {
+pub(crate) fn window_surface_top_border_radius(
+    round_left: bool,
+    round_right: bool,
+) -> BorderRadius {
     let radius = px(UNDECORATED_WINDOW_CORNER_RADIUS);
     BorderRadius::new(
         if round_left { radius } else { px(0.0) },
@@ -1061,7 +1036,10 @@ fn window_surface_top_border_radius(round_left: bool, round_right: bool) -> Bord
     )
 }
 
-fn window_surface_bottom_border_radius(round_left: bool, round_right: bool) -> BorderRadius {
+pub(crate) fn window_surface_bottom_border_radius(
+    round_left: bool,
+    round_right: bool,
+) -> BorderRadius {
     let radius = px(UNDECORATED_WINDOW_CORNER_RADIUS);
     BorderRadius::new(
         px(0.0),
@@ -1072,7 +1050,7 @@ fn window_surface_bottom_border_radius(round_left: bool, round_right: bool) -> B
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-enum MarginEdge {
+pub(crate) enum MarginEdge {
     Left,
     Right,
     Top,
@@ -1080,12 +1058,12 @@ enum MarginEdge {
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct SettingMarginLabel {
-    edge: MarginEdge,
+pub(crate) struct SettingMarginLabel {
+    pub(crate) edge: MarginEdge,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-enum ThemeColorChannel {
+pub(crate) enum ThemeColorChannel {
     Hue,
     Saturation,
     Red,
@@ -1096,58 +1074,58 @@ enum ThemeColorChannel {
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct ThemeColorRow {
-    target: ThemeColorTarget,
+pub(crate) struct ThemeColorRow {
+    pub(crate) target: ThemeColorTarget,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct ThemeColorLabel {
-    channel: ThemeColorChannel,
+pub(crate) struct ThemeColorLabel {
+    pub(crate) channel: ThemeColorChannel,
 }
 
 #[derive(Component)]
-struct ThemeScreenTitleLabel;
+pub(crate) struct ThemeScreenTitleLabel;
 
 #[derive(Component)]
-struct ThemeScreenDescriptionLabel;
+pub(crate) struct ThemeScreenDescriptionLabel;
 
 #[derive(Component)]
-struct ThemeColorNameLabel {
-    target: ThemeColorTarget,
+pub(crate) struct ThemeColorNameLabel {
+    pub(crate) target: ThemeColorTarget,
 }
 
 #[derive(Component)]
-struct ThemeColorValueLabel {
-    target: ThemeColorTarget,
+pub(crate) struct ThemeColorValueLabel {
+    pub(crate) target: ThemeColorTarget,
 }
 
 #[derive(Component)]
-struct ThemeColorPickerPanel;
+pub(crate) struct ThemeColorPickerPanel;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct ThemeColorPreviewSwatch {
-    target: ThemeColorTarget,
+pub(crate) struct ThemeColorPreviewSwatch {
+    pub(crate) target: ThemeColorTarget,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct ThemeColorPickerButton {
-    target: ThemeColorTarget,
+pub(crate) struct ThemeColorPickerButton {
+    pub(crate) target: ThemeColorTarget,
 }
 
 #[derive(Component)]
-struct ThemeLinkHoverSettingRow;
+pub(crate) struct ThemeLinkHoverSettingRow;
 
 #[derive(Component)]
-struct ThemeLinkHoverValueLabel;
+pub(crate) struct ThemeLinkHoverValueLabel;
 
 #[derive(Component)]
-struct ThemeHueSatWheel;
+pub(crate) struct ThemeHueSatWheel;
 
 #[derive(Component)]
-struct ThemeHueSatCursor;
+pub(crate) struct ThemeHueSatCursor;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-enum ThemeSliderChannel {
+pub(crate) enum ThemeSliderChannel {
     Hue,
     Saturation,
     Red,
@@ -1158,7 +1136,7 @@ enum ThemeSliderChannel {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ThemeColorTarget {
+pub(crate) enum ThemeColorTarget {
     AppBackground,
     TopMenuBackground,
     ExplorerBackground,
@@ -1173,7 +1151,7 @@ enum ThemeColorTarget {
 }
 
 impl ThemeColorTarget {
-    fn screen_title(self) -> &'static str {
+    pub(crate) fn screen_title(self) -> &'static str {
         if self.is_link_color() {
             "Link Colors"
         } else {
@@ -1181,7 +1159,7 @@ impl ThemeColorTarget {
         }
     }
 
-    fn screen_description(self) -> &'static str {
+    pub(crate) fn screen_description(self) -> &'static str {
         if self.is_link_color() {
             "Adjust processed-view link colors by YAML `type`. Unmapped types use Fallback, and hover uses the HSV value offset."
         } else {
@@ -1189,7 +1167,7 @@ impl ThemeColorTarget {
         }
     }
 
-    fn color_label(self) -> &'static str {
+    pub(crate) fn color_label(self) -> &'static str {
         match self {
             Self::AppBackground => "App background",
             Self::TopMenuBackground => "Top menu",
@@ -1205,7 +1183,7 @@ impl ThemeColorTarget {
         }
     }
 
-    fn status_label(self) -> &'static str {
+    pub(crate) fn status_label(self) -> &'static str {
         match self {
             Self::AppBackground => "app background",
             Self::TopMenuBackground => "top menu background",
@@ -1221,7 +1199,7 @@ impl ThemeColorTarget {
         }
     }
 
-    fn is_link_color(self) -> bool {
+    pub(crate) fn is_link_color(self) -> bool {
         matches!(
             self,
             Self::LinkFallback
@@ -1235,39 +1213,39 @@ impl ThemeColorTarget {
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct ThemeColorSlider {
-    channel: ThemeSliderChannel,
+pub(crate) struct ThemeColorSlider {
+    pub(crate) channel: ThemeSliderChannel,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-struct ThemeColorSliderKnob {
-    channel: ThemeSliderChannel,
+pub(crate) struct ThemeColorSliderKnob {
+    pub(crate) channel: ThemeSliderChannel,
 }
 
 #[derive(Component)]
-struct ThemeSelectionHsvLabel;
+pub(crate) struct ThemeSelectionHsvLabel;
 
 #[derive(Component)]
-struct ThemeSelectionRgbLabel;
+pub(crate) struct ThemeSelectionRgbLabel;
 
 #[derive(Component)]
-struct ThemeSelectionHexLabel;
+pub(crate) struct ThemeSelectionHexLabel;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct HoveredProcessedLink {
-    source_line: usize,
-    raw_start_column: usize,
-    raw_end_column: usize,
+pub(crate) struct HoveredProcessedLink {
+    pub(crate) source_line: usize,
+    pub(crate) raw_start_column: usize,
+    pub(crate) raw_end_column: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum WorkspaceSelectedRow {
+pub(crate) enum WorkspaceSelectedRow {
     Folder(String),
     File(PathBuf),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum WorkspacePrompt {
+pub(crate) enum WorkspacePrompt {
     Create {
         input: String,
     },
@@ -1281,7 +1259,7 @@ enum WorkspacePrompt {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum VimMode {
+pub(crate) enum VimMode {
     Normal,
     Insert,
     VisualChar,
@@ -1289,7 +1267,7 @@ enum VimMode {
 }
 
 impl VimMode {
-    fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Normal => "NORMAL",
             Self::Insert => "INSERT",
@@ -1300,220 +1278,220 @@ impl VimMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum VimPendingOperator {
+pub(crate) enum VimPendingOperator {
     Yank,
     Delete,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum VimRegister {
+pub(crate) enum VimRegister {
     Characterwise(String),
     Linewise(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct CommandMenu {
-    input: String,
+pub(crate) struct CommandMenu {
+    pub(crate) input: String,
 }
 
 #[derive(Resource)]
-struct EditorState {
-    document: Document,
-    parsed: Vec<ParsedLine>,
-    document_format: DocumentFormat,
-    cursor: Cursor,
-    selection_anchor: Option<Position>,
-    top_line: usize,
-    processed_top_line: usize,
-    processed_top_visual: usize,
-    processed_preferred_column: Option<usize>,
-    display_mode: DisplayMode,
-    focused_panel: PanelKind,
-    plain_horizontal_scroll: f32,
-    processed_horizontal_scroll: f32,
-    processed_zoom_anchor_bias_px: f32,
-    paths: DocumentPath,
-    status_message: String,
-    keybinds: KeybindSettings,
-    pending_keybind_capture: Option<ShortcutAction>,
-    pending_space_insert: bool,
-    pending_space_combo_canceled: bool,
-    vim_enabled: bool,
-    vim_mode: VimMode,
-    vim_suppress_next_insert_input: bool,
-    vim_pending_operator: Option<VimPendingOperator>,
-    vim_register: Option<VimRegister>,
-    vim_visual_anchor: Option<Position>,
-    vim_visual_head: Option<Position>,
-    command_menu: Option<CommandMenu>,
-    markdown_metadata_focus: Option<MarkdownMetadataField>,
-    markdown_metadata_dropdown: Option<MarkdownMetadataField>,
-    markdown_metadata_dropdown_highlight: usize,
-    link_autocomplete: Option<LinkAutocomplete>,
-    story_query_sheet: StoryQuerySheet,
-    workspace_sidebar_visible: bool,
-    top_menu_collapsed: bool,
-    processed_link_color_mode: ProcessedLinkColorMode,
-    processed_glass: bool,
-    explorer_glass: bool,
-    settings_glass: bool,
-    app_bg_rgba: Vec4,
-    app_bg_color: Color,
-    top_menu_bg_rgba: Vec4,
-    top_menu_bg_color: Color,
-    explorer_bg_rgba: Vec4,
-    explorer_bg_color: Color,
-    processed_bg_rgba: Vec4,
-    processed_bg_color: Color,
-    selection_bg_rgba: Vec4,
-    selection_bg_color: Color,
-    link_fallback_rgba: Vec4,
-    link_fallback_color: Color,
-    link_prop_rgba: Vec4,
-    link_prop_color: Color,
-    link_place_rgba: Vec4,
-    link_place_color: Color,
-    link_character_rgba: Vec4,
-    link_character_color: Color,
-    link_faction_rgba: Vec4,
-    link_faction_color: Color,
-    link_concept_rgba: Vec4,
-    link_concept_color: Color,
-    link_hover_hsv_value_adjustment: f32,
-    theme_color_target: ThemeColorTarget,
-    theme_color_picker_open: bool,
-    show_system_titlebar: bool,
-    caret_blink: Timer,
-    caret_visible: bool,
-    dialogue_double_space_newline: bool,
-    non_dialogue_double_space_newline: bool,
-    page_margin_left: f32,
-    page_margin_right: f32,
-    page_margin_top: f32,
-    page_margin_bottom: f32,
-    zoom: f32,
-    measured_line_step: f32,
-    processed_cache: Option<ProcessedCache>,
-    processed_cache_dirty_from_line: Option<usize>,
-    canvas_document: Option<CanvasDocument>,
-    canvas_parse_error: Option<String>,
-    canvas_version: u64,
-    canvas_pan: Vec2,
-    canvas_view_needs_centering: bool,
-    canvas_editing_node_id: Option<String>,
-    canvas_text_cursor: Cursor,
-    canvas_text_selection_anchor: Option<Position>,
-    canvas_text_edit_undo_snapshot: Option<EditorHistorySnapshot>,
-    canvas_text_suppress_next_insert_input: bool,
-    workspace_root: Option<PathBuf>,
-    story_index: Option<EditorStoryIndex>,
-    workspace_folders: Vec<WorkspaceFolderEntry>,
-    workspace_files: Vec<WorkspaceFileEntry>,
-    workspace_active_file: Option<usize>,
-    workspace_selected_row: Option<WorkspaceSelectedRow>,
-    workspace_focused: bool,
-    workspace_prompt: Option<WorkspacePrompt>,
-    workspace_expanded_folders: BTreeSet<String>,
-    script_link_target_types: BTreeMap<String, String>,
-    missing_script_link_targets: BTreeSet<String>,
-    hovered_processed_link: Option<HoveredProcessedLink>,
-    workspace_ui_dirty: bool,
-    undo_history: Vec<EditorHistorySnapshot>,
-    redo_history: Vec<EditorHistorySnapshot>,
-    document_navigation_history: Vec<DocumentNavigationEntry>,
-    document_navigation_forward_history: Vec<DocumentNavigationEntry>,
+pub(crate) struct EditorState {
+    pub(crate) document: Document,
+    pub(crate) parsed: Vec<ParsedLine>,
+    pub(crate) document_format: DocumentFormat,
+    pub(crate) cursor: Cursor,
+    pub(crate) selection_anchor: Option<Position>,
+    pub(crate) top_line: usize,
+    pub(crate) processed_top_line: usize,
+    pub(crate) processed_top_visual: usize,
+    pub(crate) processed_preferred_column: Option<usize>,
+    pub(crate) display_mode: DisplayMode,
+    pub(crate) focused_panel: PanelKind,
+    pub(crate) plain_horizontal_scroll: f32,
+    pub(crate) processed_horizontal_scroll: f32,
+    pub(crate) processed_zoom_anchor_bias_px: f32,
+    pub(crate) paths: DocumentPath,
+    pub(crate) status_message: String,
+    pub(crate) keybinds: KeybindSettings,
+    pub(crate) pending_keybind_capture: Option<ShortcutAction>,
+    pub(crate) pending_space_insert: bool,
+    pub(crate) pending_space_combo_canceled: bool,
+    pub(crate) vim_enabled: bool,
+    pub(crate) vim_mode: VimMode,
+    pub(crate) vim_suppress_next_insert_input: bool,
+    pub(crate) vim_pending_operator: Option<VimPendingOperator>,
+    pub(crate) vim_register: Option<VimRegister>,
+    pub(crate) vim_visual_anchor: Option<Position>,
+    pub(crate) vim_visual_head: Option<Position>,
+    pub(crate) command_menu: Option<CommandMenu>,
+    pub(crate) markdown_metadata_focus: Option<MarkdownMetadataField>,
+    pub(crate) markdown_metadata_dropdown: Option<MarkdownMetadataField>,
+    pub(crate) markdown_metadata_dropdown_highlight: usize,
+    pub(crate) link_autocomplete: Option<LinkAutocomplete>,
+    pub(crate) story_query_sheet: StoryQuerySheet,
+    pub(crate) workspace_sidebar_visible: bool,
+    pub(crate) top_menu_collapsed: bool,
+    pub(crate) processed_link_color_mode: ProcessedLinkColorMode,
+    pub(crate) processed_glass: bool,
+    pub(crate) explorer_glass: bool,
+    pub(crate) settings_glass: bool,
+    pub(crate) app_bg_rgba: Vec4,
+    pub(crate) app_bg_color: Color,
+    pub(crate) top_menu_bg_rgba: Vec4,
+    pub(crate) top_menu_bg_color: Color,
+    pub(crate) explorer_bg_rgba: Vec4,
+    pub(crate) explorer_bg_color: Color,
+    pub(crate) processed_bg_rgba: Vec4,
+    pub(crate) processed_bg_color: Color,
+    pub(crate) selection_bg_rgba: Vec4,
+    pub(crate) selection_bg_color: Color,
+    pub(crate) link_fallback_rgba: Vec4,
+    pub(crate) link_fallback_color: Color,
+    pub(crate) link_prop_rgba: Vec4,
+    pub(crate) link_prop_color: Color,
+    pub(crate) link_place_rgba: Vec4,
+    pub(crate) link_place_color: Color,
+    pub(crate) link_character_rgba: Vec4,
+    pub(crate) link_character_color: Color,
+    pub(crate) link_faction_rgba: Vec4,
+    pub(crate) link_faction_color: Color,
+    pub(crate) link_concept_rgba: Vec4,
+    pub(crate) link_concept_color: Color,
+    pub(crate) link_hover_hsv_value_adjustment: f32,
+    pub(crate) theme_color_target: ThemeColorTarget,
+    pub(crate) theme_color_picker_open: bool,
+    pub(crate) show_system_titlebar: bool,
+    pub(crate) caret_blink: Timer,
+    pub(crate) caret_visible: bool,
+    pub(crate) dialogue_double_space_newline: bool,
+    pub(crate) non_dialogue_double_space_newline: bool,
+    pub(crate) page_margin_left: f32,
+    pub(crate) page_margin_right: f32,
+    pub(crate) page_margin_top: f32,
+    pub(crate) page_margin_bottom: f32,
+    pub(crate) zoom: f32,
+    pub(crate) measured_line_step: f32,
+    pub(crate) processed_cache: Option<ProcessedCache>,
+    pub(crate) processed_cache_dirty_from_line: Option<usize>,
+    pub(crate) canvas_document: Option<CanvasDocument>,
+    pub(crate) canvas_parse_error: Option<String>,
+    pub(crate) canvas_version: u64,
+    pub(crate) canvas_pan: Vec2,
+    pub(crate) canvas_view_needs_centering: bool,
+    pub(crate) canvas_editing_node_id: Option<String>,
+    pub(crate) canvas_text_cursor: Cursor,
+    pub(crate) canvas_text_selection_anchor: Option<Position>,
+    pub(crate) canvas_text_edit_undo_snapshot: Option<EditorHistorySnapshot>,
+    pub(crate) canvas_text_suppress_next_insert_input: bool,
+    pub(crate) workspace_root: Option<PathBuf>,
+    pub(crate) story_index: Option<EditorStoryIndex>,
+    pub(crate) workspace_folders: Vec<WorkspaceFolderEntry>,
+    pub(crate) workspace_files: Vec<WorkspaceFileEntry>,
+    pub(crate) workspace_active_file: Option<usize>,
+    pub(crate) workspace_selected_row: Option<WorkspaceSelectedRow>,
+    pub(crate) workspace_focused: bool,
+    pub(crate) workspace_prompt: Option<WorkspacePrompt>,
+    pub(crate) workspace_expanded_folders: BTreeSet<String>,
+    pub(crate) script_link_target_types: BTreeMap<String, String>,
+    pub(crate) missing_script_link_targets: BTreeSet<String>,
+    pub(crate) hovered_processed_link: Option<HoveredProcessedLink>,
+    pub(crate) workspace_ui_dirty: bool,
+    pub(crate) undo_history: Vec<EditorHistorySnapshot>,
+    pub(crate) redo_history: Vec<EditorHistorySnapshot>,
+    pub(crate) document_navigation_history: Vec<DocumentNavigationEntry>,
+    pub(crate) document_navigation_forward_history: Vec<DocumentNavigationEntry>,
 }
 
 #[derive(Resource, Default)]
-struct EditorImageCache {
-    entries: BTreeMap<PathBuf, CachedProcessedImage>,
+pub(crate) struct EditorImageCache {
+    pub(crate) entries: BTreeMap<PathBuf, CachedProcessedImage>,
 }
 
 #[derive(Clone)]
-struct CachedProcessedImage {
-    modified: Option<SystemTime>,
-    result: CachedProcessedImageResult,
+pub(crate) struct CachedProcessedImage {
+    pub(crate) modified: Option<SystemTime>,
+    pub(crate) result: CachedProcessedImageResult,
 }
 
 #[derive(Clone)]
-enum CachedProcessedImageResult {
+pub(crate) enum CachedProcessedImageResult {
     Loaded { handle: Handle<Image>, size: UVec2 },
     Failed,
 }
 
 #[derive(Clone)]
-enum ProcessedImageLookup {
+pub(crate) enum ProcessedImageLookup {
     Loaded { handle: Handle<Image>, size: UVec2 },
     Failed,
 }
 
 #[derive(Clone)]
-struct EditorHistorySnapshot {
-    document: Document,
-    cursor: Cursor,
-    top_line: usize,
-    processed_top_line: usize,
-    processed_top_visual: usize,
-    plain_horizontal_scroll: f32,
-    processed_horizontal_scroll: f32,
-    processed_zoom_anchor_bias_px: f32,
+pub(crate) struct EditorHistorySnapshot {
+    pub(crate) document: Document,
+    pub(crate) cursor: Cursor,
+    pub(crate) top_line: usize,
+    pub(crate) processed_top_line: usize,
+    pub(crate) processed_top_visual: usize,
+    pub(crate) plain_horizontal_scroll: f32,
+    pub(crate) processed_horizontal_scroll: f32,
+    pub(crate) processed_zoom_anchor_bias_px: f32,
 }
 
 #[derive(Clone, Debug)]
-struct DocumentNavigationEntry {
-    path: PathBuf,
-    cursor: Cursor,
-    selection_anchor: Option<Position>,
-    top_line: usize,
-    processed_top_line: usize,
-    processed_top_visual: usize,
-    plain_horizontal_scroll: f32,
-    processed_horizontal_scroll: f32,
-    processed_zoom_anchor_bias_px: f32,
-    display_mode: DisplayMode,
-    focused_panel: PanelKind,
-    zoom: f32,
-    canvas_pan: Vec2,
+pub(crate) struct DocumentNavigationEntry {
+    pub(crate) path: PathBuf,
+    pub(crate) cursor: Cursor,
+    pub(crate) selection_anchor: Option<Position>,
+    pub(crate) top_line: usize,
+    pub(crate) processed_top_line: usize,
+    pub(crate) processed_top_visual: usize,
+    pub(crate) plain_horizontal_scroll: f32,
+    pub(crate) processed_horizontal_scroll: f32,
+    pub(crate) processed_zoom_anchor_bias_px: f32,
+    pub(crate) display_mode: DisplayMode,
+    pub(crate) focused_panel: PanelKind,
+    pub(crate) zoom: f32,
+    pub(crate) canvas_pan: Vec2,
 }
 
 #[derive(Resource, Default)]
-struct DialogState {
-    pending: Option<PendingDialog>,
-    opened_at: Option<Instant>,
-    last_watchdog_log_at: Option<Instant>,
-    poll_count: u64,
+pub(crate) struct DialogState {
+    pub(crate) pending: Option<PendingDialog>,
+    pub(crate) opened_at: Option<Instant>,
+    pub(crate) last_watchdog_log_at: Option<Instant>,
+    pub(crate) poll_count: u64,
 }
 
 #[derive(Resource, Default)]
-struct NativeGlassState {
-    active: bool,
-    initialized: bool,
+pub(crate) struct NativeGlassState {
+    pub(crate) active: bool,
+    pub(crate) initialized: bool,
 }
 
 #[derive(Resource, Default)]
-struct MiddleAutoscrollState {
-    panel: Option<PanelKind>,
-    anchor_cursor_position: Vec2,
-    plain_vertical_remainder_lines: f32,
-    suppress_next_left_click: bool,
+pub(crate) struct MiddleAutoscrollState {
+    pub(crate) panel: Option<PanelKind>,
+    pub(crate) anchor_cursor_position: Vec2,
+    pub(crate) plain_vertical_remainder_lines: f32,
+    pub(crate) suppress_next_left_click: bool,
 }
 
 #[derive(Resource, Default, Clone, Copy, Debug)]
-struct NavigationRepeatState {
-    active_arrow: Option<KeyCode>,
-    repeat_cooldown_secs: f32,
+pub(crate) struct NavigationRepeatState {
+    pub(crate) active_arrow: Option<KeyCode>,
+    pub(crate) repeat_cooldown_secs: f32,
 }
 
 #[derive(Resource, Default, Clone, Copy, Debug)]
-struct WorkspaceSelectionRepeatState {
-    active_arrow: Option<KeyCode>,
-    repeat_cooldown_secs: f32,
+pub(crate) struct WorkspaceSelectionRepeatState {
+    pub(crate) active_arrow: Option<KeyCode>,
+    pub(crate) repeat_cooldown_secs: f32,
 }
 
 #[derive(Resource, Clone, Copy, Debug)]
-struct PanelLayoutState {
-    workspace_width_px: f32,
-    plain_ratio: f32,
+pub(crate) struct PanelLayoutState {
+    pub(crate) workspace_width_px: f32,
+    pub(crate) plain_ratio: f32,
 }
 
 impl Default for PanelLayoutState {
@@ -1526,32 +1504,32 @@ impl Default for PanelLayoutState {
 }
 
 #[derive(Resource, Default, Clone, Copy, Debug)]
-struct PanelSplitterDragState {
-    active: Option<PanelSplitter>,
-    last_cursor_x: Option<f32>,
-    suppress_next_left_click: bool,
+pub(crate) struct PanelSplitterDragState {
+    pub(crate) active: Option<PanelSplitter>,
+    pub(crate) last_cursor_x: Option<f32>,
+    pub(crate) suppress_next_left_click: bool,
 }
 
-type DialogPathResult = Result<Option<PathBuf>, String>;
+pub(crate) type DialogPathResult = Result<Option<PathBuf>, String>;
 
-enum PendingDialog {
+pub(crate) enum PendingDialog {
     Workspace(Arc<Mutex<mpsc::Receiver<DialogPathResult>>>),
     Save(Arc<Mutex<mpsc::Receiver<DialogPathResult>>>),
 }
 
-struct DialogMainThreadMarker;
+pub(crate) struct DialogMainThreadMarker;
 
 #[derive(Clone, Debug)]
-struct PersistentSettings {
-    dialogue_double_space_newline: bool,
-    non_dialogue_double_space_newline: bool,
-    show_system_titlebar: bool,
-    page_margin_left: f32,
-    page_margin_right: f32,
-    page_margin_top: f32,
-    page_margin_bottom: f32,
-    workspace_root_path: Option<String>,
-    vim_mode_enabled: bool,
+pub(crate) struct PersistentSettings {
+    pub(crate) dialogue_double_space_newline: bool,
+    pub(crate) non_dialogue_double_space_newline: bool,
+    pub(crate) show_system_titlebar: bool,
+    pub(crate) page_margin_left: f32,
+    pub(crate) page_margin_right: f32,
+    pub(crate) page_margin_top: f32,
+    pub(crate) page_margin_bottom: f32,
+    pub(crate) workspace_root_path: Option<String>,
+    pub(crate) vim_mode_enabled: bool,
 }
 
 impl Default for PersistentSettings {
@@ -1571,10 +1549,10 @@ impl Default for PersistentSettings {
 }
 
 #[derive(Clone, Debug)]
-struct PersistentUiState {
-    workspace_sidebar_visible: bool,
-    top_menu_collapsed: bool,
-    processed_link_color_mode: ProcessedLinkColorMode,
+pub(crate) struct PersistentUiState {
+    pub(crate) workspace_sidebar_visible: bool,
+    pub(crate) top_menu_collapsed: bool,
+    pub(crate) processed_link_color_mode: ProcessedLinkColorMode,
 }
 
 impl Default for PersistentUiState {
@@ -1588,22 +1566,22 @@ impl Default for PersistentUiState {
 }
 
 #[derive(Clone, Debug)]
-struct ThemeSettings {
-    app_background: Vec4,
-    top_menu_background: Vec4,
-    explorer_background: Vec4,
-    processed_background: Vec4,
-    selection_background: Vec4,
-    link_fallback: Vec4,
-    link_prop: Vec4,
-    link_place: Vec4,
-    link_character: Vec4,
-    link_faction: Vec4,
-    link_concept: Vec4,
-    link_hover_hsv_value_adjustment: f32,
-    processed_glass: bool,
-    explorer_glass: bool,
-    settings_glass: bool,
+pub(crate) struct ThemeSettings {
+    pub(crate) app_background: Vec4,
+    pub(crate) top_menu_background: Vec4,
+    pub(crate) explorer_background: Vec4,
+    pub(crate) processed_background: Vec4,
+    pub(crate) selection_background: Vec4,
+    pub(crate) link_fallback: Vec4,
+    pub(crate) link_prop: Vec4,
+    pub(crate) link_place: Vec4,
+    pub(crate) link_character: Vec4,
+    pub(crate) link_faction: Vec4,
+    pub(crate) link_concept: Vec4,
+    pub(crate) link_hover_hsv_value_adjustment: f32,
+    pub(crate) processed_glass: bool,
+    pub(crate) explorer_glass: bool,
+    pub(crate) settings_glass: bool,
 }
 
 impl Default for ThemeSettings {
@@ -1629,7 +1607,7 @@ impl Default for ThemeSettings {
 }
 
 impl ThemeSettings {
-    fn app_background_clamped(&self) -> Vec4 {
+    pub(crate) fn app_background_clamped(&self) -> Vec4 {
         Vec4::new(
             self.app_background.x.clamp(0.0, 1.0),
             self.app_background.y.clamp(0.0, 1.0),
@@ -1638,12 +1616,12 @@ impl ThemeSettings {
         )
     }
 
-    fn app_background_color(&self) -> Color {
+    pub(crate) fn app_background_color(&self) -> Color {
         let rgba = self.app_background_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 
-    fn top_menu_background_clamped(&self) -> Vec4 {
+    pub(crate) fn top_menu_background_clamped(&self) -> Vec4 {
         Vec4::new(
             self.top_menu_background.x.clamp(0.0, 1.0),
             self.top_menu_background.y.clamp(0.0, 1.0),
@@ -1652,12 +1630,12 @@ impl ThemeSettings {
         )
     }
 
-    fn top_menu_background_color(&self) -> Color {
+    pub(crate) fn top_menu_background_color(&self) -> Color {
         let rgba = self.top_menu_background_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 
-    fn explorer_background_clamped(&self) -> Vec4 {
+    pub(crate) fn explorer_background_clamped(&self) -> Vec4 {
         Vec4::new(
             self.explorer_background.x.clamp(0.0, 1.0),
             self.explorer_background.y.clamp(0.0, 1.0),
@@ -1666,7 +1644,7 @@ impl ThemeSettings {
         )
     }
 
-    fn processed_background_clamped(&self) -> Vec4 {
+    pub(crate) fn processed_background_clamped(&self) -> Vec4 {
         Vec4::new(
             self.processed_background.x.clamp(0.0, 1.0),
             self.processed_background.y.clamp(0.0, 1.0),
@@ -1675,17 +1653,17 @@ impl ThemeSettings {
         )
     }
 
-    fn explorer_background_color(&self) -> Color {
+    pub(crate) fn explorer_background_color(&self) -> Color {
         let rgba = self.explorer_background_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 
-    fn processed_background_color(&self) -> Color {
+    pub(crate) fn processed_background_color(&self) -> Color {
         let rgba = self.processed_background_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 
-    fn selection_background_clamped(&self) -> Vec4 {
+    pub(crate) fn selection_background_clamped(&self) -> Vec4 {
         Vec4::new(
             self.selection_background.x.clamp(0.0, 1.0),
             self.selection_background.y.clamp(0.0, 1.0),
@@ -1694,12 +1672,12 @@ impl ThemeSettings {
         )
     }
 
-    fn selection_background_color(&self) -> Color {
+    pub(crate) fn selection_background_color(&self) -> Color {
         let rgba = self.selection_background_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 
-    fn link_fallback_clamped(&self) -> Vec4 {
+    pub(crate) fn link_fallback_clamped(&self) -> Vec4 {
         Vec4::new(
             self.link_fallback.x.clamp(0.0, 1.0),
             self.link_fallback.y.clamp(0.0, 1.0),
@@ -1708,12 +1686,12 @@ impl ThemeSettings {
         )
     }
 
-    fn link_fallback_color(&self) -> Color {
+    pub(crate) fn link_fallback_color(&self) -> Color {
         let rgba = self.link_fallback_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 
-    fn link_prop_clamped(&self) -> Vec4 {
+    pub(crate) fn link_prop_clamped(&self) -> Vec4 {
         Vec4::new(
             self.link_prop.x.clamp(0.0, 1.0),
             self.link_prop.y.clamp(0.0, 1.0),
@@ -1722,12 +1700,12 @@ impl ThemeSettings {
         )
     }
 
-    fn link_prop_color(&self) -> Color {
+    pub(crate) fn link_prop_color(&self) -> Color {
         let rgba = self.link_prop_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 
-    fn link_place_clamped(&self) -> Vec4 {
+    pub(crate) fn link_place_clamped(&self) -> Vec4 {
         Vec4::new(
             self.link_place.x.clamp(0.0, 1.0),
             self.link_place.y.clamp(0.0, 1.0),
@@ -1736,12 +1714,12 @@ impl ThemeSettings {
         )
     }
 
-    fn link_place_color(&self) -> Color {
+    pub(crate) fn link_place_color(&self) -> Color {
         let rgba = self.link_place_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 
-    fn link_character_clamped(&self) -> Vec4 {
+    pub(crate) fn link_character_clamped(&self) -> Vec4 {
         Vec4::new(
             self.link_character.x.clamp(0.0, 1.0),
             self.link_character.y.clamp(0.0, 1.0),
@@ -1750,12 +1728,12 @@ impl ThemeSettings {
         )
     }
 
-    fn link_character_color(&self) -> Color {
+    pub(crate) fn link_character_color(&self) -> Color {
         let rgba = self.link_character_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 
-    fn link_faction_clamped(&self) -> Vec4 {
+    pub(crate) fn link_faction_clamped(&self) -> Vec4 {
         Vec4::new(
             self.link_faction.x.clamp(0.0, 1.0),
             self.link_faction.y.clamp(0.0, 1.0),
@@ -1764,12 +1742,12 @@ impl ThemeSettings {
         )
     }
 
-    fn link_faction_color(&self) -> Color {
+    pub(crate) fn link_faction_color(&self) -> Color {
         let rgba = self.link_faction_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 
-    fn link_concept_clamped(&self) -> Vec4 {
+    pub(crate) fn link_concept_clamped(&self) -> Vec4 {
         Vec4::new(
             self.link_concept.x.clamp(0.0, 1.0),
             self.link_concept.y.clamp(0.0, 1.0),
@@ -1778,49 +1756,49 @@ impl ThemeSettings {
         )
     }
 
-    fn link_concept_color(&self) -> Color {
+    pub(crate) fn link_concept_color(&self) -> Color {
         let rgba = self.link_concept_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 
-    fn link_hover_hsv_value_adjustment_clamped(&self) -> f32 {
+    pub(crate) fn link_hover_hsv_value_adjustment_clamped(&self) -> f32 {
         self.link_hover_hsv_value_adjustment
             .clamp(0.0, LINK_HOVER_HSV_VALUE_MAX)
     }
 }
 
 #[derive(Resource, Clone)]
-struct EditorFonts {
-    regular: Handle<Font>,
-    bold: Handle<Font>,
-    italic: Handle<Font>,
-    bold_italic: Handle<Font>,
-    markdown_regular: Handle<Font>,
-    markdown_bold: Handle<Font>,
-    markdown_italic: Handle<Font>,
-    markdown_bold_italic: Handle<Font>,
+pub(crate) struct EditorFonts {
+    pub(crate) regular: Handle<Font>,
+    pub(crate) bold: Handle<Font>,
+    pub(crate) italic: Handle<Font>,
+    pub(crate) bold_italic: Handle<Font>,
+    pub(crate) markdown_regular: Handle<Font>,
+    pub(crate) markdown_bold: Handle<Font>,
+    pub(crate) markdown_italic: Handle<Font>,
+    pub(crate) markdown_bold_italic: Handle<Font>,
 }
 
 #[derive(Resource, Clone)]
-struct ChecklistIcons {
-    unchecked: Handle<Image>,
-    checked: Handle<Image>,
+pub(crate) struct ChecklistIcons {
+    pub(crate) unchecked: Handle<Image>,
+    pub(crate) checked: Handle<Image>,
 }
 
 #[derive(Resource, Clone)]
-struct ThemePickerAssets {
-    hue_sat_wheel: Handle<Image>,
+pub(crate) struct ThemePickerAssets {
+    pub(crate) hue_sat_wheel: Handle<Image>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum FontVariant {
+pub(crate) enum FontVariant {
     Regular,
     Bold,
     Italic,
     BoldItalic,
 }
 
-fn text_font_attributes_for_variant(variant: FontVariant) -> (FontWeight, FontStyle) {
+pub(crate) fn text_font_attributes_for_variant(variant: FontVariant) -> (FontWeight, FontStyle) {
     match variant {
         FontVariant::Regular => (FontWeight::NORMAL, FontStyle::Normal),
         FontVariant::Bold => (FontWeight::BOLD, FontStyle::Normal),
@@ -1829,7 +1807,7 @@ fn text_font_attributes_for_variant(variant: FontVariant) -> (FontWeight, FontSt
     }
 }
 
-fn apply_font_variant_to_text_font(
+pub(crate) fn apply_font_variant_to_text_font(
     text_font: &mut TextFont,
     fonts: &EditorFonts,
     variant: FontVariant,
@@ -1849,7 +1827,7 @@ fn apply_font_variant_to_text_font(
     }
 }
 
-fn text_font_for_variant(
+pub(crate) fn text_font_for_variant(
     fonts: &EditorFonts,
     variant: FontVariant,
     format: DocumentFormat,
@@ -1864,12 +1842,12 @@ fn text_font_for_variant(
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct InlineTextStyle {
-    bold: bool,
-    italic: bool,
+pub(crate) struct InlineTextStyle {
+    pub(crate) bold: bool,
+    pub(crate) italic: bool,
 }
 
-fn apply_inline_style_to_font_variant(
+pub(crate) fn apply_inline_style_to_font_variant(
     base: FontVariant,
     inline_style: InlineTextStyle,
 ) -> FontVariant {
@@ -1887,7 +1865,7 @@ fn apply_inline_style_to_font_variant(
 }
 
 impl DialogState {
-    fn begin_pending(&mut self, pending: PendingDialog) {
+    pub(crate) fn begin_pending(&mut self, pending: PendingDialog) {
         let now = Instant::now();
         self.pending = Some(pending);
         self.opened_at = Some(now);
@@ -1895,7 +1873,7 @@ impl DialogState {
         self.poll_count = 0;
     }
 
-    fn clear_pending(&mut self) {
+    pub(crate) fn clear_pending(&mut self) {
         self.pending = None;
         self.opened_at = None;
         self.last_watchdog_log_at = None;
@@ -1904,25 +1882,25 @@ impl DialogState {
 }
 
 impl MiddleAutoscrollState {
-    fn is_active(&self) -> bool {
+    pub(crate) fn is_active(&self) -> bool {
         self.panel.is_some()
     }
 
-    fn start(&mut self, panel: PanelKind, anchor_cursor_position: Vec2) {
+    pub(crate) fn start(&mut self, panel: PanelKind, anchor_cursor_position: Vec2) {
         self.panel = Some(panel);
         self.anchor_cursor_position = anchor_cursor_position;
         self.plain_vertical_remainder_lines = 0.0;
         self.suppress_next_left_click = false;
     }
 
-    fn stop(&mut self) {
+    pub(crate) fn stop(&mut self) {
         self.panel = None;
         self.plain_vertical_remainder_lines = 0.0;
     }
 }
 
 impl PendingDialog {
-    fn kind_name(&self) -> &'static str {
+    pub(crate) fn kind_name(&self) -> &'static str {
         match self {
             PendingDialog::Workspace(_) => "workspace",
             PendingDialog::Save(_) => "save",
@@ -2071,9 +2049,7 @@ impl FromWorld for EditorState {
             workspace_ui_dirty: true,
             undo_history: Vec::new(),
             redo_history: Vec::new(),
-            document_navigation_history: Vec::with_capacity(
-                DOCUMENT_NAVIGATION_HISTORY_LIMIT,
-            ),
+            document_navigation_history: Vec::with_capacity(DOCUMENT_NAVIGATION_HISTORY_LIMIT),
             document_navigation_forward_history: Vec::with_capacity(
                 DOCUMENT_NAVIGATION_HISTORY_LIMIT,
             ),
@@ -2093,11 +2069,11 @@ impl FromWorld for EditorState {
 
 impl EditorState {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
-    fn any_glass_enabled(&self) -> bool {
+    pub(crate) fn any_glass_enabled(&self) -> bool {
         self.processed_glass || self.explorer_glass || self.settings_glass
     }
 
-    fn set_display_mode(&mut self, mode: DisplayMode) -> bool {
+    pub(crate) fn set_display_mode(&mut self, mode: DisplayMode) -> bool {
         if self.display_mode == mode {
             return false;
         }
@@ -2118,7 +2094,7 @@ impl EditorState {
         true
     }
 
-    fn panel_layout_display_mode(&self) -> DisplayMode {
+    pub(crate) fn panel_layout_display_mode(&self) -> DisplayMode {
         if self.document_format == DocumentFormat::Canvas {
             DisplayMode::Processed
         } else {
@@ -2126,7 +2102,7 @@ impl EditorState {
         }
     }
 
-    fn active_panel_for_display_mode(&self) -> PanelKind {
+    pub(crate) fn active_panel_for_display_mode(&self) -> PanelKind {
         if self.document_format == DocumentFormat::Canvas {
             return PanelKind::Processed;
         }
@@ -2138,7 +2114,7 @@ impl EditorState {
         }
     }
 
-    fn panel_visible(&self, panel: PanelKind) -> bool {
+    pub(crate) fn panel_visible(&self, panel: PanelKind) -> bool {
         if self.document_format == DocumentFormat::Canvas {
             return panel == PanelKind::Processed;
         }
@@ -2146,7 +2122,7 @@ impl EditorState {
         self.display_mode.panel_visible(panel)
     }
 
-    fn set_zoom(&mut self, zoom: f32) {
+    pub(crate) fn set_zoom(&mut self, zoom: f32) {
         let (min_zoom, max_zoom) = if self.document_format == DocumentFormat::Canvas {
             (CANVAS_ZOOM_MIN, CANVAS_ZOOM_MAX)
         } else {
@@ -2157,25 +2133,25 @@ impl EditorState {
         self.reset_blink();
     }
 
-    fn zoom_percent(&self) -> u32 {
+    pub(crate) fn zoom_percent(&self) -> u32 {
         (self.zoom * 100.0).round() as u32
     }
 
-    fn reparse(&mut self) {
+    pub(crate) fn reparse(&mut self) {
         self.parsed = parse_document_with_format(&self.document, self.document_format);
         self.sync_canvas_document();
         self.missing_script_link_targets.clear();
         self.mark_processed_cache_dirty_from(0);
     }
 
-    fn reparse_with_dirty_hint(&mut self, dirty_line: usize) {
+    pub(crate) fn reparse_with_dirty_hint(&mut self, dirty_line: usize) {
         self.parsed = parse_document_with_format(&self.document, self.document_format);
         self.sync_canvas_document();
         self.missing_script_link_targets.clear();
         self.mark_processed_cache_dirty_from(dirty_line);
     }
 
-    fn mark_processed_cache_dirty_from(&mut self, source_line: usize) {
+    pub(crate) fn mark_processed_cache_dirty_from(&mut self, source_line: usize) {
         let dirty_line = source_line.min(self.document.line_count().saturating_sub(1));
         self.processed_cache_dirty_from_line = Some(
             self.processed_cache_dirty_from_line
@@ -2183,12 +2159,12 @@ impl EditorState {
         );
     }
 
-    fn reset_blink(&mut self) {
+    pub(crate) fn reset_blink(&mut self) {
         self.caret_blink.reset();
         self.caret_visible = true;
     }
 
-    fn selection_bounds(&self) -> Option<(Position, Position)> {
+    pub(crate) fn selection_bounds(&self) -> Option<(Position, Position)> {
         let anchor = self.selection_anchor?;
         let head = self.cursor.position;
         if anchor == head {
@@ -2202,28 +2178,28 @@ impl EditorState {
         }
     }
 
-    fn delete_selection(&mut self) -> Option<Position> {
+    pub(crate) fn delete_selection(&mut self) -> Option<Position> {
         let (start, end) = self.selection_bounds()?;
         let next = self.document.delete_range(start, end);
         self.set_cursor(next, true);
         Some(next)
     }
 
-    fn max_top_line(&self, _visible_lines: usize) -> usize {
+    pub(crate) fn max_top_line(&self, _visible_lines: usize) -> usize {
         self.document.line_count().saturating_sub(1)
     }
 
-    fn clamp_scroll(&mut self, visible_lines: usize) {
+    pub(crate) fn clamp_scroll(&mut self, visible_lines: usize) {
         let max_top = self.max_top_line(visible_lines);
         self.top_line = self.top_line.min(max_top);
     }
 
-    fn clamp_processed_top_line(&mut self) {
+    pub(crate) fn clamp_processed_top_line(&mut self) {
         let max_top = self.document.line_count().saturating_sub(1);
         self.processed_top_line = self.processed_top_line.min(max_top);
     }
 
-    fn clamp_horizontal_scrolls(
+    pub(crate) fn clamp_horizontal_scrolls(
         &mut self,
         plain_panel_size: Option<Vec2>,
         processed_panel_size: Option<Vec2>,
@@ -2238,14 +2214,14 @@ impl EditorState {
             .clamp(processed_min, processed_max);
     }
 
-    fn scroll_by(&mut self, line_delta: isize, visible_lines: usize) {
+    pub(crate) fn scroll_by(&mut self, line_delta: isize, visible_lines: usize) {
         let max_top = self.max_top_line(visible_lines) as isize;
         let next = (self.top_line as isize + line_delta).clamp(0, max_top);
         self.top_line = next as usize;
         self.processed_top_line = self.top_line;
     }
 
-    fn ensure_cursor_visible(&mut self, visible_lines: usize) {
+    pub(crate) fn ensure_cursor_visible(&mut self, visible_lines: usize) {
         if self.cursor.position.line < self.top_line {
             self.top_line = self.cursor.position.line;
         } else if self.cursor.position.line >= self.top_line + visible_lines {
@@ -2259,7 +2235,7 @@ impl EditorState {
         self.clamp_scroll(visible_lines);
     }
 
-    fn clamp_cursor_to_visible_range(&mut self, visible_lines: usize) {
+    pub(crate) fn clamp_cursor_to_visible_range(&mut self, visible_lines: usize) {
         if self.document.is_empty() {
             self.set_cursor(Position::default(), true);
             return;
@@ -2287,11 +2263,11 @@ impl EditorState {
         }
     }
 
-    fn set_cursor(&mut self, position: Position, update_preferred: bool) {
+    pub(crate) fn set_cursor(&mut self, position: Position, update_preferred: bool) {
         self.set_cursor_with_selection(position, update_preferred, false);
     }
 
-    fn set_cursor_with_selection(
+    pub(crate) fn set_cursor_with_selection(
         &mut self,
         position: Position,
         update_preferred: bool,
@@ -2322,7 +2298,7 @@ impl EditorState {
         self.reset_blink();
     }
 
-    fn save_to_path(&mut self, path: PathBuf) {
+    pub(crate) fn save_to_path(&mut self, path: PathBuf) {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -2355,11 +2331,11 @@ impl EditorState {
         }
     }
 
-    fn save_current(&mut self) {
+    pub(crate) fn save_current(&mut self) {
         self.save_to_path(self.paths.save_path.clone());
     }
 
-    fn load_from_path(&mut self, path: PathBuf) -> bool {
+    pub(crate) fn load_from_path(&mut self, path: PathBuf) -> bool {
         match Document::load(&path) {
             Ok(document) => {
                 let document_format = detect_document_format(&path, &document);
@@ -2415,7 +2391,7 @@ impl EditorState {
         }
     }
 
-    fn history_snapshot(&self) -> EditorHistorySnapshot {
+    pub(crate) fn history_snapshot(&self) -> EditorHistorySnapshot {
         EditorHistorySnapshot {
             document: self.document.clone(),
             cursor: self.cursor,
@@ -2428,7 +2404,7 @@ impl EditorState {
         }
     }
 
-    fn push_history_snapshot(
+    pub(crate) fn push_history_snapshot(
         history: &mut Vec<EditorHistorySnapshot>,
         snapshot: EditorHistorySnapshot,
     ) {
@@ -2438,12 +2414,12 @@ impl EditorState {
         history.push(snapshot);
     }
 
-    fn push_undo_snapshot(&mut self, snapshot: EditorHistorySnapshot) {
+    pub(crate) fn push_undo_snapshot(&mut self, snapshot: EditorHistorySnapshot) {
         Self::push_history_snapshot(&mut self.undo_history, snapshot);
         self.redo_history.clear();
     }
 
-    fn apply_history_snapshot(
+    pub(crate) fn apply_history_snapshot(
         &mut self,
         snapshot: EditorHistorySnapshot,
         visible_lines: usize,
@@ -2482,7 +2458,7 @@ impl EditorState {
         self.reset_blink();
     }
 
-    fn undo(
+    pub(crate) fn undo(
         &mut self,
         visible_lines: usize,
         plain_panel_size: Option<Vec2>,
@@ -2503,7 +2479,7 @@ impl EditorState {
         true
     }
 
-    fn redo(
+    pub(crate) fn redo(
         &mut self,
         visible_lines: usize,
         plain_panel_size: Option<Vec2>,
@@ -2524,34 +2500,34 @@ impl EditorState {
         true
     }
 
-    fn clear_history(&mut self) {
+    pub(crate) fn clear_history(&mut self) {
         self.undo_history.clear();
         self.redo_history.clear();
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-struct ProcessedPageGeometry {
-    paper_left: f32,
-    paper_top: f32,
-    paper_width: f32,
-    paper_height: f32,
-    text_left: f32,
-    text_top: f32,
-    text_width: f32,
-    text_height: f32,
+pub(crate) struct ProcessedPageGeometry {
+    pub(crate) paper_left: f32,
+    pub(crate) paper_top: f32,
+    pub(crate) paper_width: f32,
+    pub(crate) paper_height: f32,
+    pub(crate) text_left: f32,
+    pub(crate) text_top: f32,
+    pub(crate) text_width: f32,
+    pub(crate) text_height: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
-struct ProcessedPageLayout {
-    geometry: ProcessedPageGeometry,
-    wrap_columns: usize,
-    lines_per_page: usize,
-    spacer_lines: usize,
-    page_step_lines: usize,
+pub(crate) struct ProcessedPageLayout {
+    pub(crate) geometry: ProcessedPageGeometry,
+    pub(crate) wrap_columns: usize,
+    pub(crate) lines_per_page: usize,
+    pub(crate) spacer_lines: usize,
+    pub(crate) page_step_lines: usize,
 }
 
-fn document_format_label(format: DocumentFormat) -> &'static str {
+pub(crate) fn document_format_label(format: DocumentFormat) -> &'static str {
     match format {
         DocumentFormat::Fountain => "Fountain",
         DocumentFormat::Markdown => "Markdown",
@@ -2559,11 +2535,11 @@ fn document_format_label(format: DocumentFormat) -> &'static str {
     }
 }
 
-fn position_is_before_or_equal(left: Position, right: Position) -> bool {
+pub(crate) fn position_is_before_or_equal(left: Position, right: Position) -> bool {
     left.line < right.line || (left.line == right.line && left.column <= right.column)
 }
 
-fn detect_document_format(path: &Path, document: &Document) -> DocumentFormat {
+pub(crate) fn detect_document_format(path: &Path, document: &Document) -> DocumentFormat {
     let path_format = DocumentFormat::from_path(path);
     if path_format == DocumentFormat::Canvas {
         return DocumentFormat::Canvas;
@@ -2587,7 +2563,7 @@ fn detect_document_format(path: &Path, document: &Document) -> DocumentFormat {
     }
 }
 
-fn looks_like_markdown_document(document: &Document) -> bool {
+pub(crate) fn looks_like_markdown_document(document: &Document) -> bool {
     let mut markdown_hits = 0usize;
     let mut fountain_hits = 0usize;
 
@@ -2612,7 +2588,7 @@ fn looks_like_markdown_document(document: &Document) -> bool {
     markdown_hits >= 2 && markdown_hits > fountain_hits
 }
 
-fn is_markdown_hint(trimmed: &str) -> bool {
+pub(crate) fn is_markdown_hint(trimmed: &str) -> bool {
     if trimmed.starts_with('#')
         || trimmed.starts_with('>')
         || trimmed.starts_with("```")
@@ -2634,7 +2610,7 @@ fn is_markdown_hint(trimmed: &str) -> bool {
             || compact_bytes.iter().all(|byte| *byte == b'_'))
 }
 
-fn is_markdown_bullet_hint(trimmed: &str) -> bool {
+pub(crate) fn is_markdown_bullet_hint(trimmed: &str) -> bool {
     let mut chars = trimmed.chars();
     let Some(marker) = chars.next() else {
         return false;
@@ -2645,7 +2621,7 @@ fn is_markdown_bullet_hint(trimmed: &str) -> bool {
     chars.next().is_some_and(char::is_whitespace)
 }
 
-fn is_markdown_ordered_list_hint(trimmed: &str) -> bool {
+pub(crate) fn is_markdown_ordered_list_hint(trimmed: &str) -> bool {
     let mut digits = 0usize;
     for ch in trimmed.chars() {
         if ch.is_ascii_digit() {
@@ -2665,7 +2641,7 @@ fn is_markdown_ordered_list_hint(trimmed: &str) -> bool {
     chars.next().is_some_and(char::is_whitespace)
 }
 
-fn is_fountain_hint(trimmed: &str) -> bool {
+pub(crate) fn is_fountain_hint(trimmed: &str) -> bool {
     let upper = trimmed.to_ascii_uppercase();
     let is_scene_heading = ["INT.", "EXT.", "EST.", "INT/EXT.", "I/E."]
         .iter()

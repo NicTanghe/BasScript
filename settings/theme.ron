@@ -10,7 +10,7 @@
 	link_character: (0.569, 0.058, 0.822, 1.000),
 	link_faction: (0.680, 0.176, 0.209, 1.000),
 	link_concept: (0.560, 0.280, 0.140, 1.000),
-	link_hover_hsv_value_adjustment: 0.320,
+	link_hover_hsv_value_adjustment: 0.380,
 	processed_glass: false,
 	explorer_glass: false,
 	settings_glass: false,
