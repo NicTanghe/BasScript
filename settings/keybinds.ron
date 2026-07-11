@@ -1,4 +1,5 @@
 (
+	navigate_forward: "`",
 	open_workspace: "Ctrl+O",
 	save: "Ctrl+S",
 	save_as: "Ctrl+Shift+S",

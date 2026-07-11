@@ -54,7 +54,9 @@ fn key_combination_matches_binding(
     key_code: KeyCode,
     binding: ShortcutBinding,
 ) -> bool {
-    key_code == binding.key && shortcut_binding_modifier_pressed(keys, binding)
+    key_code == binding.key
+        && shortcut_binding_modifier_pressed(keys, binding)
+        && binding.shift == shift_modifier_pressed(keys)
 }
 
 fn shift_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
@@ -87,6 +89,7 @@ fn shortcut_binding_modifier_pressed(
     let space = binding.key != KeyCode::Space && keys.pressed(KeyCode::Space);
 
     match binding.modifier {
+        ShortcutModifier::None => !ctrl && !alt && !super_pressed && !space,
         ShortcutModifier::Platform => (ctrl || super_pressed) && !alt && !space,
         ShortcutModifier::Ctrl => ctrl && !alt && !super_pressed && !space,
         ShortcutModifier::Alt => alt && !ctrl && !super_pressed && !space,
@@ -182,6 +185,24 @@ mod modifier_key_tests {
         assert_eq!(binding.key, KeyCode::Digit4);
         assert!(!binding.shift);
         assert_eq!(binding.modifier, ShortcutModifier::Platform);
+    }
+
+    #[test]
+    fn navigate_forward_defaults_to_unmodified_backtick() {
+        let binding = KeybindSettings::default().binding(ShortcutAction::NavigateForward);
+
+        assert_eq!(binding.key, KeyCode::Backquote);
+        assert!(!binding.shift);
+        assert_eq!(binding.modifier, ShortcutModifier::None);
+        assert_eq!(binding_spec(binding), "`");
+        assert_eq!(parse_binding_spec("`"), Some(binding));
+
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::Backquote);
+        assert!(shortcut_just_pressed(&keys, binding));
+
+        keys.press(KeyCode::ShiftLeft);
+        assert!(!shortcut_just_pressed(&keys, binding));
     }
 
     #[test]

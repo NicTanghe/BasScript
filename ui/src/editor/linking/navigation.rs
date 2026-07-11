@@ -101,43 +101,76 @@ impl EditorState {
         }
 
         push_document_navigation_history(&mut self.document_navigation_history, previous);
+        self.document_navigation_forward_history.clear();
         true
     }
 
     fn navigate_back(&mut self) -> bool {
+        let current = self.document_navigation_entry();
         while let Some(previous) = self.document_navigation_history.pop() {
-            let label = status_path_label(&previous.path);
-            if !self.load_from_path(previous.path) {
+            if !self.restore_document_navigation_entry(previous, "Back to") {
                 continue;
             }
 
-            self.set_zoom(previous.zoom);
-            self.cursor = previous.cursor;
-            self.cursor.position = self.document.clamp_position(self.cursor.position);
-            self.cursor.preferred_column = self
-                .cursor
-                .preferred_column
-                .min(self.document.line_len_chars(self.cursor.position.line));
-            self.selection_anchor = previous
-                .selection_anchor
-                .map(|position| self.document.clamp_position(position));
-            self.top_line = previous.top_line;
-            self.processed_top_line = previous.processed_top_line;
-            self.processed_top_visual = previous.processed_top_visual;
-            self.plain_horizontal_scroll = previous.plain_horizontal_scroll;
-            self.processed_horizontal_scroll = previous.processed_horizontal_scroll;
-            self.processed_zoom_anchor_bias_px = previous.processed_zoom_anchor_bias_px;
-            self.display_mode = previous.display_mode;
-            self.focused_panel = previous.focused_panel;
-            self.canvas_pan = previous.canvas_pan;
-            self.clamp_processed_top_line();
-            self.reset_blink();
-            self.status_message = format!("Back to {label}");
+            push_document_navigation_history(
+                &mut self.document_navigation_forward_history,
+                current,
+            );
             return true;
         }
 
-        self.status_message = "No previous linked page.".to_string();
+        self.status_message = "No previous page.".to_string();
         false
+    }
+
+    fn navigate_forward(&mut self) -> bool {
+        let current = self.document_navigation_entry();
+        while let Some(next) = self.document_navigation_forward_history.pop() {
+            if !self.restore_document_navigation_entry(next, "Forward to") {
+                continue;
+            }
+
+            push_document_navigation_history(&mut self.document_navigation_history, current);
+            return true;
+        }
+
+        self.status_message = "No next page.".to_string();
+        false
+    }
+
+    fn restore_document_navigation_entry(
+        &mut self,
+        entry: DocumentNavigationEntry,
+        status_prefix: &str,
+    ) -> bool {
+        let label = status_path_label(&entry.path);
+        if !self.load_from_path(entry.path) {
+            return false;
+        }
+
+        self.set_zoom(entry.zoom);
+        self.cursor = entry.cursor;
+        self.cursor.position = self.document.clamp_position(self.cursor.position);
+        self.cursor.preferred_column = self
+            .cursor
+            .preferred_column
+            .min(self.document.line_len_chars(self.cursor.position.line));
+        self.selection_anchor = entry
+            .selection_anchor
+            .map(|position| self.document.clamp_position(position));
+        self.top_line = entry.top_line;
+        self.processed_top_line = entry.processed_top_line;
+        self.processed_top_visual = entry.processed_top_visual;
+        self.plain_horizontal_scroll = entry.plain_horizontal_scroll;
+        self.processed_horizontal_scroll = entry.processed_horizontal_scroll;
+        self.processed_zoom_anchor_bias_px = entry.processed_zoom_anchor_bias_px;
+        self.display_mode = entry.display_mode;
+        self.focused_panel = entry.focused_panel;
+        self.canvas_pan = entry.canvas_pan;
+        self.clamp_processed_top_line();
+        self.reset_blink();
+        self.status_message = format!("{status_prefix} {label}");
+        true
     }
 
     fn resolve_script_link_path(&self, link: &ScriptLink) -> Result<PathBuf, String> {
@@ -291,7 +324,7 @@ fn push_document_navigation_history(
     history.push(entry);
 }
 
-fn handle_document_navigation_back(
+fn handle_document_navigation_history(
     keys: Res<ButtonInput<KeyCode>>,
     autocomplete_capture: Res<LinkAutocompleteInputCapture>,
     middle_autoscroll: Res<MiddleAutoscrollState>,
@@ -299,7 +332,12 @@ fn handle_document_navigation_back(
     mut state: ResMut<EditorState>,
 ) {
     navigation_capture.captured = false;
-    if !keys.just_pressed(KeyCode::Escape)
+    let back_pressed = keys.just_pressed(KeyCode::Escape);
+    let forward_pressed = shortcut_just_pressed(
+        &keys,
+        state.keybinds.binding(ShortcutAction::NavigateForward),
+    );
+    if (!back_pressed && !forward_pressed)
         || autocomplete_capture.is_captured()
         || state.link_autocomplete_has_visible_suggestions()
         || state.workspace_prompt.is_some()
@@ -315,7 +353,11 @@ fn handle_document_navigation_back(
         return;
     }
 
-    navigation_capture.captured = state.navigate_back();
+    navigation_capture.captured = if back_pressed {
+        state.navigate_back()
+    } else {
+        state.navigate_forward()
+    };
 }
 
 fn entity_document_matches_mention(document: &EntityDocument, lookup: &str) -> bool {

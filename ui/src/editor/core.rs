@@ -272,7 +272,7 @@ impl Plugin for UiPlugin {
             );
         app.add_systems(
             Update,
-            handle_document_navigation_back
+            handle_document_navigation_history
                 .before(handle_story_query_sheet_keyboard)
                 .before(handle_command_menu_input)
                 .before(handle_markdown_metadata_input)
@@ -578,6 +578,7 @@ enum SettingsAction {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum ShortcutAction {
+    NavigateForward,
     OpenWorkspace,
     Save,
     SaveAs,
@@ -593,7 +594,8 @@ enum ShortcutAction {
     ToggleTopMenu,
 }
 
-const SHORTCUT_ACTIONS: [ShortcutAction; 13] = [
+const SHORTCUT_ACTIONS: [ShortcutAction; 14] = [
+    ShortcutAction::NavigateForward,
     ShortcutAction::OpenWorkspace,
     ShortcutAction::Save,
     ShortcutAction::SaveAs,
@@ -611,6 +613,7 @@ const SHORTCUT_ACTIONS: [ShortcutAction; 13] = [
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ShortcutModifier {
+    None,
     Platform,
     Ctrl,
     Alt,
@@ -627,6 +630,7 @@ struct ShortcutBinding {
 
 #[derive(Clone, Debug)]
 struct KeybindSettings {
+    navigate_forward: ShortcutBinding,
     open_workspace: ShortcutBinding,
     save: ShortcutBinding,
     save_as: ShortcutBinding,
@@ -645,6 +649,7 @@ struct KeybindSettings {
 impl Default for KeybindSettings {
     fn default() -> Self {
         Self {
+            navigate_forward: ShortcutBinding::unmodified(KeyCode::Backquote),
             open_workspace: ShortcutBinding::platform(KeyCode::KeyO, false),
             save: ShortcutBinding::platform(KeyCode::KeyS, false),
             save_as: ShortcutBinding::platform(KeyCode::KeyS, true),
@@ -663,6 +668,14 @@ impl Default for KeybindSettings {
 }
 
 impl ShortcutBinding {
+    const fn unmodified(key: KeyCode) -> Self {
+        Self {
+            key,
+            shift: false,
+            modifier: ShortcutModifier::None,
+        }
+    }
+
     const fn platform(key: KeyCode, shift: bool) -> Self {
         Self {
             key,
@@ -675,6 +688,7 @@ impl ShortcutBinding {
 impl KeybindSettings {
     fn binding(&self, action: ShortcutAction) -> ShortcutBinding {
         match action {
+            ShortcutAction::NavigateForward => self.navigate_forward,
             ShortcutAction::OpenWorkspace => self.open_workspace,
             ShortcutAction::Save => self.save,
             ShortcutAction::SaveAs => self.save_as,
@@ -693,6 +707,7 @@ impl KeybindSettings {
 
     fn set_binding(&mut self, action: ShortcutAction, binding: ShortcutBinding) {
         match action {
+            ShortcutAction::NavigateForward => self.navigate_forward = binding,
             ShortcutAction::OpenWorkspace => self.open_workspace = binding,
             ShortcutAction::Save => self.save = binding,
             ShortcutAction::SaveAs => self.save_as = binding,
@@ -714,6 +729,7 @@ impl KeybindSettings {
 
 fn shortcut_action_label(action: ShortcutAction) -> &'static str {
     match action {
+        ShortcutAction::NavigateForward => "Navigate Forward",
         ShortcutAction::OpenWorkspace => "Open Workspace Folder",
         ShortcutAction::Save => "Save",
         ShortcutAction::SaveAs => "Save As Dialog",
@@ -732,6 +748,7 @@ fn shortcut_action_label(action: ShortcutAction) -> &'static str {
 
 fn shortcut_action_description(action: ShortcutAction) -> &'static str {
     match action {
+        ShortcutAction::NavigateForward => "Move forward through page history",
         ShortcutAction::OpenWorkspace => "Open workspace folder",
         ShortcutAction::Save => "Save current file",
         ShortcutAction::SaveAs => "Save As dialog",
@@ -750,6 +767,7 @@ fn shortcut_action_description(action: ShortcutAction) -> &'static str {
 
 fn shortcut_action_settings_key(action: ShortcutAction) -> &'static str {
     match action {
+        ShortcutAction::NavigateForward => "navigate_forward",
         ShortcutAction::OpenWorkspace => "open_workspace",
         ShortcutAction::Save => "save",
         ShortcutAction::SaveAs => "save_as",
@@ -806,6 +824,7 @@ fn binding_key_name(key: KeyCode) -> Option<&'static str> {
         KeyCode::Digit9 | KeyCode::Numpad9 => Some("9"),
         KeyCode::Equal => Some("="),
         KeyCode::Minus => Some("-"),
+        KeyCode::Backquote => Some("`"),
         KeyCode::Space => Some("Space"),
         _ => None,
     }
@@ -851,6 +870,7 @@ fn binding_key_from_name(name: &str) -> Option<KeyCode> {
         "9" => Some(KeyCode::Digit9),
         "=" => Some(KeyCode::Equal),
         "-" => Some(KeyCode::Minus),
+        "`" | "BACKQUOTE" | "BACKTICK" => Some(KeyCode::Backquote),
         "SPACE" => Some(KeyCode::Space),
         _ => None,
     }
@@ -869,7 +889,7 @@ fn parse_binding_spec(spec: &str) -> Option<ShortcutBinding> {
         .collect::<Vec<_>>();
     let key_name = parts.last().copied()?;
     let mut shift = false;
-    let mut modifier = ShortcutModifier::Platform;
+    let mut modifier = ShortcutModifier::None;
 
     for modifier_name in parts.iter().take(parts.len().saturating_sub(1)) {
         match modifier_name.to_ascii_uppercase().as_str() {
@@ -894,7 +914,10 @@ fn parse_binding_spec(spec: &str) -> Option<ShortcutBinding> {
 }
 
 fn binding_spec(binding: ShortcutBinding) -> String {
-    let mut parts = vec![binding_modifier_spec(binding.modifier).to_string()];
+    let mut parts = Vec::new();
+    if binding.modifier != ShortcutModifier::None {
+        parts.push(binding_modifier_spec(binding.modifier).to_string());
+    }
     if binding.shift {
         parts.push("Shift".to_string());
     }
@@ -904,6 +927,7 @@ fn binding_spec(binding: ShortcutBinding) -> String {
 
 fn binding_modifier_spec(modifier: ShortcutModifier) -> &'static str {
     match modifier {
+        ShortcutModifier::None => "",
         ShortcutModifier::Platform => "Mod",
         ShortcutModifier::Ctrl => "Ctrl",
         ShortcutModifier::Alt => "Alt",
@@ -914,6 +938,7 @@ fn binding_modifier_spec(modifier: ShortcutModifier) -> &'static str {
 
 fn binding_modifier_display(modifier: ShortcutModifier) -> &'static str {
     match modifier {
+        ShortcutModifier::None => "",
         ShortcutModifier::Platform => "Cmd/Ctrl",
         ShortcutModifier::Ctrl => "Ctrl",
         ShortcutModifier::Alt => "Alt",
@@ -941,14 +966,17 @@ fn capture_shortcut_modifier(
     }
 
     match pressed.as_slice() {
-        [] => Ok(ShortcutModifier::Platform),
+        [] => Ok(ShortcutModifier::None),
         [modifier] => Ok(*modifier),
         _ => Err("Use only one shortcut modifier: Ctrl, Alt, Super/Cmd, or Space."),
     }
 }
 
 fn binding_display(binding: ShortcutBinding) -> String {
-    let mut parts = vec![binding_modifier_display(binding.modifier).to_string()];
+    let mut parts = Vec::new();
+    if binding.modifier != ShortcutModifier::None {
+        parts.push(binding_modifier_display(binding.modifier).to_string());
+    }
     if binding.shift {
         parts.push("Shift".to_string());
     }
@@ -1392,6 +1420,7 @@ struct EditorState {
     undo_history: Vec<EditorHistorySnapshot>,
     redo_history: Vec<EditorHistorySnapshot>,
     document_navigation_history: Vec<DocumentNavigationEntry>,
+    document_navigation_forward_history: Vec<DocumentNavigationEntry>,
 }
 
 #[derive(Resource, Default)]
@@ -2042,6 +2071,9 @@ impl FromWorld for EditorState {
             undo_history: Vec::new(),
             redo_history: Vec::new(),
             document_navigation_history: Vec::with_capacity(
+                DOCUMENT_NAVIGATION_HISTORY_LIMIT,
+            ),
+            document_navigation_forward_history: Vec::with_capacity(
                 DOCUMENT_NAVIGATION_HISTORY_LIMIT,
             ),
         };

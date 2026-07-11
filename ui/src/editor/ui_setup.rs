@@ -347,6 +347,7 @@ fn setup(
                                 ),
                                 keybind_help_card(font.clone()),
                                 keybind_section_heading(font.clone(), "Editable shortcuts"),
+                                keybind_setting_row(font.clone(), ShortcutAction::NavigateForward),
                                 keybind_setting_row(font.clone(), ShortcutAction::OpenWorkspace),
                                 keybind_setting_row(font.clone(), ShortcutAction::Save),
                                 keybind_setting_row(font.clone(), ShortcutAction::SaveAs),
@@ -2650,7 +2651,7 @@ fn capture_keybind_input(
 
         if binding_key_name(key_code).is_none() {
             state.status_message = format!(
-                "Unsupported key for {}. Use letters, digits, Space, '=' or '-'.",
+                "Unsupported key for {}. Use letters, digits, Space, '`', '=' or '-'.",
                 shortcut_action_label(action)
             );
             continue;
