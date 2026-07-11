@@ -1757,10 +1757,31 @@ mod processed_markdown_inline_tests {
             font_variant_for_processed_fragment(
                 FontVariant::Bold,
                 &fragment,
-                DocumentFormat::Markdown
             ),
             FontVariant::BoldItalic
         );
+    }
+
+    #[test]
+    fn fountain_links_preserve_the_processed_font_variant() {
+        let fragment = ProcessedVisualFragment {
+            text: "linked text".to_owned(),
+            is_link: true,
+            link_target: Some("linked-text".to_owned()),
+            inline_style: InlineTextStyle::default(),
+        };
+
+        for variant in [
+            FontVariant::Regular,
+            FontVariant::Bold,
+            FontVariant::Italic,
+            FontVariant::BoldItalic,
+        ] {
+            assert_eq!(
+                font_variant_for_processed_fragment(variant, &fragment),
+                variant
+            );
+        }
     }
 
     #[test]
@@ -1989,7 +2010,6 @@ fn apply_processed_styles(
         let effective_variant = font_variant_for_processed_fragment(
             style.font_variant,
             &fragment,
-            state.document_format,
         );
         let fragment_raw_range =
             processed_visual_fragment_raw_range(visual_line, processed_span.part_index);

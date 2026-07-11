@@ -1241,8 +1241,7 @@ fn apply_story_query_rendered_page_styles(
             fragment.text.push('\n');
         }
 
-        let effective_variant =
-            font_variant_for_processed_fragment(style.font_variant, &fragment, document_format);
+        let effective_variant = font_variant_for_processed_fragment(style.font_variant, &fragment);
         apply_font_variant_to_text_font(&mut text_font, fonts, effective_variant, document_format);
         text_font.font_size = FontSize::Px(font_size * style.font_scale);
         *text_line_height = LineHeight::Px(line_height * style.line_height_scale);

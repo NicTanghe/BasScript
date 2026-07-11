@@ -875,14 +875,8 @@ fn processed_visual_line_style_for_state(
 fn font_variant_for_processed_fragment(
     base: FontVariant,
     fragment: &ProcessedVisualFragment,
-    format: DocumentFormat,
 ) -> FontVariant {
-    let mut style = fragment.inline_style;
-    if fragment.is_link && format == DocumentFormat::Fountain {
-        style.bold = true;
-    }
-
-    apply_inline_style_to_font_variant(base, style)
+    apply_inline_style_to_font_variant(base, fragment.inline_style)
 }
 
 fn font_for_variant_with_format(
