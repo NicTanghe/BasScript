@@ -214,12 +214,12 @@ impl EditorState {
     }
 
     fn open_workspace_file(&mut self, index: usize) {
-        let Some(entry) = self.workspace_files.get(index) else {
+        let Some(path) = self.workspace_files.get(index).map(|entry| entry.path.clone()) else {
             self.status_message = "Workspace file selection is out of range.".to_string();
             return;
         };
 
-        let _ = self.load_from_path(entry.path.clone());
+        self.navigate_to_path(path);
     }
 
     fn refresh_workspace(&mut self) {

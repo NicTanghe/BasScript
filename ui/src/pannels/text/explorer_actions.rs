@@ -507,7 +507,7 @@ fn open_workspace_path_from_selection(state: &mut EditorState, path: &Path) {
     {
         state.open_workspace_file(index);
     } else {
-        let _ = state.load_from_path(path.to_path_buf());
+        state.navigate_to_path(path.to_path_buf());
     }
 }
 
