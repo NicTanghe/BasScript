@@ -1853,13 +1853,17 @@ fn sync_processed_link_color_toggle(
     time: Res<Time>,
     state: Res<EditorState>,
     panel_query: Query<(&PanelBody, &ComputedNode)>,
+    paper_query: Query<
+        (&PanelPaper, &Node, &Visibility),
+        Without<ProcessedLinkColorToggle>,
+    >,
     mut toggle_query: Query<(
         &ProcessedLinkColorToggle,
         &ComputedNode,
         &mut ProcessedLinkColorToggleSpring,
         &mut Node,
         &mut ZIndex,
-    )>,
+    ), Without<PanelPaper>>,
     mut label_query: Query<&mut Text, With<ProcessedLinkColorToggleLabel>>,
 ) {
     let processed_panel_size = panel_query
@@ -1883,6 +1887,7 @@ fn sync_processed_link_color_toggle(
         let page_right = geometry.paper_left + geometry.paper_width
             - state.processed_horizontal_scroll;
         let toggle_width = (computed.size().x * computed.inverse_scale_factor()).max(116.0);
+        let toggle_height = (computed.size().y * computed.inverse_scale_factor()).max(30.0);
         let base_x = (panel_size.x - toggle_width - 10.0).max(0.0);
         let page_border_offset = page_right - base_x;
         let touching_page = page_right >= base_x;
@@ -1894,7 +1899,6 @@ fn sync_processed_link_color_toggle(
         };
 
         node.display = Display::Flex;
-        node.top = px(10.0);
         if !spring.initialized {
             spring.phase = if touching_page {
                 ProcessedLinkColorTogglePhase::ReturningUnderPage
@@ -2009,6 +2013,39 @@ fn sync_processed_link_color_toggle(
         spring.previous_page_right = page_right;
         node.left = px(base_x + spring.offset_x);
 
+        let current_top = match node.top {
+            Val::Px(top) => top,
+            _ => 10.0,
+        };
+        let target_top = if touching_page {
+            link_toggle_vertical_target(
+                10.0,
+                toggle_height,
+                paper_query.iter().filter_map(|(paper, paper_node, paper_visibility)| {
+                    if paper.kind != PanelKind::Processed
+                        || *paper_visibility != Visibility::Visible
+                    {
+                        return None;
+                    }
+                    match (paper_node.top, paper_node.height) {
+                        (Val::Px(top), Val::Px(height)) => Some((top, height)),
+                        _ => None,
+                    }
+                }),
+            )
+            .unwrap_or(10.0)
+        } else {
+            10.0
+        };
+        let (next_top, next_velocity_y) = step_link_toggle_vertical_spring(
+            current_top,
+            spring.velocity_y,
+            target_top,
+            dt,
+        );
+        node.top = px(next_top);
+        spring.velocity_y = next_velocity_y;
+
         *z_index = if spring.phase == ProcessedLinkColorTogglePhase::ReturningUnderPage {
             // The layer changes at the bounded outward rebound apex, then the
             // control settles underneath the page.
@@ -2040,6 +2077,46 @@ fn link_toggle_compression_target(border_offset: f32, compression_distance: f32)
 
 fn link_toggle_rebound_target(border_offset: f32, compression_distance: f32) -> f32 {
     border_offset + (compression_distance.clamp(0.0, 20.0) * 2.0).min(40.0)
+}
+
+fn link_toggle_vertical_target(
+    current_top: f32,
+    toggle_height: f32,
+    pages: impl Iterator<Item = (f32, f32)>,
+) -> Option<f32> {
+    let toggle_height = toggle_height.max(0.0);
+    pages
+        .filter_map(|(page_top, page_height)| {
+            let page_bottom = page_top + page_height;
+            if page_height < toggle_height {
+                return None;
+            }
+            let target = if current_top < page_top {
+                page_top
+            } else if current_top + toggle_height > page_bottom {
+                page_bottom - toggle_height
+            } else {
+                current_top
+            };
+            Some((target, (target - current_top).abs()))
+        })
+        .min_by(|left, right| left.1.total_cmp(&right.1))
+        .map(|(target, _)| target)
+}
+
+fn step_link_toggle_vertical_spring(
+    top: f32,
+    velocity: f32,
+    target: f32,
+    dt: f32,
+) -> (f32, f32) {
+    let (next_top, next_velocity) =
+        step_link_toggle_spring(top, velocity, target, 115.0, 11.0, dt);
+    if (next_top - target).abs() < 0.08 && next_velocity.abs() < 0.8 {
+        (target, 0.0)
+    } else {
+        (next_top, next_velocity)
+    }
 }
 
 fn link_toggle_rebound_has_reached_apex(

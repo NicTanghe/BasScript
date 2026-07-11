@@ -171,7 +171,7 @@ impl Plugin for UiPlugin {
                 Update,
                 (
                     style_toolbar_buttons,
-                    sync_processed_link_color_toggle,
+                    sync_processed_link_color_toggle.after(render_editor),
                     style_workspace_file_entry_text,
                     sync_workspace_prompt_ui,
                     handle_window_shortcuts,
@@ -445,6 +445,7 @@ struct ProcessedLinkColorToggle {
 struct ProcessedLinkColorToggleSpring {
     offset_x: f32,
     velocity_x: f32,
+    velocity_y: f32,
     touching_page: bool,
     initialized: bool,
     phase: ProcessedLinkColorTogglePhase,

@@ -298,6 +298,42 @@ mod modifier_key_tests {
     }
 
     #[test]
+    fn link_toggle_moves_only_far_enough_to_fit_inside_nearest_page() {
+        let pages = [(29.0, 220.0), (269.0, 220.0)];
+
+        assert_eq!(
+            link_toggle_vertical_target(10.0, 30.0, pages.into_iter()),
+            Some(29.0)
+        );
+        assert_eq!(
+            link_toggle_vertical_target(470.0, 30.0, pages.into_iter()),
+            Some(459.0)
+        );
+        assert_eq!(
+            link_toggle_vertical_target(300.0, 30.0, pages.into_iter()),
+            Some(300.0)
+        );
+    }
+
+    #[test]
+    fn link_toggle_vertical_spring_eases_rebounds_and_settles() {
+        let target = 29.0;
+        let mut top = 10.0;
+        let mut velocity = 0.0;
+        let mut crossed_target = false;
+
+        for _ in 0..240 {
+            (top, velocity) =
+                step_link_toggle_vertical_spring(top, velocity, target, 1.0 / 60.0);
+            crossed_target |= top > target;
+        }
+
+        assert!(crossed_target);
+        assert_eq!(top, target);
+        assert_eq!(velocity, 0.0);
+    }
+
+    #[test]
     fn document_navigation_history_keeps_the_latest_128_entries() {
         let mut history = Vec::with_capacity(DOCUMENT_NAVIGATION_HISTORY_LIMIT);
         for index in 0..130 {
