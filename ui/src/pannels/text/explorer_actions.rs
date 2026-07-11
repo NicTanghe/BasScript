@@ -25,7 +25,8 @@ pub(crate) fn workspace_prompt_bundle(font: Handle<Font>) -> impl Bundle {
             ..default()
         },
         BackgroundColor(COLOR_WORKSPACE_PROMPT_BACKDROP),
-        ZIndex(90),
+        ZIndex(100),
+        GlobalZIndex(100),
         WorkspacePromptRoot,
         children![(
             Node {
