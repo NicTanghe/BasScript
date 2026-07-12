@@ -113,6 +113,11 @@ pub(crate) fn setup(
                                     toolbar_button(font.clone(), "Save As", ToolbarAction::SaveAs),
                                     toolbar_button(
                                         font.clone(),
+                                        "Export PDF",
+                                        ToolbarAction::ExportPdf,
+                                    ),
+                                    toolbar_button(
+                                        font.clone(),
                                         "Story Sheet",
                                         ToolbarAction::StoryQuerySheet,
                                     ),
@@ -1869,6 +1874,10 @@ pub(crate) fn handle_toolbar_buttons(
             ToolbarAction::SaveAs => {
                 state.close_link_autocomplete();
                 open_save_dialog(&mut state, &mut dialogs, parent_handle)
+            }
+            ToolbarAction::ExportPdf => {
+                state.close_link_autocomplete();
+                open_pdf_export_dialog(&mut state, &mut dialogs, parent_handle)
             }
             ToolbarAction::StoryQuerySheet => state.open_story_query_sheet(),
             ToolbarAction::ZoomOut => {

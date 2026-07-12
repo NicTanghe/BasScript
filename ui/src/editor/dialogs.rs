@@ -816,6 +816,50 @@ pub(crate) fn open_save_dialog(
     state.status_message = "Opening save dialog...".to_string();
 }
 
+pub(crate) fn open_pdf_export_dialog(
+    state: &mut EditorState,
+    dialogs: &mut DialogState,
+    parent_handle: Option<&RawHandleWrapper>,
+) {
+    state.close_link_autocomplete();
+    if dialogs.pending.is_some() {
+        state.status_message = "A file dialog is already open.".to_string();
+        return;
+    }
+    if state.document_format == DocumentFormat::Canvas {
+        state.status_message =
+            "Canvas PDF export is not supported yet; open a Fountain or Markdown document."
+                .to_string();
+        return;
+    }
+
+    let default_name = state
+        .paths
+        .load_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .map(|stem| format!("{stem}.pdf"))
+        .unwrap_or_else(|| "document.pdf".to_string());
+    let mut dialog = dialog_with_parent(
+        FileDialog::new()
+            .set_title("Export Document as PDF")
+            .add_filter("PDF document", &["pdf"])
+            .set_file_name(&default_name),
+        parent_handle,
+    );
+    if let Some(directory) = preferred_dialog_directory(state) {
+        dialog = dialog.set_directory(directory);
+    }
+
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(Ok(dialog.save_file()));
+    });
+    dialogs.begin_pending(PendingDialog::ExportPdf(Arc::new(Mutex::new(receiver))));
+    state.status_message = "Opening PDF export dialog...".to_string();
+}
+
 pub(crate) fn resolve_dialog_results(
     mut state: ResMut<EditorState>,
     mut dialogs: ResMut<DialogState>,
@@ -828,6 +872,7 @@ pub(crate) fn resolve_dialog_results(
     enum DialogResult {
         Workspace(DialogPathResult),
         Save(DialogPathResult),
+        ExportPdf(DialogPathResult),
     }
 
     let finished = match pending {
@@ -860,6 +905,18 @@ pub(crate) fn resolve_dialog_results(
                     "Save picker receiver failed: {error}"
                 ))))
             }
+        },
+        PendingDialog::ExportPdf(receiver) => match receiver.lock() {
+            Ok(receiver) => match receiver.try_recv() {
+                Ok(path) => Some(DialogResult::ExportPdf(path)),
+                Err(mpsc::TryRecvError::Empty) => None,
+                Err(mpsc::TryRecvError::Disconnected) => Some(DialogResult::ExportPdf(Err(
+                    "PDF export picker closed before returning a result.".to_string(),
+                ))),
+            },
+            Err(error) => Some(DialogResult::ExportPdf(Err(format!(
+                "PDF export picker receiver failed: {error}"
+            )))),
         },
     };
 
@@ -897,6 +954,36 @@ pub(crate) fn resolve_dialog_results(
     match result {
         DialogResult::Workspace(path) => finish_workspace_dialog(&mut state, path),
         DialogResult::Save(path) => finish_save_dialog(&mut state, path),
+        DialogResult::ExportPdf(path) => finish_pdf_export_dialog(&mut state, path),
+    }
+}
+
+pub(crate) fn finish_pdf_export_dialog(state: &mut EditorState, result: DialogPathResult) {
+    match result {
+        Ok(Some(path)) => match export_pdf_to_path(state, path) {
+            Ok((path, outcome)) => {
+                let warning_suffix = if outcome.warnings.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({} warning(s))", outcome.warnings.len())
+                };
+                state.status_message = format!(
+                    "Exported {} page(s) to {}{}.",
+                    outcome.page_count,
+                    path.display(),
+                    warning_suffix
+                );
+                for warning in outcome.warnings {
+                    warn!("[pdf] {warning}");
+                }
+            }
+            Err(error) => {
+                warn!("[pdf] Export failed: {error}");
+                state.status_message = format!("PDF export failed: {error}");
+            }
+        },
+        Ok(None) => state.status_message = "PDF export canceled.".to_string(),
+        Err(error) => state.status_message = format!("PDF export dialog failed: {error}"),
     }
 }
 

@@ -4,8 +4,8 @@ pub(crate) const FONT_PATH: &str = "fonts/Courier Prime/Courier Prime.ttf";
 pub(crate) const FONT_BOLD_PATH: &str = "fonts/Courier Prime/Courier Prime Bold.ttf";
 pub(crate) const FONT_ITALIC_PATH: &str = "fonts/Courier Prime/Courier Prime Italic.ttf";
 pub(crate) const FONT_BOLD_ITALIC_PATH: &str = "fonts/Courier Prime/Courier Prime Bold Italic.ttf";
-pub(crate) const FONT_MARKDOWN_PATH: &str = "fonts/SegoeUIVF.ttf";
-pub(crate) const FONT_MARKDOWN_BOLD_PATH: &str = "fonts/SegoeUIVF.ttf";
+pub(crate) const FONT_MARKDOWN_PATH: &str = "fonts/segoe-ui-4/Segoe UI.ttf";
+pub(crate) const FONT_MARKDOWN_BOLD_PATH: &str = "fonts/segoe-ui-4/Segoe UI Bold.ttf";
 pub(crate) const FONT_MARKDOWN_ITALIC_PATH: &str = "fonts/segoe-ui-4/Segoe UI Italic.ttf";
 pub(crate) const FONT_MARKDOWN_BOLD_ITALIC_PATH: &str = "fonts/segoe-ui-4/Segoe UI Bold Italic.ttf";
 pub(crate) const DEFAULT_LOAD_PATH: &str = "docs/welcome.md";
@@ -563,6 +563,7 @@ pub(crate) enum ToolbarAction {
     OpenWorkspace,
     Save,
     SaveAs,
+    ExportPdf,
     StoryQuerySheet,
     ZoomOut,
     ZoomIn,
@@ -1597,6 +1598,7 @@ pub(crate) type DialogPathResult = Result<Option<PathBuf>, String>;
 pub(crate) enum PendingDialog {
     Workspace(Arc<Mutex<mpsc::Receiver<DialogPathResult>>>),
     Save(Arc<Mutex<mpsc::Receiver<DialogPathResult>>>),
+    ExportPdf(Arc<Mutex<mpsc::Receiver<DialogPathResult>>>),
 }
 
 pub(crate) struct DialogMainThreadMarker;
@@ -1990,6 +1992,7 @@ impl PendingDialog {
         match self {
             PendingDialog::Workspace(_) => "workspace",
             PendingDialog::Save(_) => "save",
+            PendingDialog::ExportPdf(_) => "PDF export",
         }
     }
 }

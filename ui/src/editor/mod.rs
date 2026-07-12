@@ -91,6 +91,8 @@ use scrolling_middle_autoscroll::*;
 
 mod dialogs;
 use dialogs::*;
+mod pdf_export;
+use pdf_export::*;
 mod clipboard;
 use clipboard::*;
 mod vim;

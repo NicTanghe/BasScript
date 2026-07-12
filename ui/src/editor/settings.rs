@@ -10,6 +10,7 @@ pub(crate) fn load_persistent_settings() -> PersistentSettings {
                     LEGACY_EDITOR_SETTINGS_PATH,
                     path.display()
                 );
+                #[cfg(not(test))]
                 let _ = save_persistent_settings(&legacy);
                 return legacy;
             }
@@ -18,6 +19,7 @@ pub(crate) fn load_persistent_settings() -> PersistentSettings {
                     "[settings] Loaded legacy settings from {}; using as defaults",
                     LEGACY_SETTINGS_PATH
                 );
+                #[cfg(not(test))]
                 let _ = save_persistent_settings(&legacy);
                 return legacy;
             }
@@ -26,6 +28,7 @@ pub(crate) fn load_persistent_settings() -> PersistentSettings {
                 path.display()
             );
             let defaults = PersistentSettings::default();
+            #[cfg(not(test))]
             let _ = save_persistent_settings(&defaults);
             return defaults;
         }
@@ -55,6 +58,7 @@ pub(crate) fn load_keybind_settings() -> KeybindSettings {
                     LEGACY_KEYBINDS_SETTINGS_PATH,
                     path.display()
                 );
+                #[cfg(not(test))]
                 let _ = save_keybind_settings(&legacy);
                 return legacy;
             }
@@ -62,6 +66,7 @@ pub(crate) fn load_keybind_settings() -> KeybindSettings {
                 "[keybinds] No keybind file found at {}; using defaults",
                 path.display()
             );
+            #[cfg(not(test))]
             let _ = save_keybind_settings(&keybinds);
             return keybinds;
         }
@@ -92,6 +97,7 @@ pub(crate) fn load_persistent_ui_state() -> PersistentUiState {
                 path.display()
             );
             let defaults = PersistentUiState::default();
+            #[cfg(not(test))]
             let _ = save_persistent_ui_state(&defaults);
             return defaults;
         }
@@ -119,6 +125,7 @@ pub(crate) fn load_theme_settings() -> ThemeSettings {
                 "[theme] No theme file found at {}; using defaults",
                 path.display()
             );
+            #[cfg(not(test))]
             let _ = save_theme_settings(&defaults);
             return defaults;
         }
