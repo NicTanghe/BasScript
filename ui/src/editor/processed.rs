@@ -330,7 +330,7 @@ pub(crate) fn prepare_processed_line_text(
         return (prepare_image_embed_line_text(parsed_line), None);
     }
 
-    let (raw_column_base, rendered_raw, checklist_state) = if raw_override_active {
+    let (raw_column_base, mut rendered_raw, checklist_state) = if raw_override_active {
         (0, parsed_line.raw.clone(), None)
     } else {
         render_override
@@ -344,6 +344,9 @@ pub(crate) fn prepare_processed_line_text(
             .or_else(|| markdown_visual_text(parsed_line))
             .unwrap_or_else(|| (0, parsed_line.raw.clone(), None))
     };
+    if !raw_override_active && parsed_line.raw.ends_with("  ") {
+        rendered_raw.truncate(rendered_raw.trim_end_matches(' ').len());
+    }
     let rendered = if raw_override_active {
         identity_link_display_text(&rendered_raw)
     } else {
@@ -1709,6 +1712,13 @@ mod processed_markdown_inline_tests {
             "{needle:?} should have one inline style"
         );
         first
+    }
+
+    #[test]
+    fn hides_manual_break_storage_spaces_from_processed_text() {
+        let prepared = prepared_markdown("A manual break  ");
+
+        assert_eq!(prepared.text, "A manual break");
     }
 
     #[test]

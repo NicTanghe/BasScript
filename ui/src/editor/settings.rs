@@ -231,11 +231,13 @@ pub(crate) fn save_persistent_ui_state(ui_state: &PersistentUiState) -> io::Resu
          \ttop_menu_collapsed: {},\n\
          \tprocessed_link_color_mode: \"{}\",\n\
          \tprocessed_paginated: {},\n\
+         \tformatting_marks_visible: {},\n\
          )\n",
         ui_state.workspace_sidebar_visible,
         ui_state.top_menu_collapsed,
         ui_state.processed_link_color_mode.settings_value(),
         ui_state.processed_paginated,
+        ui_state.formatting_marks_visible,
     );
 
     fs::write(&path, contents)?;
@@ -516,12 +518,15 @@ pub(crate) fn persistent_ui_state_from_ron(
         .unwrap_or(defaults.processed_link_color_mode);
     let processed_paginated =
         parse_ron_bool(contents, "processed_paginated").unwrap_or(defaults.processed_paginated);
+    let formatting_marks_visible = parse_ron_bool(contents, "formatting_marks_visible")
+        .unwrap_or(defaults.formatting_marks_visible);
 
     PersistentUiState {
         workspace_sidebar_visible,
         top_menu_collapsed,
         processed_link_color_mode,
         processed_paginated,
+        formatting_marks_visible,
     }
 }
 
@@ -716,6 +721,7 @@ pub(crate) fn persistent_ui_state_from_state(state: &EditorState) -> PersistentU
         top_menu_collapsed: state.top_menu_collapsed,
         processed_link_color_mode: state.processed_link_color_mode,
         processed_paginated: state.processed_paginated,
+        formatting_marks_visible: state.formatting_marks_visible,
     }
 }
 

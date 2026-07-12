@@ -151,11 +151,21 @@ pub(crate) fn handle_text_input(
         match &input.logical_key {
             Key::Enter => {
                 let cursor_pos = state.cursor.position;
-                let next = state.document.insert_newline(cursor_pos);
+                let ctrl_pressed = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
+                let shift_pressed = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+                let next = insert_enter_break(
+                    &mut state.document,
+                    cursor_pos,
+                    ctrl_pressed,
+                    shift_pressed,
+                );
                 state.set_cursor(next, true);
                 dirty_from_line =
                     Some(dirty_from_line.map_or(cursor_pos.line, |line| line.min(cursor_pos.line)));
                 changed = true;
+                if ctrl_pressed {
+                    state.status_message = "Inserted page break".to_string();
+                }
             }
             Key::Backspace => {
                 if selection_deleted {
@@ -222,6 +232,46 @@ pub(crate) fn handle_text_input(
         state.reparse_with_dirty_hint(dirty_from_line.unwrap_or(0));
         state.refresh_link_autocomplete_for_document_cursor();
         apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
+    }
+}
+
+pub(crate) fn insert_enter_break(
+    document: &mut Document,
+    position: Position,
+    ctrl_pressed: bool,
+    shift_pressed: bool,
+) -> Position {
+    if ctrl_pressed {
+        document.insert_text(position, "\n===\n")
+    } else if shift_pressed {
+        document.insert_text(position, "  \n")
+    } else {
+        document.insert_newline(position)
+    }
+}
+
+#[cfg(test)]
+mod enter_break_tests {
+    use super::*;
+
+    #[test]
+    fn ctrl_enter_inserts_a_forced_page_break_line() {
+        let mut document = Document::from_text("beforeafter");
+        let cursor =
+            insert_enter_break(&mut document, Position { line: 0, column: 6 }, true, false);
+
+        assert_eq!(document.to_text(), "before\n===\nafter");
+        assert_eq!(cursor, Position { line: 2, column: 0 });
+    }
+
+    #[test]
+    fn shift_enter_records_a_manual_line_break() {
+        let mut document = Document::from_text("beforeafter");
+        let cursor =
+            insert_enter_break(&mut document, Position { line: 0, column: 6 }, false, true);
+
+        assert_eq!(document.to_text(), "before  \nafter");
+        assert_eq!(cursor, Position { line: 1, column: 0 });
     }
 }
 

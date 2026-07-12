@@ -169,6 +169,7 @@ impl Plugin for UiPlugin {
                     handle_toolbar_buttons,
                     handle_processed_link_color_toggle,
                     handle_processed_pagination_toggle,
+                    handle_formatting_marks_toggle,
                     handle_workspace_file_buttons,
                     handle_workspace_folder_buttons,
                     handle_markdown_metadata_buttons,
@@ -243,6 +244,12 @@ impl Plugin for UiPlugin {
                 )
                     .run_if(in_state(UiScreenState::Editor)),
             );
+        app.add_systems(
+            Update,
+            sync_formatting_mark_overlays
+                .after(render_editor)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
         app.add_systems(
             Update,
             handle_document_navigation_history
@@ -420,6 +427,9 @@ pub(crate) struct ProcessedLinkColorToggle;
 #[derive(Component)]
 pub(crate) struct ProcessedPaginationToggle;
 
+#[derive(Component)]
+pub(crate) struct FormattingMarksToggle;
+
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub(crate) struct ProcessedOverlayToggleSpring {
     pub(crate) offset_x: f32,
@@ -446,6 +456,9 @@ pub(crate) struct ProcessedLinkColorToggleLabel;
 
 #[derive(Component)]
 pub(crate) struct ProcessedPaginationToggleLabel;
+
+#[derive(Component)]
+pub(crate) struct FormattingMarksToggleLabel;
 
 #[derive(Resource, Default)]
 pub(crate) struct DocumentNavigationInputCapture {
@@ -1355,6 +1368,7 @@ pub(crate) struct EditorState {
     pub(crate) top_menu_collapsed: bool,
     pub(crate) processed_link_color_mode: ProcessedLinkColorMode,
     pub(crate) processed_paginated: bool,
+    pub(crate) formatting_marks_visible: bool,
     pub(crate) processed_glass: bool,
     pub(crate) explorer_glass: bool,
     pub(crate) settings_glass: bool,
@@ -1577,6 +1591,7 @@ pub(crate) struct PersistentUiState {
     pub(crate) top_menu_collapsed: bool,
     pub(crate) processed_link_color_mode: ProcessedLinkColorMode,
     pub(crate) processed_paginated: bool,
+    pub(crate) formatting_marks_visible: bool,
 }
 
 impl Default for PersistentUiState {
@@ -1586,6 +1601,7 @@ impl Default for PersistentUiState {
             top_menu_collapsed: false,
             processed_link_color_mode: ProcessedLinkColorMode::Colored,
             processed_paginated: true,
+            formatting_marks_visible: false,
         }
     }
 }
@@ -2008,6 +2024,7 @@ impl FromWorld for EditorState {
             top_menu_collapsed: ui_state.top_menu_collapsed,
             processed_link_color_mode: ui_state.processed_link_color_mode,
             processed_paginated: ui_state.processed_paginated,
+            formatting_marks_visible: ui_state.formatting_marks_visible,
             processed_glass: theme_settings.processed_glass,
             explorer_glass: theme_settings.explorer_glass,
             settings_glass: theme_settings.settings_glass,

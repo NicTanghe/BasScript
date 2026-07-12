@@ -46,6 +46,8 @@ mod autocomplete;
 use autocomplete::*;
 mod processed;
 use processed::*;
+mod formatting_marks;
+use formatting_marks::*;
 mod metadata_controls;
 use metadata_controls::*;
 mod caret;

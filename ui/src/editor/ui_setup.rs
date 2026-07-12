@@ -1788,10 +1788,16 @@ pub(crate) fn processed_overlay_toggle_group_bundle(
                 ProcessedLinkColorToggleLabel,
             ),
             processed_overlay_toggle_button(
-                font,
+                font.clone(),
                 "Sheet: A4 pages",
                 ProcessedPaginationToggle,
                 ProcessedPaginationToggleLabel,
+            ),
+            processed_overlay_toggle_button(
+                font,
+                "Marks: hidden",
+                FormattingMarksToggle,
+                FormattingMarksToggleLabel,
             ),
         ],
     )
@@ -1947,6 +1953,30 @@ pub(crate) fn handle_processed_pagination_toggle(
     }
 }
 
+pub(crate) fn handle_formatting_marks_toggle(
+    interaction_query: Query<&Interaction, (Changed<Interaction>, With<FormattingMarksToggle>)>,
+    mut state: ResMut<EditorState>,
+) {
+    for interaction in interaction_query.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        state.formatting_marks_visible = !state.formatting_marks_visible;
+        state.status_message = format!(
+            "Formatting marks: {}",
+            if state.formatting_marks_visible {
+                "shown"
+            } else {
+                "hidden"
+            }
+        );
+        if let Err(error) = save_editor_ui_state(&state) {
+            state.status_message = format!("UI state save failed: {error}");
+        }
+    }
+}
+
 pub(crate) fn toggle_processed_pagination(state: &mut EditorState) {
     state.processed_paginated = !state.processed_paginated;
     state.processed_top_visual = state.processed_top_line;
@@ -1983,6 +2013,14 @@ pub(crate) fn sync_processed_overlay_toggle_group(
         (
             With<ProcessedPaginationToggleLabel>,
             Without<ProcessedLinkColorToggleLabel>,
+        ),
+    >,
+    mut formatting_marks_label_query: Query<
+        &mut Text,
+        (
+            With<FormattingMarksToggleLabel>,
+            Without<ProcessedLinkColorToggleLabel>,
+            Without<ProcessedPaginationToggleLabel>,
         ),
     >,
 ) {
@@ -2174,6 +2212,17 @@ pub(crate) fn sync_processed_overlay_toggle_group(
     for mut text in pagination_label_query.iter_mut() {
         if text.as_str() != pagination_label {
             **text = pagination_label.to_string();
+        }
+    }
+
+    let formatting_marks_label = if state.formatting_marks_visible {
+        "Marks: shown"
+    } else {
+        "Marks: hidden"
+    };
+    for mut text in formatting_marks_label_query.iter_mut() {
+        if text.as_str() != formatting_marks_label {
+            **text = formatting_marks_label.to_string();
         }
     }
 }
