@@ -248,6 +248,10 @@ pub(crate) fn render_editor(
         processed_line_height,
     );
     let processed_page_step_pixels = processed_page_step_px(&processed_geometry, state.zoom);
+    let continuous_visible_page_count = processed_total_pages
+        .saturating_sub(first_visible_page)
+        .min(PROCESSED_PAPER_CAPACITY)
+        .max(1);
     let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
     for (_, mut transform) in canvas_query.iter_mut() {
         transform.scale = Vec2::ONE;
@@ -278,10 +282,18 @@ pub(crate) fn render_editor(
         node.left = px(page_left);
         node.top = px(page_top);
         node.width = px(processed_geometry.paper_width);
-        node.height = px(processed_geometry.paper_height);
+        node.height = if !state.processed_paginated && panel_paper.slot == 0 {
+            px(processed_page_step_pixels * continuous_visible_page_count as f32)
+        } else {
+            px(processed_geometry.paper_height)
+        };
         transform.scale = Vec2::ONE;
         transform.translation = Val2::ZERO;
-        color.0 = COLOR_PAPER;
+        color.0 = if state.processed_paginated || panel_paper.slot == 0 {
+            COLOR_PAPER
+        } else {
+            Color::NONE
+        };
         *visibility = Visibility::Visible;
     }
 

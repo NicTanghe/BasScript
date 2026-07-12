@@ -982,6 +982,10 @@ pub(crate) fn sync_story_query_sheet_ui(
     let first_visible_page = processed_view.start_index / page_step_lines;
     let total_pages =
         processed_page_count_for_lines(&state.story_query_sheet.visual_lines, page_step_lines);
+    let continuous_visible_page_count = total_pages
+        .saturating_sub(first_visible_page)
+        .min(PROCESSED_PAPER_CAPACITY)
+        .max(1);
     let page_label = story_query_page_label(
         &state.story_query_sheet,
         first_visible_page,
@@ -1008,10 +1012,18 @@ pub(crate) fn sync_story_query_sheet_ui(
         node.left = px(page_left);
         node.top = px(page_top);
         node.width = px(result_geometry.paper_width);
-        node.height = px(result_geometry.paper_height);
+        node.height = if !state.processed_paginated && paper.slot == 0 {
+            px(processed_page_step_pixels * continuous_visible_page_count as f32)
+        } else {
+            px(result_geometry.paper_height)
+        };
         transform.scale = Vec2::ONE;
         transform.translation = Val2::ZERO;
-        color.0 = COLOR_PAPER;
+        color.0 = if state.processed_paginated || paper.slot == 0 {
+            COLOR_PAPER
+        } else {
+            Color::NONE
+        };
         *visibility = Visibility::Visible;
     }
 

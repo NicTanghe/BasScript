@@ -1751,20 +1751,19 @@ pub(crate) fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
                         )
                     ],
                 ),
-                processed_link_color_toggle_bundle(font.clone(), kind),
+                processed_overlay_toggle_group_bundle(font.clone(), kind),
             ],
         )],
     )
 }
 
-pub(crate) fn processed_link_color_toggle_bundle(
+pub(crate) fn processed_overlay_toggle_group_bundle(
     font: Handle<Font>,
     kind: PanelKind,
 ) -> impl Bundle {
     (
-        Button,
-        ProcessedLinkColorToggle { kind },
-        ProcessedLinkColorToggleSpring::default(),
+        ProcessedOverlayToggleGroup { kind },
+        ProcessedOverlayToggleSpring::default(),
         Node {
             position_type: PositionType::Absolute,
             left: px(0.0),
@@ -1774,23 +1773,56 @@ pub(crate) fn processed_link_color_toggle_bundle(
             } else {
                 Display::None
             },
-            min_width: px(116.0),
+            min_width: px(136.0),
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::Stretch,
+            row_gap: px(6.0),
+            ..default()
+        },
+        ZIndex(20),
+        children![
+            processed_overlay_toggle_button(
+                font.clone(),
+                "Links: colored",
+                ProcessedLinkColorToggle,
+                ProcessedLinkColorToggleLabel,
+            ),
+            processed_overlay_toggle_button(
+                font,
+                "Sheet: A4 pages",
+                ProcessedPaginationToggle,
+                ProcessedPaginationToggleLabel,
+            ),
+        ],
+    )
+}
+
+pub(crate) fn processed_overlay_toggle_button<M: Component, L: Component>(
+    font: Handle<Font>,
+    label: &str,
+    marker: M,
+    label_marker: L,
+) -> impl Bundle {
+    (
+        Button,
+        marker,
+        Node {
+            width: percent(100.0),
             justify_content: JustifyContent::Center,
             padding: UiRect::axes(px(9.0), px(5.0)),
             border_radius: BorderRadius::all(px(4.0)),
             ..default()
         },
         BackgroundColor(BUTTON_NORMAL),
-        ZIndex(20),
         children![(
-            Text::new("Links: colored"),
+            Text::new(label),
             TextFont {
                 font: font.into(),
                 font_size: FontSize::Px(12.0),
                 ..default()
             },
             TextColor(COLOR_TEXT_MAIN),
-            ProcessedLinkColorToggleLabel,
+            label_marker,
         )],
     )
 }
@@ -1865,6 +1897,7 @@ pub(crate) fn style_toolbar_buttons(
                 With<KeybindRebindButton>,
                 With<ThemeColorPickerButton>,
                 With<ProcessedLinkColorToggle>,
+                With<ProcessedPaginationToggle>,
             )>,
         ),
     >,
@@ -1879,14 +1912,11 @@ pub(crate) fn style_toolbar_buttons(
 }
 
 pub(crate) fn handle_processed_link_color_toggle(
-    interaction_query: Query<
-        (&Interaction, &ProcessedLinkColorToggle),
-        (Changed<Interaction>, With<Button>),
-    >,
+    interaction_query: Query<&Interaction, (Changed<Interaction>, With<ProcessedLinkColorToggle>)>,
     mut state: ResMut<EditorState>,
 ) {
-    for (interaction, toggle) in interaction_query.iter() {
-        if *interaction != Interaction::Pressed || toggle.kind != PanelKind::Processed {
+    for interaction in interaction_query.iter() {
+        if *interaction != Interaction::Pressed {
             continue;
         }
 
@@ -1901,22 +1931,60 @@ pub(crate) fn handle_processed_link_color_toggle(
     }
 }
 
-pub(crate) fn sync_processed_link_color_toggle(
+pub(crate) fn handle_processed_pagination_toggle(
+    interaction_query: Query<&Interaction, (Changed<Interaction>, With<ProcessedPaginationToggle>)>,
+    mut state: ResMut<EditorState>,
+) {
+    for interaction in interaction_query.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        toggle_processed_pagination(&mut state);
+        if let Err(error) = save_editor_ui_state(&state) {
+            state.status_message = format!("UI state save failed: {error}");
+        }
+    }
+}
+
+pub(crate) fn toggle_processed_pagination(state: &mut EditorState) {
+    state.processed_paginated = !state.processed_paginated;
+    state.processed_top_visual = state.processed_top_line;
+    state.processed_zoom_anchor_bias_px = 0.0;
+    state.mark_processed_cache_dirty_from(0);
+    state.status_message = format!(
+        "Rendered sheet: {}",
+        if state.processed_paginated {
+            "A4 pages"
+        } else {
+            "continuous"
+        }
+    );
+}
+
+pub(crate) fn sync_processed_overlay_toggle_group(
     time: Res<Time>,
     state: Res<EditorState>,
     panel_query: Query<(&PanelBody, &ComputedNode)>,
-    paper_query: Query<(&PanelPaper, &Node, &Visibility), Without<ProcessedLinkColorToggle>>,
+    paper_query: Query<(&PanelPaper, &Node, &Visibility), Without<ProcessedOverlayToggleGroup>>,
     mut toggle_query: Query<
         (
-            &ProcessedLinkColorToggle,
+            &ProcessedOverlayToggleGroup,
             &ComputedNode,
-            &mut ProcessedLinkColorToggleSpring,
+            &mut ProcessedOverlayToggleSpring,
             &mut Node,
             &mut ZIndex,
         ),
         Without<PanelPaper>,
     >,
     mut label_query: Query<&mut Text, With<ProcessedLinkColorToggleLabel>>,
+    mut pagination_label_query: Query<
+        &mut Text,
+        (
+            With<ProcessedPaginationToggleLabel>,
+            Without<ProcessedLinkColorToggleLabel>,
+        ),
+    >,
 ) {
     let processed_panel_size = panel_query
         .iter()
@@ -1930,7 +1998,7 @@ pub(crate) fn sync_processed_link_color_toggle(
         }) else {
             node.display = Display::None;
             *z_index = ZIndex(20);
-            *spring = ProcessedLinkColorToggleSpring::default();
+            *spring = ProcessedOverlayToggleSpring::default();
             continue;
         };
 
@@ -1952,30 +2020,30 @@ pub(crate) fn sync_processed_link_color_toggle(
         node.display = Display::Flex;
         if !spring.initialized {
             spring.phase = if touching_page {
-                ProcessedLinkColorTogglePhase::ReturningUnderPage
+                ProcessedOverlayTogglePhase::ReturningUnderPage
             } else {
-                ProcessedLinkColorTogglePhase::Idle
+                ProcessedOverlayTogglePhase::Idle
             };
         } else if !touching_page {
             let returning_below_page =
-                spring.phase == ProcessedLinkColorTogglePhase::ReturningUnderPage;
+                spring.phase == ProcessedOverlayTogglePhase::ReturningUnderPage;
             if !returning_below_page
                 || link_toggle_has_cleared_page_border(spring.offset_x, page_border_offset)
             {
-                spring.phase = ProcessedLinkColorTogglePhase::Idle;
+                spring.phase = ProcessedOverlayTogglePhase::Idle;
             }
         } else if contact_started {
             spring.compression_distance = link_toggle_compression_for_impact(impact_speed);
-            spring.phase = ProcessedLinkColorTogglePhase::Compressing;
+            spring.phase = ProcessedOverlayTogglePhase::Compressing;
             spring.velocity_x = -impact_speed.clamp(260.0, 900.0);
         }
 
         match spring.phase {
-            ProcessedLinkColorTogglePhase::Idle => {
+            ProcessedOverlayTogglePhase::Idle => {
                 (spring.offset_x, spring.velocity_x) =
                     step_link_toggle_return(spring.offset_x, spring.velocity_x, dt);
             }
-            ProcessedLinkColorTogglePhase::Compressing => {
+            ProcessedOverlayTogglePhase::Compressing => {
                 let compression_target =
                     link_toggle_compression_target(page_border_offset, spring.compression_distance);
                 (spring.offset_x, spring.velocity_x) = step_link_toggle_spring(
@@ -1996,10 +2064,10 @@ pub(crate) fn sync_processed_link_color_toggle(
                     || (spring.velocity_x >= 0.0 && spring.offset_x < page_border_offset)
                 {
                     spring.velocity_x = (420.0 + impact_speed * 0.32).clamp(420.0, 1_000.0);
-                    spring.phase = ProcessedLinkColorTogglePhase::Rebounding;
+                    spring.phase = ProcessedOverlayTogglePhase::Rebounding;
                 }
             }
-            ProcessedLinkColorTogglePhase::Rebounding => {
+            ProcessedOverlayTogglePhase::Rebounding => {
                 let rebound_target =
                     link_toggle_rebound_target(page_border_offset, spring.compression_distance);
                 let compression_limit =
@@ -2024,16 +2092,15 @@ pub(crate) fn sync_processed_link_color_toggle(
                 ) {
                     // Change layer at the outward rebound apex, preserving the
                     // remaining velocity for the under-page settling spring.
-                    spring.phase = ProcessedLinkColorTogglePhase::ReturningUnderPage;
+                    spring.phase = ProcessedOverlayTogglePhase::ReturningUnderPage;
                 }
             }
-            ProcessedLinkColorTogglePhase::ReturningUnderPage => {
+            ProcessedOverlayTogglePhase::ReturningUnderPage => {
                 (spring.offset_x, spring.velocity_x) =
                     step_link_toggle_return(spring.offset_x, spring.velocity_x, dt);
             }
         }
-        if spring.phase == ProcessedLinkColorTogglePhase::Idle
-            && spring.offset_x < page_border_offset
+        if spring.phase == ProcessedOverlayTogglePhase::Idle && spring.offset_x < page_border_offset
         {
             // When scrolling back, keep the above-page control on the safe
             // side of the live paper border instead of letting its return
@@ -2079,7 +2146,7 @@ pub(crate) fn sync_processed_link_color_toggle(
         node.top = px(next_top);
         spring.velocity_y = next_velocity_y;
 
-        *z_index = if spring.phase == ProcessedLinkColorTogglePhase::ReturningUnderPage {
+        *z_index = if spring.phase == ProcessedOverlayTogglePhase::ReturningUnderPage {
             // The layer changes at the bounded outward rebound apex, then the
             // control settles underneath the page.
             ZIndex(0)
@@ -2096,6 +2163,17 @@ pub(crate) fn sync_processed_link_color_toggle(
     for mut text in label_query.iter_mut() {
         if text.as_str() != label {
             **text = label.to_string();
+        }
+    }
+
+    let pagination_label = if state.processed_paginated {
+        "Sheet: A4 pages"
+    } else {
+        "Sheet: continuous"
+    };
+    for mut text in pagination_label_query.iter_mut() {
+        if text.as_str() != pagination_label {
+            **text = pagination_label.to_string();
         }
     }
 }
@@ -2261,19 +2339,8 @@ pub(crate) fn handle_settings_buttons(
                 );
             }
             SettingsAction::ToggleProcessedPagination => {
-                state.processed_paginated = !state.processed_paginated;
-                state.processed_top_visual = state.processed_top_line;
-                state.processed_zoom_anchor_bias_px = 0.0;
-                state.mark_processed_cache_dirty_from(0);
+                toggle_processed_pagination(&mut state);
                 ui_state_changed = true;
-                state.status_message = format!(
-                    "Rendered sheet: {}",
-                    if state.processed_paginated {
-                        "A4 pages"
-                    } else {
-                        "continuous"
-                    }
-                );
             }
             SettingsAction::ToggleVimMode => {
                 state.close_link_autocomplete();

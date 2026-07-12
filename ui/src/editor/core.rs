@@ -144,7 +144,7 @@ impl Plugin for UiPlugin {
                 Update,
                 (
                     style_toolbar_buttons,
-                    sync_processed_link_color_toggle.after(render_editor),
+                    sync_processed_overlay_toggle_group.after(render_editor),
                     style_workspace_file_entry_text,
                     sync_workspace_prompt_ui,
                     handle_window_shortcuts,
@@ -168,6 +168,7 @@ impl Plugin for UiPlugin {
                 (
                     handle_toolbar_buttons,
                     handle_processed_link_color_toggle,
+                    handle_processed_pagination_toggle,
                     handle_workspace_file_buttons,
                     handle_workspace_folder_buttons,
                     handle_markdown_metadata_buttons,
@@ -409,24 +410,30 @@ pub(crate) struct PanelBody {
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct ProcessedLinkColorToggle {
+pub(crate) struct ProcessedOverlayToggleGroup {
     pub(crate) kind: PanelKind,
 }
 
+#[derive(Component)]
+pub(crate) struct ProcessedLinkColorToggle;
+
+#[derive(Component)]
+pub(crate) struct ProcessedPaginationToggle;
+
 #[derive(Component, Clone, Copy, Debug, Default)]
-pub(crate) struct ProcessedLinkColorToggleSpring {
+pub(crate) struct ProcessedOverlayToggleSpring {
     pub(crate) offset_x: f32,
     pub(crate) velocity_x: f32,
     pub(crate) velocity_y: f32,
     pub(crate) touching_page: bool,
     pub(crate) initialized: bool,
-    pub(crate) phase: ProcessedLinkColorTogglePhase,
+    pub(crate) phase: ProcessedOverlayTogglePhase,
     pub(crate) compression_distance: f32,
     pub(crate) previous_page_right: f32,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum ProcessedLinkColorTogglePhase {
+pub(crate) enum ProcessedOverlayTogglePhase {
     #[default]
     Idle,
     Compressing,
@@ -436,6 +443,9 @@ pub(crate) enum ProcessedLinkColorTogglePhase {
 
 #[derive(Component)]
 pub(crate) struct ProcessedLinkColorToggleLabel;
+
+#[derive(Component)]
+pub(crate) struct ProcessedPaginationToggleLabel;
 
 #[derive(Resource, Default)]
 pub(crate) struct DocumentNavigationInputCapture {
