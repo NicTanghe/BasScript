@@ -4,6 +4,135 @@ use basscript_core::{
 };
 
 impl EditorState {
+    pub(crate) fn ctrl_click_link_word(&mut self, position: Position) -> bool {
+        if self.script_link_at(position).is_some() {
+            self.status_message = "That word is already linked.".to_string();
+            return true;
+        }
+        let Some((range_start, range_end, label)) = self.document_word_at(position) else {
+            self.status_message = "Ctrl-click a word to create a link.".to_string();
+            return false;
+        };
+
+        if let Some(target) = self.unique_ctrl_click_link_target(&label) {
+            if self.replace_document_range_with_link(range_start, range_end, &label, &target) {
+                self.status_message = format!("Linked {label} to {target}.");
+                return true;
+            }
+        }
+
+        self.begin_linked_markdown_creation(range_start, range_end, label);
+        true
+    }
+
+    fn unique_ctrl_click_link_target(&self, label: &str) -> Option<String> {
+        if let Ok(path) = self.resolve_script_mention_path(label)
+            && let Ok(entity) = EntityDocument::load(&path)
+        {
+            return Some(entity.metadata.target);
+        }
+
+        let expected_target = workspace_filename_target(label);
+        let matches = self
+            .workspace_files
+            .iter()
+            .filter(|entry| is_markdown_entity_file(&entry.path))
+            .filter_map(|entry| entry.path.file_stem().and_then(|stem| stem.to_str()))
+            .filter(|stem| workspace_filename_target(stem) == expected_target)
+            .map(workspace_filename_target)
+            .collect::<BTreeSet<_>>();
+        (matches.len() == 1)
+            .then(|| matches.into_iter().next())
+            .flatten()
+    }
+
+    fn document_word_at(&self, position: Position) -> Option<(Position, Position, String)> {
+        let line = self.document.line(position.line)?;
+        let chars = line.chars().collect::<Vec<_>>();
+        let (start, end) = linkable_word_range(line, position.column)?;
+        let label = chars[start..end].iter().collect::<String>();
+        Some((
+            Position {
+                line: position.line,
+                column: start,
+            },
+            Position {
+                line: position.line,
+                column: end,
+            },
+            label,
+        ))
+    }
+
+    pub(crate) fn replace_document_range_with_link(
+        &mut self,
+        range_start: Position,
+        range_end: Position,
+        label: &str,
+        target: &str,
+    ) -> bool {
+        if range_start.line != range_end.line || range_start.line >= self.document.line_count() {
+            return false;
+        }
+        let replacement = if link_autocomplete_target_only_is_safe(label, target) {
+            format!("[{label}]")
+        } else {
+            format!("[{label}]({target})")
+        };
+        let snapshot = self.history_snapshot();
+        let insert_at = self.document.delete_range(range_start, range_end);
+        let next = self.document.insert_text(insert_at, &replacement);
+        self.set_cursor(next, true);
+        self.selection_anchor = None;
+        self.push_undo_snapshot(snapshot);
+        self.reparse_with_dirty_hint(range_start.line);
+        self.close_link_autocomplete();
+        true
+    }
+
+    fn begin_linked_markdown_creation(
+        &mut self,
+        range_start: Position,
+        range_end: Position,
+        label: String,
+    ) {
+        let Some(root) = self.workspace_root.clone() else {
+            self.status_message =
+                "No matching link target. Open a workspace to create one.".to_string();
+            return;
+        };
+        let mut folders = BTreeSet::from([root.clone()]);
+        for folder in &self.workspace_folders {
+            folders.insert(root.join(&folder.folder_key));
+        }
+        let folders = folders.into_iter().collect::<Vec<_>>();
+        let source_parent = self.paths.load_path.parent();
+        let selected_folder = source_parent
+            .and_then(|parent| {
+                folders
+                    .iter()
+                    .position(|folder| workspace_paths_match(folder, parent))
+            })
+            .unwrap_or(0);
+        let templates = collect_workspace_markdown_templates().unwrap_or_else(|error| {
+            warn!("[links] Failed reading Markdown templates: {error}");
+            Vec::new()
+        });
+        let filename = format!("{}.md", workspace_filename_target(&label));
+        self.close_link_autocomplete();
+        self.workspace_prompt = Some(WorkspacePrompt::CreateLinkedMarkdown {
+            source_path: self.paths.load_path.clone(),
+            range_start,
+            range_end,
+            label,
+            filename,
+            folders,
+            selected_folder,
+            templates,
+        });
+        self.status_message = "No unique target found; choose where to create it.".to_string();
+    }
+
     pub(crate) fn clear_script_link_target_cache(&mut self) {
         self.script_link_target_types.clear();
         self.missing_script_link_targets.clear();
@@ -317,6 +446,36 @@ impl EditorState {
     }
 }
 
+pub(crate) fn is_linkable_word_character(ch: char) -> bool {
+    ch.is_alphanumeric() || matches!(ch, '_' | '-' | '\'')
+}
+
+pub(crate) fn linkable_word_range(line: &str, column: usize) -> Option<(usize, usize)> {
+    let chars = line.chars().collect::<Vec<_>>();
+    if chars.is_empty() {
+        return None;
+    }
+    let mut column = column.min(chars.len().saturating_sub(1));
+    if !is_linkable_word_character(chars[column])
+        && column > 0
+        && is_linkable_word_character(chars[column - 1])
+    {
+        column -= 1;
+    }
+    if !is_linkable_word_character(chars[column]) {
+        return None;
+    }
+    let mut start = column;
+    while start > 0 && is_linkable_word_character(chars[start - 1]) {
+        start -= 1;
+    }
+    let mut end = column + 1;
+    while end < chars.len() && is_linkable_word_character(chars[end]) {
+        end += 1;
+    }
+    Some((start, end))
+}
+
 pub(crate) fn push_document_navigation_history(
     history: &mut Vec<DocumentNavigationEntry>,
     entry: DocumentNavigationEntry,
@@ -421,6 +580,16 @@ mod link_navigation_tests {
             Path::new("Characters/Main/eoghan.md"),
             "elisah"
         ));
+    }
+
+    #[test]
+    fn ctrl_click_word_range_keeps_name_punctuation() {
+        assert_eq!(
+            linkable_word_range("Meet O'Connor-Smith now", 9),
+            Some((5, 19))
+        );
+        assert_eq!(linkable_word_range("Eoghan walks", 6), Some((0, 6)));
+        assert_eq!(linkable_word_range("   ", 1), None);
     }
 }
 #[allow(unused_imports)]

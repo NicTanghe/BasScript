@@ -3,6 +3,9 @@ pub(crate) struct MouseSelectionState {
     pub(crate) active: bool,
     pub(crate) extend_from_existing: bool,
     pub(crate) dragged: bool,
+    pub(crate) ctrl_link_candidate: Option<Position>,
+    pub(crate) ctrl_link_dragged: bool,
+    pub(crate) ctrl_link_press_position: Option<Vec2>,
 }
 
 pub(crate) fn setup_selection_rects(
@@ -39,6 +42,7 @@ pub(crate) fn handle_mouse_selection(
     mut splitter_drag: ResMut<PanelSplitterDragState>,
     mut mouse_selection: ResMut<MouseSelectionState>,
     panel_query: Query<(&PanelBody, &RelativeCursorPosition, &ComputedNode)>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
     metadata_query: Query<&RelativeCursorPosition, With<MarkdownMetadataPanelRoot>>,
     processed_overlay_toggle_query: Query<
         &Interaction,
@@ -66,6 +70,8 @@ pub(crate) fn handle_mouse_selection(
 
     if state.workspace_prompt.is_some() {
         mouse_selection.active = false;
+        mouse_selection.ctrl_link_candidate = None;
+        mouse_selection.ctrl_link_press_position = None;
         return;
     }
     if markdown_metadata_hovered(&metadata_query) {
@@ -100,11 +106,34 @@ pub(crate) fn handle_mouse_selection(
         mouse_selection.active = false;
         return;
     }
-    if keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
-        if mouse_buttons.just_pressed(MouseButton::Left) {
-            mouse_selection.active = false;
+    if let Some(candidate) = mouse_selection.ctrl_link_candidate {
+        if let (Some(pressed_at), Some(current)) = (
+            mouse_selection.ctrl_link_press_position,
+            window_query.iter().next().and_then(Window::cursor_position),
+        ) && current.distance_squared(pressed_at) > 16.0
+        {
+            mouse_selection.ctrl_link_dragged = true;
         }
-        return;
+        if mouse_buttons.just_released(MouseButton::Left) {
+            let should_link = !mouse_selection.ctrl_link_dragged;
+            mouse_selection.ctrl_link_candidate = None;
+            mouse_selection.ctrl_link_dragged = false;
+            mouse_selection.ctrl_link_press_position = None;
+            mouse_selection.active = false;
+            if should_link {
+                state.ctrl_click_link_word(candidate);
+            }
+            return;
+        }
+        if !mouse_buttons.pressed(MouseButton::Left)
+            || !keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
+        {
+            mouse_selection.ctrl_link_candidate = None;
+            mouse_selection.ctrl_link_dragged = false;
+            mouse_selection.ctrl_link_press_position = None;
+            mouse_selection.active = false;
+            return;
+        }
     }
 
     if mouse_selection.active && mouse_buttons.just_released(MouseButton::Left) {
@@ -358,6 +387,22 @@ pub(crate) fn handle_mouse_selection(
     let Some((_panel, position)) = hit else {
         return;
     };
+
+    if keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
+        if is_start {
+            mouse_selection.active = true;
+            mouse_selection.ctrl_link_candidate = Some(position);
+            mouse_selection.ctrl_link_dragged = false;
+            mouse_selection.ctrl_link_press_position =
+                window_query.iter().next().and_then(Window::cursor_position);
+        } else if mouse_selection
+            .ctrl_link_candidate
+            .is_some_and(|candidate| candidate != position)
+        {
+            mouse_selection.ctrl_link_dragged = true;
+        }
+        return;
+    }
 
     if is_start {
         state.workspace_focused = false;

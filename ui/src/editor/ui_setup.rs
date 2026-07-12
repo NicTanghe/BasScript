@@ -1904,6 +1904,7 @@ pub(crate) fn style_toolbar_buttons(
                 With<ThemeColorPickerButton>,
                 With<ProcessedLinkColorToggle>,
                 With<ProcessedPaginationToggle>,
+                With<WorkspaceLinkFolderOption>,
             )>,
         ),
     >,
