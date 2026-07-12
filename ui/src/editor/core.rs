@@ -2285,34 +2285,6 @@ impl EditorState {
         self.clamp_scroll(visible_lines);
     }
 
-    pub(crate) fn clamp_cursor_to_visible_range(&mut self, visible_lines: usize) {
-        if self.document.is_empty() {
-            self.set_cursor(Position::default(), true);
-            return;
-        }
-
-        let min_line = self.top_line;
-        let max_line = self
-            .top_line
-            .saturating_add(visible_lines.saturating_sub(1))
-            .min(self.document.line_count().saturating_sub(1));
-        let clamped_line = self.cursor.position.line.clamp(min_line, max_line);
-
-        if clamped_line != self.cursor.position.line {
-            let column = self
-                .cursor
-                .preferred_column
-                .min(self.document.line_len_chars(clamped_line));
-            self.set_cursor(
-                Position {
-                    line: clamped_line,
-                    column,
-                },
-                false,
-            );
-        }
-    }
-
     pub(crate) fn set_cursor(&mut self, position: Position, update_preferred: bool) {
         self.set_cursor_with_selection(position, update_preferred, false);
     }

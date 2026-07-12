@@ -155,7 +155,6 @@ pub(crate) fn handle_middle_mouse_autoscroll(
             if whole_lines != 0 {
                 scrolled |=
                     apply_plain_panel_vertical_scroll(&mut state, whole_lines, visible_lines);
-                state.clamp_cursor_to_visible_range(visible_lines);
             }
         }
         PanelKind::Processed => {
@@ -166,7 +165,6 @@ pub(crate) fn handle_middle_mouse_autoscroll(
                     vertical_delta_lines,
                     visible_lines,
                 );
-                state.clamp_cursor_to_visible_range(visible_lines);
             }
         }
     }

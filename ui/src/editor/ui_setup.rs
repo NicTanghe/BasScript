@@ -1939,14 +1939,19 @@ pub(crate) fn handle_processed_link_color_toggle(
 
 pub(crate) fn handle_processed_pagination_toggle(
     interaction_query: Query<&Interaction, (Changed<Interaction>, With<ProcessedPaginationToggle>)>,
+    panel_query: Query<(&PanelBody, &ComputedNode)>,
     mut state: ResMut<EditorState>,
 ) {
+    let processed_panel_size = panel_query
+        .iter()
+        .find(|(panel, _)| panel.kind == PanelKind::Processed)
+        .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
     for interaction in interaction_query.iter() {
         if *interaction != Interaction::Pressed {
             continue;
         }
 
-        toggle_processed_pagination(&mut state);
+        toggle_processed_pagination(&mut state, processed_panel_size);
         if let Err(error) = save_editor_ui_state(&state) {
             state.status_message = format!("UI state save failed: {error}");
         }
@@ -1977,11 +1982,17 @@ pub(crate) fn handle_formatting_marks_toggle(
     }
 }
 
-pub(crate) fn toggle_processed_pagination(state: &mut EditorState) {
+pub(crate) fn toggle_processed_pagination(
+    state: &mut EditorState,
+    processed_panel_size: Option<Vec2>,
+) {
+    let caret_anchor = processed_panel_size
+        .and_then(|panel_size| capture_processed_caret_viewport_anchor(state, panel_size));
     state.processed_paginated = !state.processed_paginated;
-    state.processed_top_visual = state.processed_top_line;
-    state.processed_zoom_anchor_bias_px = 0.0;
     state.mark_processed_cache_dirty_from(0);
+    if let (Some(panel_size), Some(anchor)) = (processed_panel_size, caret_anchor) {
+        restore_processed_caret_viewport_anchor(state, panel_size, anchor);
+    }
     state.status_message = format!(
         "Rendered sheet: {}",
         if state.processed_paginated {
@@ -2351,9 +2362,14 @@ pub(crate) fn handle_theme_color_picker_buttons(
 
 pub(crate) fn handle_settings_buttons(
     interaction_query: Query<(&Interaction, &SettingsAction), (Changed<Interaction>, With<Button>)>,
+    panel_query: Query<(&PanelBody, &ComputedNode)>,
     mut state: ResMut<EditorState>,
     mut next_screen_state: ResMut<NextState<UiScreenState>>,
 ) {
+    let processed_panel_size = panel_query
+        .iter()
+        .find(|(panel, _)| panel.kind == PanelKind::Processed)
+        .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
     for (interaction, action) in interaction_query.iter() {
         if *interaction != Interaction::Pressed {
             continue;
@@ -2388,7 +2404,7 @@ pub(crate) fn handle_settings_buttons(
                 );
             }
             SettingsAction::ToggleProcessedPagination => {
-                toggle_processed_pagination(&mut state);
+                toggle_processed_pagination(&mut state, processed_panel_size);
                 ui_state_changed = true;
             }
             SettingsAction::ToggleVimMode => {

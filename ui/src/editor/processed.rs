@@ -262,6 +262,104 @@ pub(crate) fn set_zoom_preserving_processed_anchor(
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ProcessedCaretViewportAnchor {
+    screen_y: f32,
+    visual_offset_from_scroll_anchor: isize,
+}
+
+pub(crate) fn capture_processed_caret_viewport_anchor(
+    state: &mut EditorState,
+    panel_size: Vec2,
+) -> Option<ProcessedCaretViewportAnchor> {
+    let (screen_y, caret_visual_index) = processed_caret_screen_y(state, panel_size)?;
+    Some(ProcessedCaretViewportAnchor {
+        screen_y,
+        visual_offset_from_scroll_anchor: caret_visual_index as isize
+            - state.processed_top_visual as isize,
+    })
+}
+
+pub(crate) fn restore_processed_caret_viewport_anchor(
+    state: &mut EditorState,
+    panel_size: Vec2,
+    anchor: ProcessedCaretViewportAnchor,
+) {
+    let layout = processed_page_layout(panel_size, state);
+    let lines = processed_display_lines(
+        state,
+        layout.wrap_columns,
+        layout.lines_per_page,
+        layout.spacer_lines,
+    );
+    let Some(caret_visual_index) = processed_cursor_visual_index(state, &lines) else {
+        return;
+    };
+
+    let desired_top = (caret_visual_index as isize - anchor.visual_offset_from_scroll_anchor)
+        .clamp(0, lines.len().saturating_sub(1) as isize) as usize;
+    state.processed_top_visual = desired_top;
+    state.processed_top_line = lines
+        .get(desired_top)
+        .map_or(state.cursor.position.line, |line| line.source_line);
+
+    if let Some((screen_y, _)) = processed_caret_screen_y(state, panel_size) {
+        state.processed_zoom_anchor_bias_px += anchor.screen_y - screen_y;
+    }
+}
+
+fn processed_caret_screen_y(state: &mut EditorState, panel_size: Vec2) -> Option<(f32, usize)> {
+    let layout = processed_page_layout(panel_size, state);
+    let step_lines = layout.page_step_lines.max(1);
+    let lines = processed_display_lines(
+        state,
+        layout.wrap_columns,
+        layout.lines_per_page,
+        layout.spacer_lines,
+    );
+    let caret_visual_index = processed_cursor_visual_index(state, &lines)?;
+    let view_capacity = step_lines.saturating_mul(PROCESSED_PAPER_CAPACITY).max(1);
+    let view = build_processed_view(
+        &lines,
+        state.processed_top_visual,
+        step_lines,
+        view_capacity,
+    );
+    let first_visible_page = view.start_index / step_lines;
+    let caret_page = caret_visual_index / step_lines;
+    let slot = caret_page.checked_sub(first_visible_page)?;
+    if slot >= PROCESSED_PAPER_CAPACITY {
+        return None;
+    }
+
+    let line_height = scaled_line_height(state).max(1.0);
+    let anchor_offset = processed_anchor_scroll_offset_px_from_lines(
+        state,
+        &lines,
+        view.anchor_index,
+        step_lines,
+        line_height,
+    );
+    let page_step_px = processed_page_step_px(&layout.geometry, state.zoom);
+    let page_text_top =
+        processed_text_top_for_slot(&layout.geometry, slot, page_step_px, anchor_offset)
+            + state.processed_zoom_anchor_bias_px;
+    let page_start = caret_page.saturating_mul(step_lines);
+    let line_in_page = caret_visual_index % step_lines;
+    let line_top =
+        processed_visual_line_top_units(state, &lines, page_start, line_in_page) * line_height;
+    Some((page_text_top + line_top, caret_visual_index))
+}
+
+fn processed_cursor_visual_index(
+    state: &EditorState,
+    lines: &[ProcessedVisualLine],
+) -> Option<usize> {
+    processed_cursor_visual_from_lines(state, lines)
+        .map(|(index, _, _)| index)
+        .or_else(|| first_visual_index_for_source_line(lines, state.cursor.position.line))
+}
+
 pub(crate) fn build_processed_view(
     all_lines: &[ProcessedVisualLine],
     anchor_index: usize,
