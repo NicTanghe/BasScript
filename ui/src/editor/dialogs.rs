@@ -252,6 +252,16 @@ mod modifier_key_tests {
     }
 
     #[test]
+    fn processed_pagination_defaults_to_a4_and_loads_continuous_mode() {
+        let defaults = PersistentUiState::default();
+        let continuous =
+            persistent_ui_state_from_ron("(\nprocessed_paginated: false,\n)", &defaults);
+
+        assert!(defaults.processed_paginated);
+        assert!(!continuous.processed_paginated);
+    }
+
+    #[test]
     fn link_toggle_compression_scales_with_speed_but_stays_bounded() {
         assert_eq!(link_toggle_compression_for_impact(0.0), 8.0);
         assert!(link_toggle_compression_for_impact(400.0) > 8.0);

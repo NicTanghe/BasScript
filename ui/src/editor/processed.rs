@@ -13,8 +13,12 @@ pub(crate) fn processed_page_geometry_with_header_offset(
     let paper_width = A4_WIDTH_POINTS * zoom;
     // Keep paper height on the same line grid used by processed pagination.
     let page_step_lines = processed_page_step_lines();
-    let paper_height =
-        ((page_step_lines as f32 * (LINE_HEIGHT * zoom)) - (PAGE_GAP * zoom)).max(1.0);
+    let page_gap = if state.processed_paginated {
+        PAGE_GAP * zoom
+    } else {
+        0.0
+    };
+    let paper_height = ((page_step_lines as f32 * (LINE_HEIGHT * zoom)) - page_gap).max(1.0);
     let paper_left = if panel_size.x > paper_width {
         ((panel_size.x - paper_width) * 0.5).max(0.0).round()
     } else {
@@ -24,8 +28,16 @@ pub(crate) fn processed_page_geometry_with_header_offset(
 
     let margin_left = state.page_margin_left * zoom;
     let margin_right = state.page_margin_right * zoom;
-    let margin_top = state.page_margin_top * zoom;
-    let margin_bottom = state.page_margin_bottom * zoom;
+    let margin_top = if state.processed_paginated {
+        state.page_margin_top * zoom
+    } else {
+        0.0
+    };
+    let margin_bottom = if state.processed_paginated {
+        state.page_margin_bottom * zoom
+    } else {
+        0.0
+    };
     let text_left = paper_left + margin_left;
     let text_top = paper_top + margin_top;
     let text_width = (paper_width - margin_left - margin_right).max(1.0);
@@ -36,6 +48,7 @@ pub(crate) fn processed_page_geometry_with_header_offset(
         paper_top,
         paper_width,
         paper_height,
+        page_gap,
         text_left,
         text_top,
         text_width,
@@ -80,8 +93,15 @@ pub(crate) fn processed_page_layout_for_format(
     let wrap_columns = ((base_text_width / base_char_width) + 1e-4)
         .floor()
         .max(1.0) as usize;
-    let lines_per_page = ((base_text_height / LINE_HEIGHT) + 1e-4).floor().max(1.0) as usize;
-    let spacer_lines = page_step_lines.saturating_sub(lines_per_page);
+    let (lines_per_page, spacer_lines) = if state.processed_paginated {
+        let lines_per_page = ((base_text_height / LINE_HEIGHT) + 1e-4).floor().max(1.0) as usize;
+        (
+            lines_per_page,
+            page_step_lines.saturating_sub(lines_per_page),
+        )
+    } else {
+        (page_step_lines, 0)
+    };
 
     ProcessedPageLayout {
         geometry,
@@ -119,8 +139,8 @@ pub(crate) fn processed_anchor_scroll_offset_px_from_lines(
     height_units * line_height.max(1.0)
 }
 
-pub(crate) fn processed_page_step_px(geometry: &ProcessedPageGeometry, zoom: f32) -> f32 {
-    (geometry.paper_height + PAGE_GAP * zoom.max(f32::EPSILON)).max(1.0)
+pub(crate) fn processed_page_step_px(geometry: &ProcessedPageGeometry, _zoom: f32) -> f32 {
+    (geometry.paper_height + geometry.page_gap).max(1.0)
 }
 
 pub(crate) fn processed_page_count_for_lines(
@@ -250,7 +270,7 @@ pub(crate) fn processed_segment_ranges(state: &EditorState) -> Vec<(usize, usize
 
     for (line_index, parsed_line) in state.parsed.iter().enumerate() {
         if is_fountain_page_break_marker(&parsed_line.raw) {
-            ranges.push((segment_start, line_index, true));
+            ranges.push((segment_start, line_index, state.processed_paginated));
             segment_start = line_index.saturating_add(1);
         }
     }
@@ -1344,6 +1364,15 @@ pub(crate) fn push_paged_visual_lines(
     spacer_lines: usize,
 ) {
     const HEIGHT_EPSILON: f32 = 0.001;
+
+    if !state.processed_paginated {
+        for visual_line in lines {
+            page_fill.height_units += processed_visual_line_height_units(state, &visual_line);
+            page_fill.entries = page_fill.entries.saturating_add(1);
+            paged_lines.push(visual_line);
+        }
+        return;
+    }
 
     let page_height_units = lines_per_page.max(1) as f32;
     let mut index = 0usize;

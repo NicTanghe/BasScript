@@ -8,7 +8,7 @@ pub(crate) const FONT_MARKDOWN_PATH: &str = "fonts/SegoeUIVF.ttf";
 pub(crate) const FONT_MARKDOWN_BOLD_PATH: &str = "fonts/SegoeUIVF.ttf";
 pub(crate) const FONT_MARKDOWN_ITALIC_PATH: &str = "fonts/segoe-ui-4/Segoe UI Italic.ttf";
 pub(crate) const FONT_MARKDOWN_BOLD_ITALIC_PATH: &str = "fonts/segoe-ui-4/Segoe UI Bold Italic.ttf";
-pub(crate) const DEFAULT_LOAD_PATH: &str = "docs/humanDOC.md";
+pub(crate) const DEFAULT_LOAD_PATH: &str = "docs/welcome.md";
 pub(crate) const DEFAULT_SAVE_PATH: &str = "scripts/session.fountain";
 pub(crate) const EDITOR_SETTINGS_PATH: &str = "settings/editor_settings.ron";
 pub(crate) const KEYBINDS_SETTINGS_PATH: &str = "settings/keybinds.ron";
@@ -527,6 +527,7 @@ pub(crate) enum ToolbarAction {
 pub(crate) enum SettingsAction {
     DialogueDoubleSpaceNewline,
     NonDialogueDoubleSpaceNewline,
+    ToggleProcessedPagination,
     ToggleVimMode,
     ShowSystemTitlebar,
     ToggleProcessedGlass,
@@ -1249,6 +1250,11 @@ pub(crate) enum WorkspacePrompt {
     Create {
         input: String,
     },
+    ChooseMarkdownTemplate {
+        destination: PathBuf,
+        templates: Vec<WorkspaceMarkdownTemplate>,
+        selected: usize,
+    },
     Rename {
         target: WorkspaceSelectedRow,
         input: String,
@@ -1256,6 +1262,12 @@ pub(crate) enum WorkspacePrompt {
     Delete {
         target: WorkspaceSelectedRow,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct WorkspaceMarkdownTemplate {
+    pub(crate) name: String,
+    pub(crate) path: PathBuf,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1332,6 +1344,7 @@ pub(crate) struct EditorState {
     pub(crate) workspace_sidebar_visible: bool,
     pub(crate) top_menu_collapsed: bool,
     pub(crate) processed_link_color_mode: ProcessedLinkColorMode,
+    pub(crate) processed_paginated: bool,
     pub(crate) processed_glass: bool,
     pub(crate) explorer_glass: bool,
     pub(crate) settings_glass: bool,
@@ -1553,6 +1566,7 @@ pub(crate) struct PersistentUiState {
     pub(crate) workspace_sidebar_visible: bool,
     pub(crate) top_menu_collapsed: bool,
     pub(crate) processed_link_color_mode: ProcessedLinkColorMode,
+    pub(crate) processed_paginated: bool,
 }
 
 impl Default for PersistentUiState {
@@ -1561,6 +1575,7 @@ impl Default for PersistentUiState {
             workspace_sidebar_visible: true,
             top_menu_collapsed: false,
             processed_link_color_mode: ProcessedLinkColorMode::Colored,
+            processed_paginated: true,
         }
     }
 }
@@ -1982,6 +1997,7 @@ impl FromWorld for EditorState {
             workspace_sidebar_visible: ui_state.workspace_sidebar_visible,
             top_menu_collapsed: ui_state.top_menu_collapsed,
             processed_link_color_mode: ui_state.processed_link_color_mode,
+            processed_paginated: ui_state.processed_paginated,
             processed_glass: theme_settings.processed_glass,
             explorer_glass: theme_settings.explorer_glass,
             settings_glass: theme_settings.settings_glass,
@@ -2512,6 +2528,7 @@ pub(crate) struct ProcessedPageGeometry {
     pub(crate) paper_top: f32,
     pub(crate) paper_width: f32,
     pub(crate) paper_height: f32,
+    pub(crate) page_gap: f32,
     pub(crate) text_left: f32,
     pub(crate) text_top: f32,
     pub(crate) text_width: f32,

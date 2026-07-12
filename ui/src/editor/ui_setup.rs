@@ -236,6 +236,10 @@ pub(crate) fn setup(
                                 font.clone(),
                                 SettingsAction::NonDialogueDoubleSpaceNewline,
                             ),
+                            settings_toggle_button(
+                                font.clone(),
+                                SettingsAction::ToggleProcessedPagination,
+                            ),
                             settings_toggle_button(font.clone(), SettingsAction::ToggleVimMode),
                             settings_toggle_button(
                                 font.clone(),
@@ -2229,6 +2233,7 @@ pub(crate) fn handle_settings_buttons(
         }
 
         let mut settings_changed = false;
+        let mut ui_state_changed = false;
         let mut theme_changed = false;
         match action {
             SettingsAction::DialogueDoubleSpaceNewline => {
@@ -2252,6 +2257,21 @@ pub(crate) fn handle_settings_buttons(
                         "ON"
                     } else {
                         "OFF"
+                    }
+                );
+            }
+            SettingsAction::ToggleProcessedPagination => {
+                state.processed_paginated = !state.processed_paginated;
+                state.processed_top_visual = state.processed_top_line;
+                state.processed_zoom_anchor_bias_px = 0.0;
+                state.mark_processed_cache_dirty_from(0);
+                ui_state_changed = true;
+                state.status_message = format!(
+                    "Rendered sheet: {}",
+                    if state.processed_paginated {
+                        "A4 pages"
+                    } else {
+                        "continuous"
                     }
                 );
             }
@@ -2391,6 +2411,10 @@ pub(crate) fn handle_settings_buttons(
             if let Err(error) = save_persistent_settings(&persistent) {
                 state.status_message = format!("Settings save failed: {error}");
             }
+        }
+
+        if ui_state_changed && let Err(error) = save_editor_ui_state(&state) {
+            state.status_message = format!("UI state save failed: {error}");
         }
 
         if theme_changed {
@@ -3184,6 +3208,14 @@ pub(crate) fn sync_settings_ui(
                     "ON"
                 } else {
                     "OFF"
+                }
+            ),
+            SettingsAction::ToggleProcessedPagination => format!(
+                "Rendered sheet: {}",
+                if state.processed_paginated {
+                    "A4 pages"
+                } else {
+                    "continuous"
                 }
             ),
             SettingsAction::ToggleVimMode => {

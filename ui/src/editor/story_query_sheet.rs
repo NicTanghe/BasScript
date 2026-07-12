@@ -209,6 +209,7 @@ pub(crate) struct StoryQueryLayoutSignature {
     pub(crate) wrap_columns: usize,
     pub(crate) lines_per_page: usize,
     pub(crate) spacer_lines: usize,
+    pub(crate) paginated: bool,
     pub(crate) dialogue_double_space_newline: bool,
     pub(crate) non_dialogue_double_space_newline: bool,
 }
@@ -939,6 +940,7 @@ pub(crate) fn sync_story_query_sheet_ui(
         wrap_columns: result_layout.wrap_columns,
         lines_per_page: result_layout.lines_per_page,
         spacer_lines: result_layout.spacer_lines,
+        paginated: state.processed_paginated,
         dialogue_double_space_newline: state.story_query_sheet.dialogue_double_space_newline,
         non_dialogue_double_space_newline: state
             .story_query_sheet
@@ -1763,6 +1765,7 @@ pub(crate) fn apply_story_query_vertical_scroll(
         wrap_columns: layout.wrap_columns,
         lines_per_page: layout.lines_per_page,
         spacer_lines: layout.spacer_lines,
+        paginated: state.processed_paginated,
         dialogue_double_space_newline: state.story_query_sheet.dialogue_double_space_newline,
         non_dialogue_double_space_newline: state
             .story_query_sheet
@@ -1868,6 +1871,7 @@ impl StoryQuerySheet {
             signature.wrap_columns,
             signature.lines_per_page,
             signature.spacer_lines,
+            signature.paginated,
         );
         self.visual_layout_signature = Some(signature);
         self.result_scroll_visual = self
@@ -2848,6 +2852,7 @@ pub(crate) fn story_query_visual_lines(
     wrap_columns: usize,
     lines_per_page: usize,
     spacer_lines: usize,
+    paginated: bool,
 ) -> Vec<ProcessedVisualLine> {
     let document_format = story_query_document_format(output_format);
     let document = Document::from_text(text);
@@ -2931,7 +2936,8 @@ pub(crate) fn story_query_visual_lines(
         .line_height_scale;
 
         for visual_line in wrapped {
-            if page_fill.entries > 0
+            if paginated
+                && page_fill.entries > 0
                 && page_fill.height_units + line_height_units > lines_per_page as f32 + 0.001
             {
                 finish_processed_page(
@@ -2947,7 +2953,7 @@ pub(crate) fn story_query_visual_lines(
             page_fill.entries = page_fill.entries.saturating_add(1);
             page_fill.height_units += line_height_units;
 
-            if page_fill.height_units >= lines_per_page as f32 - 0.001 {
+            if paginated && page_fill.height_units >= lines_per_page as f32 - 0.001 {
                 finish_processed_page(
                     &mut visual_lines,
                     source_line,

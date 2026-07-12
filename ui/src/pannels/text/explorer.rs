@@ -183,6 +183,7 @@ impl EditorState {
             Ok(entries) => {
                 self.workspace_folders = entries.folders;
                 self.workspace_files = entries.files;
+                let landing_path = preferred_workspace_landing_file(&self.workspace_files);
                 self.workspace_expanded_folders = default_expanded_workspace_folders(
                     &self.workspace_folders,
                     &self.workspace_files,
@@ -196,6 +197,9 @@ impl EditorState {
                     self.workspace_files.len(),
                     story_index_status
                 );
+                if let Some(path) = landing_path {
+                    self.navigate_to_path(path);
+                }
             }
             Err(error) => {
                 self.workspace_folders.clear();
@@ -496,6 +500,55 @@ pub(crate) fn collect_workspace_entries(root: &Path) -> io::Result<WorkspaceEntr
     folders.sort_by(|left, right| left.folder_key.cmp(&right.folder_key));
     files.sort_by(|left, right| left.relative_display.cmp(&right.relative_display));
     Ok(WorkspaceEntries { folders, files })
+}
+
+pub(crate) fn preferred_workspace_landing_file(files: &[WorkspaceFileEntry]) -> Option<PathBuf> {
+    files
+        .iter()
+        .find(|file| {
+            !file.relative_display.contains('/')
+                && file
+                    .path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.to_ascii_lowercase().contains("landing"))
+        })
+        .map(|file| file.path.clone())
+}
+
+#[cfg(test)]
+mod preferred_workspace_landing_file_tests {
+    use super::*;
+
+    fn entry(path: &str, relative_display: &str) -> WorkspaceFileEntry {
+        WorkspaceFileEntry {
+            path: PathBuf::from(path),
+            relative_display: relative_display.to_owned(),
+        }
+    }
+
+    #[test]
+    fn finds_a_case_insensitive_landing_name_at_the_workspace_root() {
+        let files = vec![
+            entry("/project/notes.md", "notes.md"),
+            entry("/project/My LANDING Page.md", "My LANDING Page.md"),
+        ];
+
+        assert_eq!(
+            preferred_workspace_landing_file(&files),
+            Some(PathBuf::from("/project/My LANDING Page.md"))
+        );
+    }
+
+    #[test]
+    fn ignores_landing_files_inside_subfolders() {
+        let files = vec![entry(
+            "/project/reference/landing.md",
+            "reference/landing.md",
+        )];
+
+        assert_eq!(preferred_workspace_landing_file(&files), None);
+    }
 }
 
 pub(crate) fn workspace_folder_entry(root: &Path, path: &Path) -> Option<WorkspaceFolderEntry> {

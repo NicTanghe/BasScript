@@ -132,6 +132,33 @@ pub(crate) fn workspace_prompt_text(
             format!("{input}_"),
             "Enter creates. A path ending in / or \\ creates a folder. Esc cancels.".to_string(),
         ),
+        WorkspacePrompt::ChooseMarkdownTemplate {
+            destination,
+            templates,
+            selected,
+        } => {
+            let options = std::iter::once("Blank".to_string())
+                .chain(templates.iter().map(|template| template.name.clone()))
+                .enumerate()
+                .map(|(index, name)| {
+                    if index == *selected {
+                        format!("> {name}")
+                    } else {
+                        format!("  {name}")
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let file_name = destination
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Markdown file");
+            (
+                format!("Choose a template for {file_name}"),
+                options,
+                "Up/Down or j/k selects. Enter creates. Esc cancels.".to_string(),
+            )
+        }
         WorkspacePrompt::Rename { target, input } => {
             let path = workspace_target_path(state, target);
             let target_kind = if path.as_ref().is_some_and(|path| path.is_dir()) {
@@ -196,7 +223,9 @@ pub(crate) fn handle_workspace_prompt_input(
                 WorkspacePrompt::Create { input } | WorkspacePrompt::Rename { input, .. } => {
                     Some(input)
                 }
-                WorkspacePrompt::Delete { .. } => None,
+                WorkspacePrompt::ChooseMarkdownTemplate { .. } | WorkspacePrompt::Delete { .. } => {
+                    None
+                }
             };
             if let Some(input) = input {
                 if let Some(text) = read_system_clipboard_text() {
@@ -221,6 +250,7 @@ pub(crate) fn handle_workspace_prompt_input(
 
     enum PromptAction {
         ConfirmCreate(String),
+        ConfirmMarkdownTemplate(PathBuf, Option<WorkspaceMarkdownTemplate>),
         ConfirmRename(WorkspaceSelectedRow, String),
         ConfirmDelete(WorkspaceSelectedRow),
         Cancel,
@@ -258,6 +288,34 @@ pub(crate) fn handle_workspace_prompt_input(
                     }
                 }
             }
+        }
+        WorkspacePrompt::ChooseMarkdownTemplate {
+            destination,
+            templates,
+            selected,
+        } => {
+            let option_count = templates.len() + 1;
+            if keys.just_pressed(KeyCode::ArrowUp) || keys.just_pressed(KeyCode::KeyK) {
+                *selected = if *selected == 0 {
+                    option_count - 1
+                } else {
+                    *selected - 1
+                };
+            }
+            if keys.just_pressed(KeyCode::ArrowDown) || keys.just_pressed(KeyCode::KeyJ) {
+                *selected = (*selected + 1) % option_count;
+            }
+            if keys.just_pressed(KeyCode::Enter) {
+                let template = selected
+                    .checked_sub(1)
+                    .and_then(|index| templates.get(index))
+                    .cloned();
+                action = Some(PromptAction::ConfirmMarkdownTemplate(
+                    destination.clone(),
+                    template,
+                ));
+            }
+            for _ in keyboard_inputs.read() {}
         }
         WorkspacePrompt::Rename { target, input } => {
             for key_input in keyboard_inputs.read() {
@@ -303,6 +361,10 @@ pub(crate) fn handle_workspace_prompt_input(
         Some(PromptAction::ConfirmCreate(input)) => {
             state.workspace_prompt = None;
             confirm_workspace_create(&mut state, &input);
+        }
+        Some(PromptAction::ConfirmMarkdownTemplate(destination, template)) => {
+            state.workspace_prompt = None;
+            confirm_workspace_markdown_template(&mut state, destination, template.as_ref());
         }
         Some(PromptAction::ConfirmRename(target, input)) => {
             state.workspace_prompt = None;
@@ -614,6 +676,64 @@ pub(crate) fn confirm_workspace_create(state: &mut EditorState, input: &str) {
         return;
     }
 
+    if is_markdown_file_path(&path) {
+        let templates = collect_workspace_markdown_templates().unwrap_or_else(|error| {
+            warn!("[explorer] Failed reading Markdown templates: {error}");
+            Vec::new()
+        });
+        state.workspace_prompt = Some(WorkspacePrompt::ChooseMarkdownTemplate {
+            destination: path,
+            templates,
+            selected: 0,
+        });
+        state.status_message = "Choose a template for the new Markdown file.".to_string();
+        return;
+    }
+
+    create_workspace_file(state, path, "", None);
+}
+
+pub(crate) fn confirm_workspace_markdown_template(
+    state: &mut EditorState,
+    destination: PathBuf,
+    template: Option<&WorkspaceMarkdownTemplate>,
+) {
+    let (contents, template_name) = match template {
+        Some(template) => match fs::read_to_string(&template.path) {
+            Ok(contents) => (
+                personalize_workspace_markdown_template(
+                    &contents,
+                    &destination,
+                    template,
+                    &chrono::Local::now().format("%Y-%m-%d").to_string(),
+                ),
+                Some(template.name.as_str()),
+            ),
+            Err(error) => {
+                state.status_message = format!(
+                    "Could not read Markdown template {}: {error}",
+                    template.path.display()
+                );
+                return;
+            }
+        },
+        None => (String::new(), None),
+    };
+
+    create_workspace_file(state, destination, &contents, template_name);
+}
+
+pub(crate) fn create_workspace_file(
+    state: &mut EditorState,
+    path: PathBuf,
+    contents: &str,
+    template_name: Option<&str>,
+) {
+    let Some(root) = state.workspace_root.clone() else {
+        state.status_message = "Open a workspace before creating files.".to_string();
+        return;
+    };
+
     if let Some(parent) = path.parent() {
         if let Err(error) = fs::create_dir_all(parent) {
             state.status_message = format!(
@@ -629,7 +749,16 @@ pub(crate) fn confirm_workspace_create(state: &mut EditorState, input: &str) {
         .create_new(true)
         .open(&path)
     {
-        Ok(_) => {
+        Ok(mut file) => {
+            use std::io::Write;
+
+            if let Err(error) = file.write_all(contents.as_bytes()) {
+                drop(file);
+                let _ = fs::remove_file(&path);
+                state.status_message =
+                    format!("Create file failed for {}: {error}", path.display());
+                return;
+            }
             let _ = state.load_from_path(path.clone());
             state.refresh_workspace();
             if let Some(parent_key) = path
@@ -641,7 +770,10 @@ pub(crate) fn confirm_workspace_create(state: &mut EditorState, input: &str) {
             state.workspace_selected_row = Some(WorkspaceSelectedRow::File(path.clone()));
             state.workspace_focused = true;
             state.workspace_ui_dirty = true;
-            state.status_message = format!("Created file {}", path.display());
+            state.status_message = template_name.map_or_else(
+                || format!("Created file {}", path.display()),
+                |name| format!("Created file {} from {name} template", path.display()),
+            );
         }
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
             state.status_message = format!("File already exists: {}", path.display());
@@ -649,6 +781,226 @@ pub(crate) fn confirm_workspace_create(state: &mut EditorState, input: &str) {
         Err(error) => {
             state.status_message = format!("Create file failed for {}: {error}", path.display());
         }
+    }
+}
+
+pub(crate) fn is_markdown_file_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("md") || extension.eq_ignore_ascii_case("markdown")
+        })
+}
+
+pub(crate) fn collect_workspace_markdown_templates() -> io::Result<Vec<WorkspaceMarkdownTemplate>> {
+    let mut templates = Vec::new();
+    for entry in fs::read_dir("assets/templates")? {
+        let entry = entry?;
+        let path = entry.path();
+        if !entry.file_type()?.is_file() || !is_markdown_file_path(&path) {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        templates.push(WorkspaceMarkdownTemplate {
+            name: workspace_template_display_name(stem),
+            path,
+        });
+    }
+    templates.sort_by_key(|template| template.name.to_ascii_lowercase());
+    Ok(templates)
+}
+
+pub(crate) fn workspace_template_display_name(stem: &str) -> String {
+    let words = stem
+        .strip_suffix("-template")
+        .or_else(|| stem.strip_suffix("_template"))
+        .unwrap_or(stem)
+        .split(['-', '_'])
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first
+                    .to_uppercase()
+                    .chain(chars.as_str().to_lowercase().chars())
+                    .collect::<String>()
+            })
+        })
+        .collect::<Vec<_>>();
+    if words.is_empty() {
+        "Unnamed".to_string()
+    } else {
+        words.join(" ")
+    }
+}
+
+pub(crate) fn personalize_workspace_markdown_template(
+    contents: &str,
+    destination: &Path,
+    template: &WorkspaceMarkdownTemplate,
+    date: &str,
+) -> String {
+    let filename_stem = destination
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("untitled");
+    let display_name = workspace_filename_display_name(filename_stem);
+    let target = workspace_filename_target(filename_stem);
+    let entity_type = workspace_filename_target(&template.name);
+    let id = format!(
+        "entity_{}_{}_001",
+        entity_type.replace('-', "_"),
+        target.replace('-', "_")
+    );
+    let aliases = format!("[{}]", yaml_scalar(filename_stem));
+
+    let mut in_front_matter = false;
+    let mut front_matter_finished = false;
+    let mut personalized = String::with_capacity(contents.len() + display_name.len());
+    for raw_line in contents.split_inclusive('\n') {
+        let (line, newline) = raw_line
+            .strip_suffix('\n')
+            .map_or((raw_line, ""), |line| (line, "\n"));
+        let trimmed = line.trim().trim_start_matches('\u{feff}');
+        if !front_matter_finished && trimmed == "---" {
+            if in_front_matter {
+                front_matter_finished = true;
+            } else {
+                in_front_matter = true;
+            }
+            personalized.push_str(line);
+            personalized.push_str(newline);
+            continue;
+        }
+
+        if in_front_matter && !front_matter_finished {
+            let indent_length = line.len() - line.trim_start().len();
+            let indent = &line[..indent_length];
+            let replacement = line.trim_start().split_once(':').and_then(|(key, _)| {
+                let value = match key.trim() {
+                    "id" => id.clone(),
+                    "target" => target.clone(),
+                    "type" => entity_type.clone(),
+                    "name" => yaml_scalar(&display_name),
+                    "aliases" => aliases.clone(),
+                    _ => return None,
+                };
+                Some(format!("{indent}{}: {value}", key.trim()))
+            });
+            personalized.push_str(replacement.as_deref().unwrap_or(line));
+        } else {
+            personalized.push_str(line);
+        }
+        personalized.push_str(newline);
+    }
+
+    personalized
+        .replace("# Character name unlinked", &format!("# {display_name}"))
+        .replace("# Title", &format!("# {display_name}"))
+        .replace("*type*", &format!("*{entity_type}*"))
+        .replace("DATE", date)
+}
+
+pub(crate) fn workspace_filename_display_name(stem: &str) -> String {
+    let words = stem
+        .split(|ch: char| ch == '_' || ch == '-' || ch.is_whitespace())
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first
+                    .to_uppercase()
+                    .chain(chars.as_str().to_lowercase().chars())
+                    .collect::<String>()
+            })
+        })
+        .collect::<Vec<_>>();
+    if words.is_empty() {
+        "Untitled".to_string()
+    } else {
+        words.join(" ")
+    }
+}
+
+pub(crate) fn workspace_filename_target(stem: &str) -> String {
+    let mut target = String::new();
+    let mut previous_was_separator = true;
+    for ch in stem.chars() {
+        if ch.is_ascii_alphanumeric() {
+            target.push(ch.to_ascii_lowercase());
+            previous_was_separator = false;
+        } else if !previous_was_separator {
+            target.push('-');
+            previous_was_separator = true;
+        }
+    }
+    while target.ends_with('-') {
+        target.pop();
+    }
+    if target.is_empty() {
+        "untitled".to_string()
+    } else {
+        target
+    }
+}
+
+#[cfg(test)]
+mod workspace_markdown_template_tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_markdown_extensions_case_insensitively() {
+        assert!(is_markdown_file_path(Path::new("character.MD")));
+        assert!(is_markdown_file_path(Path::new("plot.markdown")));
+        assert!(!is_markdown_file_path(Path::new("script.fountain")));
+    }
+
+    #[test]
+    fn turns_template_file_stems_into_labels() {
+        assert_eq!(
+            workspace_template_display_name("character-template"),
+            "Character"
+        );
+        assert_eq!(
+            workspace_template_display_name("minor_plot_template"),
+            "Minor Plot"
+        );
+    }
+
+    #[test]
+    fn guesses_document_fields_from_the_filename() {
+        assert_eq!(
+            workspace_filename_display_name("queen_quesha"),
+            "Queen Quesha"
+        );
+        assert_eq!(workspace_filename_target("queen_quesha"), "queen-quesha");
+    }
+
+    #[test]
+    fn personalizes_front_matter_heading_type_and_date() {
+        let template = WorkspaceMarkdownTemplate {
+            name: "Character".to_string(),
+            path: PathBuf::from("assets/templates/character-template.md"),
+        };
+        let source = "\u{feff}---\nid: entity_character_template_001\ntarget: character-template\ntype: template\nname: 'Character Template'\naliases: [Character_template]\nstatus: draft\n---\n# Character name unlinked\n*type*\nCreated DATE\n";
+
+        let personalized = personalize_workspace_markdown_template(
+            source,
+            Path::new("/project/queen_quesha.md"),
+            &template,
+            "2026-07-12",
+        );
+
+        assert!(personalized.contains("id: entity_character_queen_quesha_001"));
+        assert!(personalized.contains("target: queen-quesha"));
+        assert!(personalized.contains("type: character"));
+        assert!(personalized.contains("name: 'Queen Quesha'"));
+        assert!(personalized.contains("aliases: [queen_quesha]"));
+        assert!(personalized.contains("# Queen Quesha"));
+        assert!(personalized.contains("*character*"));
+        assert!(personalized.contains("Created 2026-07-12"));
     }
 }
 
