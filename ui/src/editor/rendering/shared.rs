@@ -252,6 +252,16 @@ pub(crate) fn render_editor(
         .saturating_sub(first_visible_page)
         .min(PROCESSED_PAPER_CAPACITY)
         .max(1);
+    let continuous_top_padding =
+        (processed_geometry.text_top - processed_geometry.paper_top).max(0.0);
+    let continuous_bottom_padding = if first_visible_page
+        .saturating_add(continuous_visible_page_count)
+        >= processed_total_pages
+    {
+        state.page_margin_bottom * state.zoom.max(f32::EPSILON)
+    } else {
+        0.0
+    };
     let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
     for (_, mut transform) in canvas_query.iter_mut() {
         transform.scale = Vec2::ONE;
@@ -283,9 +293,18 @@ pub(crate) fn render_editor(
         node.top = px(page_top);
         node.width = px(processed_geometry.paper_width);
         node.height = if !state.processed_paginated && panel_paper.slot == 0 {
-            px(processed_page_step_pixels * continuous_visible_page_count as f32)
+            px(
+                processed_page_step_pixels * continuous_visible_page_count as f32
+                    + continuous_top_padding
+                    + continuous_bottom_padding,
+            )
         } else {
             px(processed_geometry.paper_height)
+        };
+        node.overflow = if state.processed_paginated {
+            Overflow::clip()
+        } else {
+            Overflow::visible()
         };
         transform.scale = Vec2::ONE;
         transform.translation = Val2::ZERO;

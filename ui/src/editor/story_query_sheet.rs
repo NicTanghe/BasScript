@@ -986,6 +986,13 @@ pub(crate) fn sync_story_query_sheet_ui(
         .saturating_sub(first_visible_page)
         .min(PROCESSED_PAPER_CAPACITY)
         .max(1);
+    let continuous_top_padding = (result_geometry.text_top - result_geometry.paper_top).max(0.0);
+    let continuous_bottom_padding =
+        if first_visible_page.saturating_add(continuous_visible_page_count) >= total_pages {
+            state.page_margin_bottom * state.zoom.max(f32::EPSILON)
+        } else {
+            0.0
+        };
     let page_label = story_query_page_label(
         &state.story_query_sheet,
         first_visible_page,
@@ -1013,9 +1020,18 @@ pub(crate) fn sync_story_query_sheet_ui(
         node.top = px(page_top);
         node.width = px(result_geometry.paper_width);
         node.height = if !state.processed_paginated && paper.slot == 0 {
-            px(processed_page_step_pixels * continuous_visible_page_count as f32)
+            px(
+                processed_page_step_pixels * continuous_visible_page_count as f32
+                    + continuous_top_padding
+                    + continuous_bottom_padding,
+            )
         } else {
             px(result_geometry.paper_height)
+        };
+        node.overflow = if state.processed_paginated {
+            Overflow::clip()
+        } else {
+            Overflow::visible()
         };
         transform.scale = Vec2::ONE;
         transform.translation = Val2::ZERO;

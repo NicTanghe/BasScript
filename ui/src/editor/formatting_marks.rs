@@ -19,6 +19,11 @@ pub(crate) enum FormattingMarkKey {
 #[derive(Component)]
 pub(crate) struct FormattingMarkGlyph;
 
+#[derive(Component)]
+pub(crate) struct FormattingPageBreakMark {
+    pub(crate) source_line: usize,
+}
+
 #[derive(Clone)]
 struct FormattingMarkSpec {
     parent: Entity,
@@ -28,10 +33,36 @@ struct FormattingMarkSpec {
     width: Option<f32>,
     font_size: f32,
     line_height: f32,
+    page_break_source_line: Option<usize>,
 }
 
 const PAGE_BREAK_LABEL: &str = "……………… Page Break ………………";
 const FORMATTING_MARK_COLOR: Color = Color::srgba(0.24, 0.35, 0.55, 0.58);
+
+pub(crate) fn handle_formatting_page_break_click(
+    interaction_query: Query<(&Interaction, &FormattingPageBreakMark), Changed<Interaction>>,
+    mut state: ResMut<EditorState>,
+) {
+    for (interaction, page_break) in interaction_query.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        let target_line = page_break
+            .source_line
+            .saturating_add(1)
+            .min(state.document.line_count().saturating_sub(1));
+        state.focused_panel = PanelKind::Processed;
+        state.set_cursor(
+            Position {
+                line: target_line,
+                column: 0,
+            },
+            true,
+        );
+        state.status_message = "Page break selected; Backspace removes it".to_string();
+    }
+}
 
 pub(crate) fn sync_formatting_mark_overlays(
     mut commands: Commands,
@@ -101,6 +132,13 @@ pub(crate) fn sync_formatting_mark_overlays(
                 text_font.font_size = FontSize::Px(spec.font_size);
                 *line_height = LineHeight::Px(spec.line_height);
                 apply_formatting_mark_node(&mut node, &spec);
+                if let Some(source_line) = spec.page_break_source_line {
+                    commands.entity(entity).insert((
+                        Interaction::None,
+                        Pickable::default(),
+                        FormattingPageBreakMark { source_line },
+                    ));
+                }
                 continue;
             }
         }
@@ -119,10 +157,18 @@ pub(crate) fn sync_formatting_mark_overlays(
                 formatting_mark_node(&spec),
                 ZIndex(8),
                 GlobalZIndex(8),
-                Pickable::IGNORE,
                 FormattingMarkGlyph,
             ))
             .id();
+        if let Some(source_line) = spec.page_break_source_line {
+            commands.entity(entity).insert((
+                Interaction::None,
+                Pickable::default(),
+                FormattingPageBreakMark { source_line },
+            ));
+        } else {
+            commands.entity(entity).insert(Pickable::IGNORE);
+        }
         commands.entity(spec.parent).add_child(entity);
         entities.insert(key, entity);
     }
@@ -187,6 +233,7 @@ fn collect_plain_formatting_marks(
                     width: None,
                     font_size,
                     line_height,
+                    page_break_source_line: None,
                 },
             );
         }
@@ -206,6 +253,7 @@ fn collect_plain_formatting_marks(
                 width: None,
                 font_size,
                 line_height,
+                page_break_source_line: None,
             },
         );
     }
@@ -321,6 +369,7 @@ fn collect_processed_formatting_marks(
                     width: None,
                     font_size: mark_font_size,
                     line_height: mark_line_height,
+                    page_break_source_line: None,
                 },
             );
         }
@@ -346,6 +395,7 @@ fn collect_processed_formatting_marks(
                     width: None,
                     font_size: mark_font_size,
                     line_height: mark_line_height,
+                    page_break_source_line: None,
                 },
             );
         }
@@ -367,27 +417,33 @@ fn collect_processed_formatting_marks(
                 .skip(page_end)
                 .find(|line| !line.is_spacer)
                 .map(|line| line.source_line);
-            let has_explicit_break = page_lines.iter().any(|line| {
-                line.is_spacer
-                    && state
-                        .document
-                        .line(line.source_line)
-                        .is_some_and(is_fountain_page_break_marker)
-            }) || page_last_source.is_some_and(|last_source| {
-                state
-                    .document
-                    .lines()
-                    .iter()
-                    .enumerate()
-                    .any(|(source, raw)| {
-                        source > last_source
-                            && next_source.is_none_or(|next| source < next)
-                            && is_fountain_page_break_marker(raw)
+            let explicit_break_source = page_lines
+                .iter()
+                .find(|line| {
+                    line.is_spacer
+                        && state
+                            .document
+                            .line(line.source_line)
+                            .is_some_and(is_fountain_page_break_marker)
+                })
+                .map(|line| line.source_line)
+                .or_else(|| {
+                    page_last_source.and_then(|last_source| {
+                        state
+                            .document
+                            .lines()
+                            .iter()
+                            .enumerate()
+                            .find(|(source, raw)| {
+                                *source > last_source
+                                    && next_source.is_none_or(|next| *source < next)
+                                    && is_fountain_page_break_marker(raw)
+                            })
+                            .map(|(source, _)| source)
                     })
-            });
-            let Some(parent) = has_explicit_break
-                .then(|| paper_entities.get(&slot).copied())
-                .flatten()
+                });
+            let (Some(source_line), Some(parent)) =
+                (explicit_break_source, paper_entities.get(&slot).copied())
             else {
                 continue;
             };
@@ -402,6 +458,7 @@ fn collect_processed_formatting_marks(
                     width: Some(page_layout.geometry.paper_width),
                     font_size: font_size * 0.85,
                     line_height: base_line_height,
+                    page_break_source_line: Some(source_line),
                 },
             );
         }

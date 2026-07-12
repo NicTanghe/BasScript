@@ -175,7 +175,16 @@ pub(crate) fn handle_text_input(
                     continue;
                 }
                 let cursor_pos = state.cursor.position;
-                if cursor_pos.line > 0 || cursor_pos.column > 0 {
+                if let Some(next) = remove_page_break_before_cursor(&mut state.document, cursor_pos)
+                {
+                    state.set_cursor(next, true);
+                    let dirty_candidate = next.line;
+                    dirty_from_line = Some(
+                        dirty_from_line.map_or(dirty_candidate, |line| line.min(dirty_candidate)),
+                    );
+                    changed = true;
+                    state.status_message = "Removed page break".to_string();
+                } else if cursor_pos.line > 0 || cursor_pos.column > 0 {
                     let next = state.document.backspace(cursor_pos);
                     state.set_cursor(next, true);
                     let dirty_candidate = cursor_pos.line.saturating_sub(1).min(next.line);
@@ -250,6 +259,31 @@ pub(crate) fn insert_enter_break(
     }
 }
 
+pub(crate) fn remove_page_break_before_cursor(
+    document: &mut Document,
+    position: Position,
+) -> Option<Position> {
+    if position.column != 0 || position.line == 0 {
+        return None;
+    }
+
+    let page_break_line = position.line - 1;
+    if !document
+        .line(page_break_line)
+        .is_some_and(is_fountain_page_break_marker)
+    {
+        return None;
+    }
+
+    Some(document.delete_range(
+        Position {
+            line: page_break_line,
+            column: 0,
+        },
+        position,
+    ))
+}
+
 #[cfg(test)]
 mod enter_break_tests {
     use super::*;
@@ -272,6 +306,16 @@ mod enter_break_tests {
 
         assert_eq!(document.to_text(), "before  \nafter");
         assert_eq!(cursor, Position { line: 1, column: 0 });
+    }
+
+    #[test]
+    fn backspace_after_page_break_removes_the_whole_marker() {
+        let mut document = Document::from_text("before\n===\nafter");
+        let cursor =
+            remove_page_break_before_cursor(&mut document, Position { line: 2, column: 0 });
+
+        assert_eq!(document.to_text(), "before\nafter");
+        assert_eq!(cursor, Some(Position { line: 1, column: 0 }));
     }
 }
 

@@ -9,6 +9,20 @@ pub(crate) fn processed_page_geometry_with_header_offset(
     state: &EditorState,
     header_offset: f32,
 ) -> ProcessedPageGeometry {
+    processed_page_geometry_with_header_offset_and_top_padding(
+        panel_size,
+        state,
+        header_offset,
+        state.processed_top_visual < processed_page_step_lines(),
+    )
+}
+
+fn processed_page_geometry_with_header_offset_and_top_padding(
+    panel_size: Vec2,
+    state: &EditorState,
+    header_offset: f32,
+    show_continuous_top_padding: bool,
+) -> ProcessedPageGeometry {
     let zoom = state.zoom.max(f32::EPSILON);
     let paper_width = A4_WIDTH_POINTS * zoom;
     // Keep paper height on the same line grid used by processed pagination.
@@ -28,7 +42,7 @@ pub(crate) fn processed_page_geometry_with_header_offset(
 
     let margin_left = state.page_margin_left * zoom;
     let margin_right = state.page_margin_right * zoom;
-    let margin_top = if state.processed_paginated {
+    let margin_top = if state.processed_paginated || show_continuous_top_padding {
         state.page_margin_top * zoom
     } else {
         0.0
@@ -68,11 +82,12 @@ pub(crate) fn processed_page_geometry(
 }
 
 pub(crate) fn processed_page_layout(panel_size: Vec2, state: &EditorState) -> ProcessedPageLayout {
-    processed_page_layout_for_format(
+    processed_page_layout_for_format_and_top_padding(
         panel_size,
         state,
         state.document_format,
         markdown_metadata_header_offset(state),
+        state.processed_top_visual < processed_page_step_lines(),
     )
 }
 
@@ -82,7 +97,28 @@ pub(crate) fn processed_page_layout_for_format(
     document_format: DocumentFormat,
     header_offset: f32,
 ) -> ProcessedPageLayout {
-    let geometry = processed_page_geometry_with_header_offset(panel_size, state, header_offset);
+    processed_page_layout_for_format_and_top_padding(
+        panel_size,
+        state,
+        document_format,
+        header_offset,
+        state.story_query_sheet.result_scroll_visual < processed_page_step_lines(),
+    )
+}
+
+fn processed_page_layout_for_format_and_top_padding(
+    panel_size: Vec2,
+    state: &EditorState,
+    document_format: DocumentFormat,
+    header_offset: f32,
+    show_continuous_top_padding: bool,
+) -> ProcessedPageLayout {
+    let geometry = processed_page_geometry_with_header_offset_and_top_padding(
+        panel_size,
+        state,
+        header_offset,
+        show_continuous_top_padding,
+    );
     let page_step_lines = processed_page_step_lines();
     let base_paper_height = ((page_step_lines as f32 * LINE_HEIGHT) - PAGE_GAP).max(1.0);
     let base_text_width =

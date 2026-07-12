@@ -246,6 +246,13 @@ impl Plugin for UiPlugin {
             );
         app.add_systems(
             Update,
+            handle_formatting_page_break_click
+                .after(handle_mouse_selection)
+                .before(render_editor)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
             sync_formatting_mark_overlays
                 .after(render_editor)
                 .run_if(in_state(UiScreenState::Editor)),
