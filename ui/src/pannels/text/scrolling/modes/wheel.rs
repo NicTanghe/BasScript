@@ -5,6 +5,10 @@ pub(crate) fn handle_mouse_scroll(
     workspace_list_query: Query<&RelativeCursorPosition, With<WorkspaceFileList>>,
     mut state: ResMut<EditorState>,
 ) {
+    if state.workspace_prompt.is_some() {
+        for _ in mouse_wheels.read() {}
+        return;
+    }
     if workspace_file_list_hovered(&workspace_list_query) {
         for _ in mouse_wheels.read() {}
         return;

@@ -135,7 +135,6 @@ impl Plugin for UiPlugin {
                 Startup,
                 (
                     setup,
-                    setup_workspace_link_prompt_folder_options.after(setup),
                     setup_selection_rects.after(setup),
                     setup_processed_papers.after(setup),
                     setup_story_query_sheet_result_spans.after(setup),
@@ -247,7 +246,19 @@ impl Plugin for UiPlugin {
             );
         app.add_systems(
             Update,
-            handle_workspace_link_prompt_buttons.run_if(in_state(UiScreenState::Editor)),
+            sync_workspace_link_prompt_folder_options
+                .before(sync_workspace_prompt_ui)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
+            handle_workspace_link_prompt_buttons
+                .after(sync_workspace_link_prompt_folder_options)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
+            handle_workspace_link_folder_mouse_scroll.run_if(in_state(UiScreenState::Editor)),
         );
         app.add_systems(
             Update,
@@ -1298,7 +1309,19 @@ pub(crate) enum WorkspacePrompt {
         filename: String,
         folders: Vec<PathBuf>,
         selected_folder: usize,
+        expanded_folders: BTreeSet<PathBuf>,
         templates: Vec<WorkspaceMarkdownTemplate>,
+        template_hint: Option<String>,
+    },
+    ChooseLinkedMarkdownTemplate {
+        source_path: PathBuf,
+        range_start: Position,
+        range_end: Position,
+        label: String,
+        filename: String,
+        folder: PathBuf,
+        templates: Vec<WorkspaceMarkdownTemplate>,
+        selected: usize,
     },
     Rename {
         target: WorkspaceSelectedRow,

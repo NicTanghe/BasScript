@@ -1,6 +1,6 @@
 (
 	workspace_sidebar_visible: true,
-	top_menu_collapsed: false,
+	top_menu_collapsed: true,
 	processed_link_color_mode: "colored",
 	processed_paginated: true,
 	formatting_marks_visible: false,

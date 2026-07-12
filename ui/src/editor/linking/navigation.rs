@@ -74,11 +74,11 @@ impl EditorState {
         if range_start.line != range_end.line || range_start.line >= self.document.line_count() {
             return false;
         }
-        let replacement = if link_autocomplete_target_only_is_safe(label, target) {
-            format!("[{label}]")
-        } else {
-            format!("[{label}]({target})")
-        };
+        let character_cue = matches!(
+            self.parsed.get(range_start.line).map(|line| &line.kind),
+            Some(LineKind::Character)
+        );
+        let replacement = document_link_replacement(label, target, character_cue);
         let snapshot = self.history_snapshot();
         let insert_at = self.document.delete_range(range_start, range_end);
         let next = self.document.insert_text(insert_at, &replacement);
@@ -101,7 +101,7 @@ impl EditorState {
                 "No matching link target. Open a workspace to create one.".to_string();
             return;
         };
-        let mut folders = BTreeSet::from([root.clone()]);
+        let mut folders = BTreeSet::new();
         for folder in &self.workspace_folders {
             folders.insert(root.join(&folder.folder_key));
         }
@@ -114,10 +114,28 @@ impl EditorState {
                     .position(|folder| workspace_paths_match(folder, parent))
             })
             .unwrap_or(0);
+        let mut expanded_folders = BTreeSet::new();
+        if let Some(selected_path) = folders.get(selected_folder) {
+            let mut ancestor = selected_path.parent();
+            while let Some(path) = ancestor {
+                if workspace_paths_match(path, &root) {
+                    break;
+                }
+                if path.starts_with(&root) {
+                    expanded_folders.insert(path.to_path_buf());
+                }
+                ancestor = path.parent();
+            }
+        }
         let templates = collect_workspace_markdown_templates().unwrap_or_else(|error| {
             warn!("[links] Failed reading Markdown templates: {error}");
             Vec::new()
         });
+        let template_hint = matches!(
+            self.parsed.get(range_start.line).map(|line| &line.kind),
+            Some(LineKind::Character)
+        )
+        .then(|| "character".to_string());
         let filename = format!("{}.md", workspace_filename_target(&label));
         self.close_link_autocomplete();
         self.workspace_prompt = Some(WorkspacePrompt::CreateLinkedMarkdown {
@@ -128,7 +146,9 @@ impl EditorState {
             filename,
             folders,
             selected_folder,
+            expanded_folders,
             templates,
+            template_hint,
         });
         self.status_message = "No unique target found; choose where to create it.".to_string();
     }
@@ -476,6 +496,20 @@ pub(crate) fn linkable_word_range(line: &str, column: usize) -> Option<(usize, u
     Some((start, end))
 }
 
+pub(crate) fn document_link_replacement(label: &str, target: &str, character_cue: bool) -> String {
+    let uppercase_character = character_cue
+        && label.chars().any(|ch| ch.is_alphabetic())
+        && label
+            .chars()
+            .filter(|ch| ch.is_alphabetic())
+            .all(char::is_uppercase);
+    if !uppercase_character && link_autocomplete_target_only_is_safe(label, target) {
+        format!("[{label}]")
+    } else {
+        format!("[{label}]({target})")
+    }
+}
+
 pub(crate) fn push_document_navigation_history(
     history: &mut Vec<DocumentNavigationEntry>,
     entry: DocumentNavigationEntry,
@@ -590,6 +624,18 @@ mod link_navigation_tests {
         );
         assert_eq!(linkable_word_range("Eoghan walks", 6), Some((0, 6)));
         assert_eq!(linkable_word_range("   ", 1), None);
+    }
+
+    #[test]
+    fn uppercase_character_cues_keep_display_case_and_use_canonical_target() {
+        assert_eq!(
+            document_link_replacement("EOGHAN", "eoghan", true),
+            "[EOGHAN](eoghan)"
+        );
+        assert_eq!(
+            document_link_replacement("Eoghan", "eoghan", false),
+            "[Eoghan]"
+        );
     }
 }
 #[allow(unused_imports)]

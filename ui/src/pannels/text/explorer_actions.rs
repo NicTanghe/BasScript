@@ -13,6 +13,9 @@ pub(crate) struct WorkspacePromptHint;
 #[derive(Component)]
 pub(crate) struct WorkspaceLinkFolderOptionsRoot;
 
+#[derive(Component)]
+pub(crate) struct WorkspaceLinkFolderOptionsContent;
+
 #[derive(Component, Clone, Copy)]
 pub(crate) struct WorkspaceLinkFolderOption {
     pub(crate) slot: usize,
@@ -22,8 +25,6 @@ pub(crate) struct WorkspaceLinkFolderOption {
 pub(crate) struct WorkspaceLinkFolderOptionLabel {
     pub(crate) slot: usize,
 }
-
-pub(crate) const WORKSPACE_LINK_FOLDER_OPTION_CAPACITY: usize = 10;
 
 pub(crate) fn workspace_prompt_bundle(font: Handle<Font>) -> impl Bundle {
     (
@@ -103,53 +104,103 @@ pub(crate) fn workspace_prompt_bundle(font: Handle<Font>) -> impl Bundle {
                 (
                     Node {
                         width: percent(100.0),
+                        height: px(240.0),
                         display: Display::None,
-                        flex_direction: FlexDirection::Column,
-                        row_gap: px(4.0),
+                        overflow: Overflow::scroll_y(),
                         ..default()
                     },
+                    ScrollPosition::default(),
+                    RelativeCursorPosition::default(),
                     WorkspaceLinkFolderOptionsRoot,
+                    children![(
+                        Node {
+                            width: percent(100.0),
+                            flex_shrink: 0.0,
+                            flex_direction: FlexDirection::Column,
+                            row_gap: px(4.0),
+                            ..default()
+                        },
+                        WorkspaceLinkFolderOptionsContent,
+                    )],
                 ),
             ],
         )],
     )
 }
 
-pub(crate) fn setup_workspace_link_prompt_folder_options(
+pub(crate) fn sync_workspace_link_prompt_folder_options(
     mut commands: Commands,
-    root_query: Query<Entity, With<WorkspaceLinkFolderOptionsRoot>>,
+    root_query: Query<Entity, With<WorkspaceLinkFolderOptionsContent>>,
+    option_query: Query<(Entity, &WorkspaceLinkFolderOption)>,
+    mut scroll_query: Query<&mut ScrollPosition, With<WorkspaceLinkFolderOptionsRoot>>,
     fonts: Res<EditorFonts>,
+    state: Res<EditorState>,
 ) {
     let Ok(root) = root_query.single() else {
         return;
     };
+    let desired_count = match state.workspace_prompt.as_ref() {
+        Some(WorkspacePrompt::CreateLinkedMarkdown {
+            folders,
+            expanded_folders,
+            ..
+        }) => state.workspace_root.as_deref().map_or(0, |root| {
+            visible_workspace_link_folder_indices(root, folders, expanded_folders).len()
+        }),
+        _ => 0,
+    };
+    let existing_slots = option_query
+        .iter()
+        .map(|(_, option)| option.slot)
+        .collect::<BTreeSet<_>>();
+    if desired_count > 0
+        && existing_slots.is_empty()
+        && let Ok(mut scroll) = scroll_query.single_mut()
+    {
+        scroll.x = 0.0;
+        scroll.y = 0.0;
+    }
+    for (entity, option) in option_query.iter() {
+        if option.slot >= desired_count {
+            commands.entity(entity).despawn();
+        }
+    }
     commands.entity(root).with_children(|parent| {
-        for slot in 0..WORKSPACE_LINK_FOLDER_OPTION_CAPACITY {
-            parent.spawn((
-                Button,
-                WorkspaceLinkFolderOption { slot },
-                Node {
-                    width: percent(100.0),
-                    min_height: px(25.0),
-                    align_items: AlignItems::Center,
-                    padding: UiRect::axes(px(8.0), px(4.0)),
-                    border_radius: BorderRadius::all(px(4.0)),
-                    ..default()
-                },
-                BackgroundColor(BUTTON_NORMAL),
-                children![(
-                    Text::new(""),
-                    TextFont {
-                        font: fonts.regular.clone().into(),
-                        font_size: FontSize::Px(11.0),
-                        ..default()
-                    },
-                    TextColor(COLOR_TEXT_MAIN),
-                    WorkspaceLinkFolderOptionLabel { slot },
-                )],
-            ));
+        for slot in 0..desired_count {
+            if !existing_slots.contains(&slot) {
+                parent.spawn(workspace_link_folder_option_bundle(
+                    fonts.regular.clone(),
+                    slot,
+                ));
+            }
         }
     });
+}
+
+pub(crate) fn workspace_link_folder_option_bundle(font: Handle<Font>, slot: usize) -> impl Bundle {
+    (
+        Button,
+        WorkspaceLinkFolderOption { slot },
+        Node {
+            width: percent(100.0),
+            min_height: px(25.0),
+            align_items: AlignItems::Center,
+            padding: UiRect::axes(px(8.0), px(4.0)),
+            border_radius: BorderRadius::all(px(4.0)),
+            ..default()
+        },
+        BackgroundColor(BUTTON_NORMAL),
+        children![(
+            Text::new(""),
+            TextFont {
+                font: font.into(),
+                font_size: FontSize::Px(11.0),
+                ..default()
+            },
+            TextColor(COLOR_TEXT_MAIN),
+            WorkspaceLinkFolderOptionLabel { slot },
+        )],
+    )
 }
 
 pub(crate) fn sync_workspace_prompt_ui(
@@ -218,8 +269,15 @@ pub(crate) fn sync_workspace_prompt_ui(
         WorkspacePrompt::CreateLinkedMarkdown {
             folders,
             selected_folder,
+            expanded_folders,
             ..
-        } => Some((folders.as_slice(), *selected_folder)),
+        } => state.workspace_root.as_deref().map(|root| {
+            (
+                folders.as_slice(),
+                *selected_folder,
+                visible_workspace_link_folder_indices(root, folders, expanded_folders),
+            )
+        }),
         _ => None,
     };
     if let Ok(mut folder_root) = folder_root_query.single_mut() {
@@ -229,18 +287,21 @@ pub(crate) fn sync_workspace_prompt_ui(
             Display::None
         };
     }
-    let visible_start = link_prompt
-        .map(|(folders, selected)| link_folder_visible_start(folders.len(), selected))
-        .unwrap_or(0);
     for (option, interaction, mut node, mut color) in folder_option_query.iter_mut() {
-        let index = visible_start.saturating_add(option.slot);
-        node.display = if link_prompt.is_some_and(|(folders, _)| index < folders.len()) {
+        let index = option.slot;
+        node.display = if link_prompt
+            .as_ref()
+            .is_some_and(|(_, _, visible)| index < visible.len())
+        {
             Display::Flex
         } else {
             Display::None
         };
-        color.0 = if link_prompt.is_some_and(|(_, selected)| selected == index)
-            || *interaction == Interaction::Pressed
+        color.0 = if link_prompt.as_ref().is_some_and(|(_, selected, visible)| {
+            visible
+                .get(index)
+                .is_some_and(|folder_index| *folder_index == *selected)
+        }) || *interaction == Interaction::Pressed
         {
             BUTTON_PRESSED
         } else if *interaction == Interaction::Hovered {
@@ -250,13 +311,31 @@ pub(crate) fn sync_workspace_prompt_ui(
         };
     }
     for (label, mut text) in folder_label_query.iter_mut() {
-        let index = visible_start.saturating_add(label.slot);
+        let index = label.slot;
         **text = link_prompt
-            .and_then(|(folders, selected)| {
-                folders.get(index).map(|folder| {
-                    let marker = if index == selected { ">" } else { " " };
-                    format!("{marker} {}", workspace_link_folder_label(&state, folder))
-                })
+            .as_ref()
+            .and_then(|(folders, selected, visible)| {
+                let folder_index = *visible.get(index)?;
+                let folder = folders.get(folder_index)?;
+                let root = state.workspace_root.as_deref()?;
+                let selected_marker = if folder_index == *selected { ">" } else { " " };
+                let depth = folder.strip_prefix(root).ok()?.components().count().max(1);
+                let branch = if workspace_link_folder_has_children(folder, folders) {
+                    if state.workspace_prompt.as_ref().is_some_and(|prompt| {
+                        matches!(prompt, WorkspacePrompt::CreateLinkedMarkdown { expanded_folders, .. } if expanded_folders.contains(folder))
+                    }) {
+                        "▾"
+                    } else {
+                        "▸"
+                    }
+                } else {
+                    "·"
+                };
+                let name = folder.file_name().and_then(|name| name.to_str()).unwrap_or("folder");
+                Some(format!(
+                    "{selected_marker}{} {branch} {name}",
+                    "  ".repeat(depth.saturating_sub(1))
+                ))
             })
             .unwrap_or_default();
     }
@@ -299,17 +378,50 @@ pub(crate) fn workspace_prompt_text(
                 "Up/Down or j/k selects. Enter creates. Esc cancels.".to_string(),
             )
         }
+        WorkspacePrompt::ChooseLinkedMarkdownTemplate {
+            label,
+            filename,
+            folder,
+            templates,
+            selected,
+            ..
+        } => {
+            let options = std::iter::once("Blank".to_string())
+                .chain(templates.iter().map(|template| template.name.clone()))
+                .enumerate()
+                .map(|(index, name)| {
+                    if index == *selected {
+                        format!("> {name}")
+                    } else {
+                        format!("  {name}")
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            (
+                format!("Confirm template for “{label}”"),
+                options,
+                format!(
+                    "Creating {} in {}. Up/Down or j/k selects; Enter confirms; Esc cancels.",
+                    filename,
+                    folder.display()
+                ),
+            )
+        }
         WorkspacePrompt::CreateLinkedMarkdown {
             label,
             filename,
             folders,
             selected_folder,
             templates,
+            template_hint,
             ..
         } => {
             let folder = folders.get(*selected_folder);
             let template = folder
-                .and_then(|folder| infer_workspace_link_template(folder, templates))
+                .and_then(|folder| {
+                    infer_workspace_link_template(folder, templates, template_hint.as_deref())
+                })
                 .map_or("Blank", |template| template.name.as_str());
             (
                 format!("Create Markdown target for “{label}”"),
@@ -361,32 +473,43 @@ pub(crate) fn workspace_prompt_text(
     }
 }
 
-pub(crate) fn link_folder_visible_start(folder_count: usize, selected: usize) -> usize {
-    if folder_count <= WORKSPACE_LINK_FOLDER_OPTION_CAPACITY {
-        return 0;
-    }
-    selected
-        .saturating_sub(WORKSPACE_LINK_FOLDER_OPTION_CAPACITY / 2)
-        .min(folder_count - WORKSPACE_LINK_FOLDER_OPTION_CAPACITY)
+pub(crate) fn visible_workspace_link_folder_indices(
+    root: &Path,
+    folders: &[PathBuf],
+    expanded: &BTreeSet<PathBuf>,
+) -> Vec<usize> {
+    folders
+        .iter()
+        .enumerate()
+        .filter(|(_, folder)| {
+            let mut parent = folder.parent();
+            while let Some(path) = parent {
+                if workspace_paths_match(path, root) {
+                    return true;
+                }
+                if !path.starts_with(root) || !expanded.contains(path) {
+                    return false;
+                }
+                parent = path.parent();
+            }
+            false
+        })
+        .map(|(index, _)| index)
+        .collect()
 }
 
-pub(crate) fn workspace_link_folder_label(state: &EditorState, folder: &Path) -> String {
-    let Some(root) = state.workspace_root.as_deref() else {
-        return folder.display().to_string();
-    };
-    if workspace_paths_match(root, folder) {
-        return "/ (workspace root)".to_string();
-    }
-    folder
-        .strip_prefix(root)
-        .unwrap_or(folder)
-        .to_string_lossy()
-        .replace('\\', "/")
+pub(crate) fn workspace_link_folder_has_children(folder: &Path, folders: &[PathBuf]) -> bool {
+    folders.iter().any(|candidate| {
+        candidate
+            .parent()
+            .is_some_and(|parent| workspace_paths_match(parent, folder))
+    })
 }
 
 pub(crate) fn infer_workspace_link_template<'a>(
     folder: &Path,
     templates: &'a [WorkspaceMarkdownTemplate],
+    contextual_hint: Option<&str>,
 ) -> Option<&'a WorkspaceMarkdownTemplate> {
     let folder_hint = folder.to_string_lossy().to_ascii_lowercase();
     let preferred = if ["character", "characters", "cast", "people"]
@@ -408,6 +531,7 @@ pub(crate) fn infer_workspace_link_template<'a>(
     };
 
     preferred
+        .or(contextual_hint)
         .and_then(|preferred| {
             templates
                 .iter()
@@ -423,23 +547,76 @@ pub(crate) fn handle_workspace_link_prompt_buttons(
     >,
     mut state: ResMut<EditorState>,
 ) {
+    let Some(root) = state.workspace_root.clone() else {
+        return;
+    };
     let Some(WorkspacePrompt::CreateLinkedMarkdown {
         folders,
         selected_folder,
+        expanded_folders,
         ..
     }) = state.workspace_prompt.as_mut()
     else {
         return;
     };
-    let visible_start = link_folder_visible_start(folders.len(), *selected_folder);
+    let visible = visible_workspace_link_folder_indices(&root, folders, expanded_folders);
     for (interaction, option) in interaction_query.iter() {
         if *interaction != Interaction::Pressed {
             continue;
         }
-        let index = visible_start.saturating_add(option.slot);
-        if index < folders.len() {
+        let Some(index) = visible.get(option.slot).copied() else {
+            continue;
+        };
+        if let Some(folder) = folders.get(index) {
             *selected_folder = index;
+            if workspace_link_folder_has_children(folder, folders)
+                && !expanded_folders.insert(folder.clone())
+            {
+                expanded_folders.remove(folder);
+            }
         }
+    }
+}
+
+pub(crate) fn handle_workspace_link_folder_mouse_scroll(
+    mut mouse_wheels: MessageReader<MouseWheel>,
+    mut viewport_query: Query<
+        (&RelativeCursorPosition, &ComputedNode, &mut ScrollPosition),
+        With<WorkspaceLinkFolderOptionsRoot>,
+    >,
+    option_query: Query<
+        (&Node, &ComputedNode),
+        (
+            With<WorkspaceLinkFolderOption>,
+            Without<WorkspaceLinkFolderOptionsRoot>,
+        ),
+    >,
+) {
+    let Ok((cursor, viewport, mut scroll)) = viewport_query.single_mut() else {
+        return;
+    };
+    if !cursor.cursor_over() {
+        return;
+    }
+    let inverse_scale = viewport.inverse_scale_factor();
+    let visible_row_heights = option_query
+        .iter()
+        .filter(|(node, _)| node.display != Display::None)
+        .map(|(_, computed)| computed.size().y * computed.inverse_scale_factor())
+        .collect::<Vec<_>>();
+    let content_height = visible_row_heights.iter().sum::<f32>()
+        + visible_row_heights.len().saturating_sub(1) as f32 * 4.0;
+    let max_scroll = (content_height - viewport.size().y * inverse_scale).max(0.0);
+    let mut delta = 0.0;
+    for wheel in mouse_wheels.read() {
+        delta += match wheel.unit {
+            MouseScrollUnit::Line => -wheel.y * 30.0,
+            MouseScrollUnit::Pixel => -wheel.y,
+        };
+    }
+    if delta.abs() > f32::EPSILON {
+        scroll.y = (scroll.y + delta).clamp(0.0, max_scroll);
+        scroll.x = 0.0;
     }
 }
 
@@ -466,9 +643,9 @@ pub(crate) fn handle_workspace_prompt_input(
                     Some(input)
                 }
                 WorkspacePrompt::CreateLinkedMarkdown { filename, .. } => Some(filename),
-                WorkspacePrompt::ChooseMarkdownTemplate { .. } | WorkspacePrompt::Delete { .. } => {
-                    None
-                }
+                WorkspacePrompt::ChooseMarkdownTemplate { .. }
+                | WorkspacePrompt::ChooseLinkedMarkdownTemplate { .. }
+                | WorkspacePrompt::Delete { .. } => None,
             };
             if let Some(input) = input {
                 if let Some(text) = read_system_clipboard_text() {
@@ -487,6 +664,7 @@ pub(crate) fn handle_workspace_prompt_input(
     }
 
     let keybinds = state.keybinds.clone();
+    let workspace_root_for_prompt = state.workspace_root.clone();
     let Some(prompt) = state.workspace_prompt.as_mut() else {
         return;
     };
@@ -494,6 +672,16 @@ pub(crate) fn handle_workspace_prompt_input(
     enum PromptAction {
         ConfirmCreate(String),
         ConfirmMarkdownTemplate(PathBuf, Option<WorkspaceMarkdownTemplate>),
+        ChooseLinkedMarkdownTemplate {
+            source_path: PathBuf,
+            range_start: Position,
+            range_end: Position,
+            label: String,
+            filename: String,
+            folder: PathBuf,
+            templates: Vec<WorkspaceMarkdownTemplate>,
+            selected: usize,
+        },
         ConfirmLinkedMarkdown {
             source_path: PathBuf,
             range_start: Position,
@@ -578,13 +766,27 @@ pub(crate) fn handle_workspace_prompt_input(
             folders,
             selected_folder,
             templates,
+            template_hint,
+            expanded_folders,
         } => {
-            if !folders.is_empty() {
+            if let Some(root) = workspace_root_for_prompt.as_deref() {
+                let visible =
+                    visible_workspace_link_folder_indices(root, folders, expanded_folders);
+                let current_visible = visible
+                    .iter()
+                    .position(|index| *index == *selected_folder)
+                    .unwrap_or(0);
                 if keys.just_pressed(KeyCode::ArrowUp) {
-                    *selected_folder = selected_folder.saturating_sub(1);
+                    *selected_folder = visible
+                        .get(current_visible.saturating_sub(1))
+                        .copied()
+                        .unwrap_or(*selected_folder);
                 }
                 if keys.just_pressed(KeyCode::ArrowDown) {
-                    *selected_folder = (*selected_folder + 1).min(folders.len() - 1);
+                    *selected_folder = visible
+                        .get((current_visible + 1).min(visible.len().saturating_sub(1)))
+                        .copied()
+                        .unwrap_or(*selected_folder);
                 }
             }
             for key_input in keyboard_inputs.read() {
@@ -598,14 +800,26 @@ pub(crate) fn handle_workspace_prompt_input(
                         let Some(folder) = folders.get(*selected_folder).cloned() else {
                             continue;
                         };
-                        action = Some(PromptAction::ConfirmLinkedMarkdown {
+                        let selected = infer_workspace_link_template(
+                            &folder,
+                            templates,
+                            template_hint.as_deref(),
+                        )
+                        .and_then(|inferred| {
+                            templates
+                                .iter()
+                                .position(|template| template.path == inferred.path)
+                        })
+                        .map_or(0, |index| index + 1);
+                        action = Some(PromptAction::ChooseLinkedMarkdownTemplate {
                             source_path: source_path.clone(),
                             range_start: *range_start,
                             range_end: *range_end,
                             label: label.clone(),
                             filename: filename.clone(),
-                            template: infer_workspace_link_template(&folder, templates).cloned(),
                             folder,
+                            templates: templates.clone(),
+                            selected,
                         });
                         break;
                     }
@@ -623,6 +837,44 @@ pub(crate) fn handle_workspace_prompt_input(
                     }
                 }
             }
+        }
+        WorkspacePrompt::ChooseLinkedMarkdownTemplate {
+            source_path,
+            range_start,
+            range_end,
+            label,
+            filename,
+            folder,
+            templates,
+            selected,
+        } => {
+            let option_count = templates.len() + 1;
+            if keys.just_pressed(KeyCode::ArrowUp) || keys.just_pressed(KeyCode::KeyK) {
+                *selected = if *selected == 0 {
+                    option_count - 1
+                } else {
+                    *selected - 1
+                };
+            }
+            if keys.just_pressed(KeyCode::ArrowDown) || keys.just_pressed(KeyCode::KeyJ) {
+                *selected = (*selected + 1) % option_count;
+            }
+            if keys.just_pressed(KeyCode::Enter) {
+                let template = selected
+                    .checked_sub(1)
+                    .and_then(|index| templates.get(index))
+                    .cloned();
+                action = Some(PromptAction::ConfirmLinkedMarkdown {
+                    source_path: source_path.clone(),
+                    range_start: *range_start,
+                    range_end: *range_end,
+                    label: label.clone(),
+                    filename: filename.clone(),
+                    folder: folder.clone(),
+                    template,
+                });
+            }
+            for _ in keyboard_inputs.read() {}
         }
         WorkspacePrompt::Rename { target, input } => {
             for key_input in keyboard_inputs.read() {
@@ -672,6 +924,28 @@ pub(crate) fn handle_workspace_prompt_input(
         Some(PromptAction::ConfirmMarkdownTemplate(destination, template)) => {
             state.workspace_prompt = None;
             confirm_workspace_markdown_template(&mut state, destination, template.as_ref());
+        }
+        Some(PromptAction::ChooseLinkedMarkdownTemplate {
+            source_path,
+            range_start,
+            range_end,
+            label,
+            filename,
+            folder,
+            templates,
+            selected,
+        }) => {
+            state.workspace_prompt = Some(WorkspacePrompt::ChooseLinkedMarkdownTemplate {
+                source_path,
+                range_start,
+                range_end,
+                label,
+                filename,
+                folder,
+                templates,
+                selected,
+            });
+            state.status_message = "Confirm or select a Markdown template.".to_string();
         }
         Some(PromptAction::ConfirmLinkedMarkdown {
             source_path,
@@ -1432,24 +1706,49 @@ mod workspace_markdown_template_tests {
         ];
 
         assert_eq!(
-            infer_workspace_link_template(Path::new("/story/Characters/Main"), &templates)
+            infer_workspace_link_template(Path::new("/story/Characters/Main"), &templates, None)
                 .map(|template| template.name.as_str()),
             Some("Character")
         );
         assert_eq!(
-            infer_workspace_link_template(Path::new("/story/plot/arcs"), &templates)
+            infer_workspace_link_template(Path::new("/story/plot/arcs"), &templates, None)
                 .map(|template| template.name.as_str()),
             Some("Plot")
         );
-        assert!(infer_workspace_link_template(Path::new("/story/reference"), &templates).is_none());
+        assert!(
+            infer_workspace_link_template(Path::new("/story/reference"), &templates, None)
+                .is_none()
+        );
+        assert_eq!(
+            infer_workspace_link_template(
+                Path::new("/story/reference"),
+                &templates,
+                Some("character")
+            )
+            .map(|template| template.name.as_str()),
+            Some("Character")
+        );
     }
 
     #[test]
-    fn link_folder_window_keeps_the_selection_clickable() {
-        assert_eq!(link_folder_visible_start(5, 4), 0);
-        assert_eq!(link_folder_visible_start(30, 0), 0);
-        assert_eq!(link_folder_visible_start(30, 18), 13);
-        assert_eq!(link_folder_visible_start(30, 29), 20);
+    fn linked_file_folder_tree_reveals_children_only_when_expanded() {
+        let root = PathBuf::from("/story");
+        let folders = vec![
+            root.join("Characters"),
+            root.join("Characters/Main"),
+            root.join("Characters/Main/Heroes"),
+            root.join("Plots"),
+        ];
+        assert_eq!(
+            visible_workspace_link_folder_indices(&root, &folders, &BTreeSet::new()),
+            vec![0, 3]
+        );
+
+        let expanded = BTreeSet::from([root.join("Characters"), root.join("Characters/Main")]);
+        assert_eq!(
+            visible_workspace_link_folder_indices(&root, &folders, &expanded),
+            vec![0, 1, 2, 3]
+        );
     }
 
     #[test]
