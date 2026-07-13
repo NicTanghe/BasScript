@@ -78,7 +78,6 @@ pub(crate) const COLOR_DIALOGUE: Color = Color::srgb(0.11, 0.12, 0.13);
 pub(crate) const COLOR_PARENTHETICAL: Color = Color::srgb(0.24, 0.28, 0.32);
 pub(crate) const COLOR_TRANSITION: Color = Color::srgb(0.15, 0.23, 0.31);
 pub(crate) const COLOR_MARKDOWN_HEADING: Color = Color::srgb(0.18, 0.24, 0.40);
-pub(crate) const COLOR_MARKDOWN_LIST: Color = Color::srgb(0.16, 0.22, 0.31);
 pub(crate) const COLOR_MARKDOWN_QUOTE: Color = Color::srgb(0.22, 0.29, 0.26);
 pub(crate) const COLOR_MARKDOWN_CODE: Color = Color::srgb(0.29, 0.17, 0.18);
 pub(crate) const COLOR_MARKDOWN_RULE: Color = Color::srgb(0.35, 0.35, 0.38);

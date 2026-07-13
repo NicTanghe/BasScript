@@ -55,12 +55,7 @@ pub(crate) fn markdown_line_style(
         LineKind::MarkdownHeading => {
             Some(markdown_heading_style(markdown_heading_level.unwrap_or(1)))
         }
-        LineKind::MarkdownListItem => Some(LineRenderStyle::new(
-            FontVariant::Regular,
-            COLOR_MARKDOWN_LIST,
-            1.0,
-            1.0,
-        )),
+        LineKind::MarkdownListItem => Some(default_line_render_style()),
         LineKind::MarkdownQuote => Some(LineRenderStyle::new(
             FontVariant::Italic,
             COLOR_MARKDOWN_QUOTE,
@@ -302,6 +297,19 @@ mod tests {
         assert!(h1.line_height_scale > h1.font_scale);
         assert!(h2.line_height_scale > h2.font_scale);
         assert!(h6.line_height_scale > h6.font_scale);
+    }
+
+    #[test]
+    fn markdown_lists_use_regular_paragraph_typography() {
+        let list = markdown_line_style(&LineKind::MarkdownListItem, None)
+            .expect("list items should have a style");
+        let paragraph = markdown_line_style(&LineKind::MarkdownParagraph, None)
+            .expect("paragraphs should have a style");
+
+        assert_eq!(list.font_variant, paragraph.font_variant);
+        assert_eq!(list.color, paragraph.color);
+        assert_eq!(list.font_scale, paragraph.font_scale);
+        assert_eq!(list.line_height_scale, paragraph.line_height_scale);
     }
 
     #[test]
