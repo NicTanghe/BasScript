@@ -2055,7 +2055,8 @@ mod processed_markdown_inline_tests {
             },
         };
 
-        let font = Font::from_bytes(include_bytes!("../../../fonts/SegoeUIVF.ttf").to_vec());
+        let font =
+            Font::from_bytes(include_bytes!("../../../fonts/segoe-ui-4/Segoe UI.ttf").to_vec());
         let mut font_cx = FontCx::default();
         let family_ids = font_cx.collection.register_fonts(font.data.clone(), None);
         let family_name = font_cx

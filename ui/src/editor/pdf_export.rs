@@ -611,6 +611,24 @@ mod tests {
     }
 
     #[test]
+    fn markdown_upright_fonts_are_static_and_cover_editor_symbols() {
+        for bytes in [SEGOE_REGULAR, SEGOE_BOLD] {
+            let face = ttf_parser::Face::parse(bytes, 0).expect("bundled Segoe font should parse");
+            assert!(
+                !face.is_variable(),
+                "runtime font must be a static instance"
+            );
+
+            for symbol in ['\u{2022}', '\u{20ac}', '\u{2192}', '\u{2500}'] {
+                assert!(
+                    face.glyph_index(symbol).is_some(),
+                    "runtime font should contain {symbol:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn snapshot_is_invariant_under_zoom_scroll_and_continuous_view() {
         let mut world = World::new();
         let mut state = EditorState::from_world(&mut world);

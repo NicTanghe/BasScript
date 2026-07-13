@@ -61,23 +61,26 @@ synchronization before it can replace the custom path.
 selection, Unicode, wrapping, mouse placement, zoom, and navigation before
 any existing geometry is removed.
 
-### Font-source and variable-font consolidation
+### Static Markdown font instances
 
-**Targets:** `ui/src/editor/core.rs` font resources and Markdown text styling.
+**Targets:** `ui/src/editor/core.rs`, `ui/src/editor/pdf_export.rs`, and the
+Markdown text resources under `fonts/segoe-ui-4/`.
 
-**Proposal:** evaluate Bevy 0.19 `FontSource`, `FontWeight`, `FontStyle`, and
-`FontWidth` for `SegoeUIVF.ttf`. The four Markdown font resource entries
-currently refer to the same variable-font file.
+**Decision:** runtime and PDF rendering use checked-in static Regular and Bold
+instances generated from `SegoeUIVF.ttf`. They are pinned at the font's Text
+optical size (`opsz=10.5`) and at weights 400 and 700. The variable source is
+kept only as the reproducible source asset; it is never loaded by the app.
 
-**Why:** one font source plus native variation properties may remove duplicate
-routing and make styles clearer.
+**Why:** this avoids the renderer's variable-font path while retaining the
+source font's full character coverage, including bullets, arrows, currency,
+and box-drawing glyphs. The old upright static files only covered a small
+basic-Latin subset.
 
-**Risks:** verify that the bundled font has the desired italic and weight axes;
-keep Courier Prime's explicit static faces unless output metrics match.
+**Risks:** the variable source has no italic axis, so the genuine static Italic
+and Bold Italic faces remain in use. Courier Prime remains unchanged.
 
-**Acceptance criteria:** screenshot/metric comparison of Markdown and
-screenplay pagination at supported zoom levels before deleting a font handle
-or asset.
+**Acceptance criteria:** the app and PDF exporter use the same static files;
+tests reject variable upright fonts and verify representative editor symbols.
 
 **References:** [Bevy 0.19 richer text release notes](https://bevy.org/news/bevy-0-19/#richer-text),
 [FontSource API](https://docs.rs/bevy/0.19.0/bevy/text/enum.FontSource.html).
@@ -90,7 +93,8 @@ or asset.
 and `FontSource::Monospace` with system font discovery, instead of bundling
 editor-chrome fonts.
 
-**Why:** the font tree is roughly 2.2 MB, mostly `SegoeUIVF.ttf`.
+**Why:** the variable source remains the largest font asset, even though it is
+not loaded at runtime.
 
 **Risks:** font metrics vary by OS and directly affect screenplay columns and
 pagination. This must remain opt-in until a stable cross-platform policy is
