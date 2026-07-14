@@ -83,7 +83,7 @@ impl ParsedLine {
 
     pub fn indent_width(&self) -> usize {
         match self.kind {
-            LineKind::SceneHeading => 2,
+            LineKind::SceneHeading => 0,
             LineKind::Action => 0,
             LineKind::Character => 24,
             LineKind::Dialogue => 12,

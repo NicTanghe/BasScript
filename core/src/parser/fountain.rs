@@ -8,8 +8,9 @@ pub(super) fn parse(document: &Document) -> Vec<crate::model::ParsedLine> {
     let mut parsed = Vec::with_capacity(document.line_count());
     let mut previous_kind = LineKind::Empty;
 
-    for raw in document.lines() {
-        let kind = classify_line(raw, &previous_kind);
+    for (line_index, raw) in document.lines().iter().enumerate() {
+        let next_raw = document.lines().get(line_index.saturating_add(1));
+        let kind = classify_line(raw, &previous_kind, next_raw.map(String::as_str));
         previous_kind = kind.clone();
         parsed.push(parsed_line(raw, kind, None));
     }
@@ -17,7 +18,7 @@ pub(super) fn parse(document: &Document) -> Vec<crate::model::ParsedLine> {
     parsed
 }
 
-fn classify_line(raw: &str, previous_kind: &LineKind) -> LineKind {
+fn classify_line(raw: &str, previous_kind: &LineKind, next_raw: Option<&str>) -> LineKind {
     let trimmed = raw.trim();
 
     if trimmed.is_empty() {
@@ -32,7 +33,7 @@ fn classify_line(raw: &str, previous_kind: &LineKind) -> LineKind {
         return LineKind::Transition;
     }
 
-    if is_character(trimmed) {
+    if next_raw.is_some_and(|next| !next.trim().is_empty()) && is_character(trimmed) {
         return LineKind::Character;
     }
 
@@ -194,6 +195,26 @@ mod tests {
         assert_eq!(parsed[3].kind, LineKind::Action);
         assert_eq!(parsed[3].script_links.len(), 1);
         assert_eq!(parsed[3].script_links[0].target, "elizah");
+    }
+
+    #[test]
+    fn isolated_all_caps_shot_remains_action() {
+        let doc = Document::from_text(
+            "EXT. FRONT PORCH - NIGHT\n\nRINGS THE DOORBELL.\n\nThe door opens.",
+        );
+        let parsed = parse(&doc);
+
+        assert_eq!(parsed[2].kind, LineKind::Action);
+        assert_eq!(parsed[4].kind, LineKind::Action);
+    }
+
+    #[test]
+    fn all_caps_cue_with_dialogue_remains_character() {
+        let doc = Document::from_text("ON WILL AND SANDRA\nWe were part of the same equation.");
+        let parsed = parse(&doc);
+
+        assert_eq!(parsed[0].kind, LineKind::Character);
+        assert_eq!(parsed[1].kind, LineKind::Dialogue);
     }
 
     #[test]
