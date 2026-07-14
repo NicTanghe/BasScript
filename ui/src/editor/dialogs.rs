@@ -216,6 +216,17 @@ mod modifier_key_tests {
     }
 
     #[test]
+    fn space_b_matches_the_default_right_buttons_binding() {
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::Space);
+        keys.press(KeyCode::KeyB);
+
+        let binding = KeybindSettings::default().binding(ShortcutAction::ToggleRightButtons);
+        assert!(shortcut_just_pressed(&keys, binding));
+        assert_eq!(binding_spec(binding), "Space+B");
+    }
+
+    #[test]
     fn processed_link_color_modes_cycle_through_hovered() {
         assert_eq!(
             ProcessedLinkColorMode::Colored.next(),
@@ -450,6 +461,27 @@ pub(crate) fn handle_window_shortcuts(
             state.status_message = format!("Top menu: {visibility} (state save failed: {error})");
         }
         info!("[ui] Top-menu shortcut toggled top menu to {}", visibility);
+        handled = true;
+    }
+
+    let right_buttons_binding = state.keybinds.binding(ShortcutAction::ToggleRightButtons);
+    if shortcut_just_pressed(&keys, right_buttons_binding) {
+        state.right_buttons_visible = !state.right_buttons_visible;
+        let visibility = if state.right_buttons_visible {
+            "VISIBLE"
+        } else {
+            "HIDDEN"
+        };
+        state.status_message = format!("Right-hand buttons: {visibility}");
+        if let Err(error) = save_editor_ui_state(&state) {
+            warn!("[state] Failed saving UI state: {error}");
+            state.status_message =
+                format!("Right-hand buttons: {visibility} (state save failed: {error})");
+        }
+        info!(
+            "[ui] Right-hand buttons shortcut toggled buttons to {}",
+            visibility
+        );
         handled = true;
     }
 

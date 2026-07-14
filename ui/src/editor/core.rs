@@ -615,9 +615,10 @@ pub(crate) enum ShortcutAction {
     SplitView,
     ToggleExplorer,
     ToggleTopMenu,
+    ToggleRightButtons,
 }
 
-pub(crate) const SHORTCUT_ACTIONS: [ShortcutAction; 14] = [
+pub(crate) const SHORTCUT_ACTIONS: [ShortcutAction; 15] = [
     ShortcutAction::NavigateForward,
     ShortcutAction::OpenWorkspace,
     ShortcutAction::Save,
@@ -632,6 +633,7 @@ pub(crate) const SHORTCUT_ACTIONS: [ShortcutAction; 14] = [
     ShortcutAction::SplitView,
     ShortcutAction::ToggleExplorer,
     ShortcutAction::ToggleTopMenu,
+    ShortcutAction::ToggleRightButtons,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -667,6 +669,7 @@ pub(crate) struct KeybindSettings {
     pub(crate) split_view: ShortcutBinding,
     pub(crate) toggle_explorer: ShortcutBinding,
     pub(crate) toggle_top_menu: ShortcutBinding,
+    pub(crate) toggle_right_buttons: ShortcutBinding,
 }
 
 impl Default for KeybindSettings {
@@ -686,6 +689,11 @@ impl Default for KeybindSettings {
             split_view: ShortcutBinding::platform(KeyCode::Digit4, false),
             toggle_explorer: ShortcutBinding::platform(KeyCode::KeyE, false),
             toggle_top_menu: ShortcutBinding::platform(KeyCode::KeyB, false),
+            toggle_right_buttons: ShortcutBinding {
+                key: KeyCode::KeyB,
+                shift: false,
+                modifier: ShortcutModifier::Space,
+            },
         }
     }
 }
@@ -725,6 +733,7 @@ impl KeybindSettings {
             ShortcutAction::SplitView => self.split_view,
             ShortcutAction::ToggleExplorer => self.toggle_explorer,
             ShortcutAction::ToggleTopMenu => self.toggle_top_menu,
+            ShortcutAction::ToggleRightButtons => self.toggle_right_buttons,
         }
     }
 
@@ -746,6 +755,7 @@ impl KeybindSettings {
             ShortcutAction::SplitView => self.split_view = binding,
             ShortcutAction::ToggleExplorer => self.toggle_explorer = binding,
             ShortcutAction::ToggleTopMenu => self.toggle_top_menu = binding,
+            ShortcutAction::ToggleRightButtons => self.toggle_right_buttons = binding,
         }
     }
 }
@@ -766,6 +776,7 @@ pub(crate) fn shortcut_action_label(action: ShortcutAction) -> &'static str {
         ShortcutAction::SplitView => "Dual Panel View Mode",
         ShortcutAction::ToggleExplorer => "Toggle Explorer",
         ShortcutAction::ToggleTopMenu => "Toggle Top Menu",
+        ShortcutAction::ToggleRightButtons => "Toggle Right-Hand Buttons",
     }
 }
 
@@ -785,6 +796,7 @@ pub(crate) fn shortcut_action_description(action: ShortcutAction) -> &'static st
         ShortcutAction::SplitView => "Dual panel view mode",
         ShortcutAction::ToggleExplorer => "Toggle explorer",
         ShortcutAction::ToggleTopMenu => "Toggle top menu",
+        ShortcutAction::ToggleRightButtons => "Toggle rendered-view buttons",
     }
 }
 
@@ -804,6 +816,7 @@ pub(crate) fn shortcut_action_settings_key(action: ShortcutAction) -> &'static s
         ShortcutAction::SplitView => "split_view",
         ShortcutAction::ToggleExplorer => "toggle_explorer",
         ShortcutAction::ToggleTopMenu => "toggle_top_menu",
+        ShortcutAction::ToggleRightButtons => "toggle_right_buttons",
     }
 }
 
@@ -1415,6 +1428,7 @@ pub(crate) struct EditorState {
     pub(crate) story_query_sheet: StoryQuerySheet,
     pub(crate) workspace_sidebar_visible: bool,
     pub(crate) top_menu_collapsed: bool,
+    pub(crate) right_buttons_visible: bool,
     pub(crate) processed_link_color_mode: ProcessedLinkColorMode,
     pub(crate) processed_paginated: bool,
     pub(crate) formatting_marks_visible: bool,
@@ -1667,6 +1681,7 @@ impl Default for PersistentSettings {
 pub(crate) struct PersistentUiState {
     pub(crate) workspace_sidebar_visible: bool,
     pub(crate) top_menu_collapsed: bool,
+    pub(crate) right_buttons_visible: bool,
     pub(crate) processed_link_color_mode: ProcessedLinkColorMode,
     pub(crate) processed_paginated: bool,
     pub(crate) formatting_marks_visible: bool,
@@ -1677,6 +1692,7 @@ impl Default for PersistentUiState {
         Self {
             workspace_sidebar_visible: true,
             top_menu_collapsed: false,
+            right_buttons_visible: true,
             processed_link_color_mode: ProcessedLinkColorMode::Colored,
             processed_paginated: true,
             formatting_marks_visible: false,
@@ -2102,6 +2118,7 @@ impl FromWorld for EditorState {
             story_query_sheet: StoryQuerySheet::default(),
             workspace_sidebar_visible: ui_state.workspace_sidebar_visible,
             top_menu_collapsed: ui_state.top_menu_collapsed,
+            right_buttons_visible: ui_state.right_buttons_visible,
             processed_link_color_mode: ui_state.processed_link_color_mode,
             processed_paginated: ui_state.processed_paginated,
             formatting_marks_visible: ui_state.formatting_marks_visible,

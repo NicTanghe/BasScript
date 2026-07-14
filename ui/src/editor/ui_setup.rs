@@ -384,6 +384,7 @@ pub(crate) fn setup(
                             keybind_setting_row(font.clone(), ShortcutAction::SplitView),
                             keybind_setting_row(font.clone(), ShortcutAction::ToggleExplorer),
                             keybind_setting_row(font.clone(), ShortcutAction::ToggleTopMenu),
+                            keybind_setting_row(font.clone(), ShortcutAction::ToggleRightButtons),
                             keybind_section_heading(font.clone(), "Editor navigation"),
                             keybind_row(font.clone(), "Cmd/Ctrl + mouse wheel", "Zoom"),
                             keybind_row(font.clone(), "Arrow keys", "Move cursor"),
@@ -2054,7 +2055,9 @@ pub(crate) fn sync_processed_overlay_toggle_group(
 
     for (toggle, computed, mut spring, mut node, mut z_index) in toggle_query.iter_mut() {
         let Some(panel_size) = processed_panel_size.filter(|_| {
-            toggle.kind == PanelKind::Processed && state.document_format != DocumentFormat::Canvas
+            toggle.kind == PanelKind::Processed
+                && state.document_format != DocumentFormat::Canvas
+                && state.right_buttons_visible
         }) else {
             node.display = Display::None;
             *z_index = ZIndex(20);

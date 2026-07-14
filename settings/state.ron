@@ -1,7 +1,8 @@
 (
-	workspace_sidebar_visible: false,
-	top_menu_collapsed: true,
-	processed_link_color_mode: "colored",
-	processed_paginated: false,
+	workspace_sidebar_visible: true,
+	top_menu_collapsed: false,
+	right_buttons_visible: false,
+	processed_link_color_mode: "hovered",
+	processed_paginated: true,
 	formatting_marks_visible: false,
 )
