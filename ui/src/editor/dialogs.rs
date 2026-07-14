@@ -273,6 +273,15 @@ mod modifier_key_tests {
     }
 
     #[test]
+    fn status_line_defaults_to_visible_and_loads_hidden_state() {
+        let defaults = PersistentUiState::default();
+        let hidden = persistent_ui_state_from_ron("(\nstatus_line_visible: false,\n)", &defaults);
+
+        assert!(defaults.status_line_visible);
+        assert!(!hidden.status_line_visible);
+    }
+
+    #[test]
     fn link_toggle_compression_scales_with_speed_but_stays_bounded() {
         assert_eq!(link_toggle_compression_for_impact(0.0), 8.0);
         assert!(link_toggle_compression_for_impact(400.0) > 8.0);

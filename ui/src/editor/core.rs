@@ -151,7 +151,8 @@ impl Plugin for UiPlugin {
                     sync_window_chrome,
                     sync_glass_surfaces,
                     sync_top_menu_visibility,
-                    sync_rounded_window_surfaces,
+                    sync_status_line_visibility.after(handle_status_line_toggle),
+                    sync_rounded_window_surfaces.after(sync_status_line_visibility),
                     sync_panel_display_mode,
                     sync_panel_split_layout
                         .after(handle_window_shortcuts)
@@ -172,6 +173,7 @@ impl Plugin for UiPlugin {
                     handle_processed_link_color_toggle,
                     handle_processed_pagination_toggle,
                     handle_formatting_marks_toggle,
+                    handle_status_line_toggle,
                     handle_workspace_file_buttons,
                     handle_workspace_folder_buttons,
                     handle_markdown_metadata_buttons,
@@ -454,6 +456,12 @@ pub(crate) struct ProcessedPaginationToggle;
 
 #[derive(Component)]
 pub(crate) struct FormattingMarksToggle;
+
+#[derive(Component)]
+pub(crate) struct StatusLineToggle;
+
+#[derive(Component)]
+pub(crate) struct StatusLineToggleLabel;
 
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub(crate) struct ProcessedOverlayToggleSpring {
@@ -1429,6 +1437,7 @@ pub(crate) struct EditorState {
     pub(crate) workspace_sidebar_visible: bool,
     pub(crate) top_menu_collapsed: bool,
     pub(crate) right_buttons_visible: bool,
+    pub(crate) status_line_visible: bool,
     pub(crate) processed_link_color_mode: ProcessedLinkColorMode,
     pub(crate) processed_paginated: bool,
     pub(crate) formatting_marks_visible: bool,
@@ -1682,6 +1691,7 @@ pub(crate) struct PersistentUiState {
     pub(crate) workspace_sidebar_visible: bool,
     pub(crate) top_menu_collapsed: bool,
     pub(crate) right_buttons_visible: bool,
+    pub(crate) status_line_visible: bool,
     pub(crate) processed_link_color_mode: ProcessedLinkColorMode,
     pub(crate) processed_paginated: bool,
     pub(crate) formatting_marks_visible: bool,
@@ -1693,6 +1703,7 @@ impl Default for PersistentUiState {
             workspace_sidebar_visible: true,
             top_menu_collapsed: false,
             right_buttons_visible: true,
+            status_line_visible: true,
             processed_link_color_mode: ProcessedLinkColorMode::Colored,
             processed_paginated: true,
             formatting_marks_visible: false,
@@ -2119,6 +2130,7 @@ impl FromWorld for EditorState {
             workspace_sidebar_visible: ui_state.workspace_sidebar_visible,
             top_menu_collapsed: ui_state.top_menu_collapsed,
             right_buttons_visible: ui_state.right_buttons_visible,
+            status_line_visible: ui_state.status_line_visible,
             processed_link_color_mode: ui_state.processed_link_color_mode,
             processed_paginated: ui_state.processed_paginated,
             formatting_marks_visible: ui_state.formatting_marks_visible,

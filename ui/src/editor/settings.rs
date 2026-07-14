@@ -237,6 +237,7 @@ pub(crate) fn save_persistent_ui_state(ui_state: &PersistentUiState) -> io::Resu
          \tworkspace_sidebar_visible: {},\n\
          \ttop_menu_collapsed: {},\n\
          \tright_buttons_visible: {},\n\
+         \tstatus_line_visible: {},\n\
          \tprocessed_link_color_mode: \"{}\",\n\
          \tprocessed_paginated: {},\n\
          \tformatting_marks_visible: {},\n\
@@ -244,6 +245,7 @@ pub(crate) fn save_persistent_ui_state(ui_state: &PersistentUiState) -> io::Resu
         ui_state.workspace_sidebar_visible,
         ui_state.top_menu_collapsed,
         ui_state.right_buttons_visible,
+        ui_state.status_line_visible,
         ui_state.processed_link_color_mode.settings_value(),
         ui_state.processed_paginated,
         ui_state.formatting_marks_visible,
@@ -514,6 +516,8 @@ pub(crate) fn persistent_ui_state_from_ron(
         parse_ron_bool(contents, "top_menu_collapsed").unwrap_or(defaults.top_menu_collapsed);
     let right_buttons_visible =
         parse_ron_bool(contents, "right_buttons_visible").unwrap_or(defaults.right_buttons_visible);
+    let status_line_visible =
+        parse_ron_bool(contents, "status_line_visible").unwrap_or(defaults.status_line_visible);
     let processed_link_color_mode = parse_ron_string(contents, "processed_link_color_mode")
         .as_deref()
         .and_then(ProcessedLinkColorMode::from_settings_value)
@@ -536,6 +540,7 @@ pub(crate) fn persistent_ui_state_from_ron(
         workspace_sidebar_visible,
         top_menu_collapsed,
         right_buttons_visible,
+        status_line_visible,
         processed_link_color_mode,
         processed_paginated,
         formatting_marks_visible,
@@ -732,6 +737,7 @@ pub(crate) fn persistent_ui_state_from_state(state: &EditorState) -> PersistentU
         workspace_sidebar_visible: state.workspace_sidebar_visible,
         top_menu_collapsed: state.top_menu_collapsed,
         right_buttons_visible: state.right_buttons_visible,
+        status_line_visible: state.status_line_visible,
         processed_link_color_mode: state.processed_link_color_mode,
         processed_paginated: state.processed_paginated,
         formatting_marks_visible: state.formatting_marks_visible,

@@ -185,7 +185,7 @@ pub(crate) fn setup(
                             story_query_sheet_bundle(font.clone()),
                         ],
                     ),
-                    status_line_bundle(font.clone(), state.app_bg_color)
+                    status_line_bundle(font.clone(), state.app_bg_color, state.status_line_visible,)
                 ],
             ));
 
@@ -1800,10 +1800,16 @@ pub(crate) fn processed_overlay_toggle_group_bundle(
                 ProcessedPaginationToggleLabel,
             ),
             processed_overlay_toggle_button(
-                font,
+                font.clone(),
                 "Marks: hidden",
                 FormattingMarksToggle,
                 FormattingMarksToggleLabel,
+            ),
+            processed_overlay_toggle_button(
+                font,
+                "Status: shown",
+                StatusLineToggle,
+                StatusLineToggleLabel,
             ),
         ],
     )
@@ -1914,6 +1920,8 @@ pub(crate) fn style_toolbar_buttons(
                 With<ThemeColorPickerButton>,
                 With<ProcessedLinkColorToggle>,
                 With<ProcessedPaginationToggle>,
+                With<FormattingMarksToggle>,
+                With<StatusLineToggle>,
                 With<WorkspaceLinkFolderOption>,
             )>,
         ),
@@ -1993,6 +2001,30 @@ pub(crate) fn handle_formatting_marks_toggle(
     }
 }
 
+pub(crate) fn handle_status_line_toggle(
+    interaction_query: Query<&Interaction, (Changed<Interaction>, With<StatusLineToggle>)>,
+    mut state: ResMut<EditorState>,
+) {
+    for interaction in interaction_query.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        state.status_line_visible = !state.status_line_visible;
+        state.status_message = format!(
+            "Status line: {}",
+            if state.status_line_visible {
+                "shown"
+            } else {
+                "hidden"
+            }
+        );
+        if let Err(error) = save_editor_ui_state(&state) {
+            state.status_message = format!("UI state save failed: {error}");
+        }
+    }
+}
+
 pub(crate) fn toggle_processed_pagination(
     state: &mut EditorState,
     processed_panel_size: Option<Vec2>,
@@ -2044,6 +2076,15 @@ pub(crate) fn sync_processed_overlay_toggle_group(
             With<FormattingMarksToggleLabel>,
             Without<ProcessedLinkColorToggleLabel>,
             Without<ProcessedPaginationToggleLabel>,
+        ),
+    >,
+    mut status_line_label_query: Query<
+        &mut Text,
+        (
+            With<StatusLineToggleLabel>,
+            Without<ProcessedLinkColorToggleLabel>,
+            Without<ProcessedPaginationToggleLabel>,
+            Without<FormattingMarksToggleLabel>,
         ),
     >,
 ) {
@@ -2248,6 +2289,17 @@ pub(crate) fn sync_processed_overlay_toggle_group(
     for mut text in formatting_marks_label_query.iter_mut() {
         if text.as_str() != formatting_marks_label {
             **text = formatting_marks_label.to_string();
+        }
+    }
+
+    let status_line_label = if state.status_line_visible {
+        "Status: shown"
+    } else {
+        "Status: hidden"
+    };
+    for mut text in status_line_label_query.iter_mut() {
+        if text.as_str() != status_line_label {
+            **text = status_line_label.to_string();
         }
     }
 }

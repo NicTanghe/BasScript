@@ -17,9 +17,18 @@ pub(crate) fn status_path_label(path: &Path) -> String {
         .unwrap_or_else(|| "<unnamed>".to_string())
 }
 
-pub(crate) fn status_line_bundle(font: Handle<Font>, background: Color) -> impl Bundle {
+pub(crate) fn status_line_bundle(
+    font: Handle<Font>,
+    background: Color,
+    visible: bool,
+) -> impl Bundle {
     (
         Node {
+            display: if visible {
+                Display::Flex
+            } else {
+                Display::None
+            },
             width: percent(100.0),
             min_height: px(STATUS_LINE_MIN_HEIGHT),
             flex_shrink: 0.0,
@@ -52,6 +61,19 @@ pub(crate) fn status_line_bundle(font: Handle<Font>, background: Color) -> impl 
             StatusText,
         )],
     )
+}
+
+pub(crate) fn sync_status_line_visibility(
+    state: Res<EditorState>,
+    mut root_query: Query<&mut Node, With<StatusLineRoot>>,
+) {
+    if let Ok(mut node) = root_query.single_mut() {
+        node.display = if state.status_line_visible {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
 }
 
 impl EditorState {
