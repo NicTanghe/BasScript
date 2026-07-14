@@ -3,8 +3,14 @@ pub(crate) const MARKDOWN_METADATA_PANEL_GAP: f32 = 10.0;
 pub(crate) const MARKDOWN_METADATA_PANEL_PADDING: f32 = 8.0;
 pub(crate) const MARKDOWN_METADATA_ROW_GAP: f32 = 6.0;
 pub(crate) const MARKDOWN_METADATA_COLUMN_GAP: f32 = 7.0;
+pub(crate) const MARKDOWN_METADATA_FIELD_HEIGHT: f32 = 28.0;
+pub(crate) const MARKDOWN_METADATA_FIELD_HORIZONTAL_PADDING: f32 = 8.0;
 pub(crate) const MARKDOWN_METADATA_DROPDOWN_ROW_HEIGHT: f32 = 24.0;
 pub(crate) const MARKDOWN_METADATA_DROPDOWN_VISIBLE_ROWS: usize = 7;
+pub(crate) const MARKDOWN_METADATA_FONT_SIZE: f32 = 11.0;
+pub(crate) const MARKDOWN_METADATA_BORDER_WIDTH: f32 = 1.0;
+pub(crate) const MARKDOWN_METADATA_DROPDOWN_OFFSET: f32 = 2.0;
+pub(crate) const MARKDOWN_METADATA_DROPDOWN_MIN_WIDTH: f32 = 120.0;
 pub(crate) const COMMON_MARKDOWN_METADATA_TYPES: [&str; 7] = [
     "character",
     "prop",
@@ -110,6 +116,9 @@ impl MarkdownMetadataChoiceSets {
 #[derive(Component)]
 pub(crate) struct MarkdownMetadataPanelRoot;
 
+#[derive(Component)]
+pub(crate) struct MarkdownMetadataRow;
+
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct MarkdownMetadataFieldButton {
     pub(crate) field: MarkdownMetadataField,
@@ -154,7 +163,7 @@ pub(crate) fn spawn_markdown_metadata_controls(
                 row_gap: px(MARKDOWN_METADATA_ROW_GAP),
                 padding: UiRect::all(px(MARKDOWN_METADATA_PANEL_PADDING)),
                 overflow: Overflow::visible(),
-                border: UiRect::all(px(1.0)),
+                border: UiRect::all(px(MARKDOWN_METADATA_BORDER_WIDTH)),
                 ..default()
             },
             BackgroundColor(Color::srgba(0.92, 0.93, 0.95, 0.96)),
@@ -166,24 +175,27 @@ pub(crate) fn spawn_markdown_metadata_controls(
         ))
         .with_children(|root| {
             for row_index in 0..2 {
-                root.spawn((Node {
-                    width: percent(100.0),
-                    height: px(28.0),
-                    flex_direction: FlexDirection::Row,
-                    column_gap: px(MARKDOWN_METADATA_COLUMN_GAP),
-                    overflow: Overflow::visible(),
-                    ..default()
-                },))
-                    .with_children(|row| {
-                        for field in MARKDOWN_METADATA_FIELDS
-                            .iter()
-                            .copied()
-                            .skip(row_index * 3)
-                            .take(3)
-                        {
-                            row.spawn(markdown_metadata_field_button(font.clone(), field));
-                        }
-                    });
+                root.spawn((
+                    Node {
+                        width: percent(100.0),
+                        height: px(MARKDOWN_METADATA_FIELD_HEIGHT),
+                        flex_direction: FlexDirection::Row,
+                        column_gap: px(MARKDOWN_METADATA_COLUMN_GAP),
+                        overflow: Overflow::visible(),
+                        ..default()
+                    },
+                    MarkdownMetadataRow,
+                ))
+                .with_children(|row| {
+                    for field in MARKDOWN_METADATA_FIELDS
+                        .iter()
+                        .copied()
+                        .skip(row_index * 3)
+                        .take(3)
+                    {
+                        row.spawn(markdown_metadata_field_button(font.clone(), field));
+                    }
+                });
             }
 
             for field in [MarkdownMetadataField::Type, MarkdownMetadataField::Status] {
@@ -203,11 +215,11 @@ pub(crate) fn markdown_metadata_field_button(
             flex_shrink: 1.0,
             flex_basis: px(0.0),
             min_width: px(0.0),
-            height: px(28.0),
+            height: px(MARKDOWN_METADATA_FIELD_HEIGHT),
             align_items: AlignItems::Center,
-            padding: UiRect::axes(px(8.0), px(0.0)),
+            padding: UiRect::axes(px(MARKDOWN_METADATA_FIELD_HORIZONTAL_PADDING), px(0.0)),
             overflow: Overflow::clip(),
-            border: UiRect::all(px(1.0)),
+            border: UiRect::all(px(MARKDOWN_METADATA_BORDER_WIDTH)),
             ..default()
         },
         BackgroundColor(BUTTON_NORMAL),
@@ -217,7 +229,7 @@ pub(crate) fn markdown_metadata_field_button(
             Text::new(""),
             TextFont {
                 font: font.into(),
-                font_size: FontSize::Px(11.0),
+                font_size: FontSize::Px(MARKDOWN_METADATA_FONT_SIZE),
                 ..default()
             },
             TextColor(COLOR_TEXT_MAIN),
@@ -239,7 +251,7 @@ pub(crate) fn markdown_metadata_dropdown(
             display: Display::None,
             flex_direction: FlexDirection::Column,
             overflow: Overflow::clip(),
-            border: UiRect::all(px(1.0)),
+            border: UiRect::all(px(MARKDOWN_METADATA_BORDER_WIDTH)),
             ..default()
         },
         BackgroundColor(Color::srgba(0.97, 0.98, 0.99, 0.98)),
@@ -271,7 +283,7 @@ pub(crate) fn markdown_metadata_dropdown_option(
             height: px(MARKDOWN_METADATA_DROPDOWN_ROW_HEIGHT),
             display: Display::None,
             align_items: AlignItems::Center,
-            padding: UiRect::axes(px(8.0), px(0.0)),
+            padding: UiRect::axes(px(MARKDOWN_METADATA_FIELD_HORIZONTAL_PADDING), px(0.0)),
             overflow: Overflow::clip(),
             ..default()
         },
@@ -281,7 +293,7 @@ pub(crate) fn markdown_metadata_dropdown_option(
             Text::new(""),
             TextFont {
                 font: font.into(),
-                font_size: FontSize::Px(11.0),
+                font_size: FontSize::Px(MARKDOWN_METADATA_FONT_SIZE),
                 ..default()
             },
             TextColor(COLOR_TEXT_MAIN),
@@ -294,17 +306,41 @@ pub(crate) fn sync_markdown_metadata_controls_ui(
     state: Res<EditorState>,
     body_query: Query<(&PanelBody, &ComputedNode)>,
     mut root_query: Query<&mut Node, With<MarkdownMetadataPanelRoot>>,
+    mut row_query: Query<
+        &mut Node,
+        (
+            With<MarkdownMetadataRow>,
+            Without<MarkdownMetadataPanelRoot>,
+            Without<MarkdownMetadataFieldButton>,
+            Without<MarkdownMetadataDropdownRoot>,
+            Without<MarkdownMetadataDropdownOptionButton>,
+        ),
+    >,
     mut field_button_query: Query<
-        (&MarkdownMetadataFieldButton, &mut BackgroundColor),
-        Without<MarkdownMetadataDropdownOptionButton>,
+        (
+            &MarkdownMetadataFieldButton,
+            &mut Node,
+            &mut BackgroundColor,
+        ),
+        (
+            Without<MarkdownMetadataPanelRoot>,
+            Without<MarkdownMetadataRow>,
+            Without<MarkdownMetadataDropdownRoot>,
+            Without<MarkdownMetadataDropdownOptionButton>,
+        ),
     >,
     mut field_text_query: Query<
-        (&MarkdownMetadataFieldText, &mut Text),
+        (&MarkdownMetadataFieldText, &mut Text, &mut TextFont),
         Without<MarkdownMetadataDropdownOptionText>,
     >,
     mut dropdown_root_query: Query<
         (&MarkdownMetadataDropdownRoot, &mut Node),
-        Without<MarkdownMetadataPanelRoot>,
+        (
+            Without<MarkdownMetadataPanelRoot>,
+            Without<MarkdownMetadataRow>,
+            Without<MarkdownMetadataFieldButton>,
+            Without<MarkdownMetadataDropdownOptionButton>,
+        ),
     >,
     mut option_button_query: Query<
         (
@@ -314,12 +350,17 @@ pub(crate) fn sync_markdown_metadata_controls_ui(
         ),
         (
             Without<MarkdownMetadataPanelRoot>,
+            Without<MarkdownMetadataRow>,
             Without<MarkdownMetadataFieldButton>,
             Without<MarkdownMetadataDropdownRoot>,
         ),
     >,
     mut option_text_query: Query<
-        (&MarkdownMetadataDropdownOptionText, &mut Text),
+        (
+            &MarkdownMetadataDropdownOptionText,
+            &mut Text,
+            &mut TextFont,
+        ),
         Without<MarkdownMetadataFieldText>,
     >,
 ) {
@@ -349,6 +390,7 @@ pub(crate) fn sync_markdown_metadata_controls_ui(
     };
 
     let layout = processed_page_layout(processed_panel_size, &state);
+    let metrics = MarkdownMetadataLayoutMetrics::for_zoom(state.zoom);
     let choice_sets = markdown_metadata_choice_sets(&state, &front_matter.fields);
     let anchor_line_in_page = state
         .processed_top_visual
@@ -362,10 +404,21 @@ pub(crate) fn sync_markdown_metadata_controls_ui(
         root.left = px(left);
         root.top = px(top);
         root.width = px(layout.geometry.paper_width);
-        root.height = px(MARKDOWN_METADATA_PANEL_HEIGHT);
+        root.height = px(metrics.panel_height);
+        root.row_gap = px(metrics.row_gap);
+        root.padding = UiRect::all(px(metrics.panel_padding));
+        root.border = UiRect::all(px(metrics.border_width));
     }
 
-    for (button, mut background) in field_button_query.iter_mut() {
+    for mut row in row_query.iter_mut() {
+        row.height = px(metrics.field_height);
+        row.column_gap = px(metrics.column_gap);
+    }
+
+    for (button, mut node, mut background) in field_button_query.iter_mut() {
+        node.height = px(metrics.field_height);
+        node.padding = UiRect::axes(px(metrics.field_horizontal_padding), px(0.0));
+        node.border = UiRect::all(px(metrics.border_width));
         background.0 = if state.markdown_metadata_focus == Some(button.field) {
             BUTTON_PRESSED
         } else {
@@ -373,30 +426,27 @@ pub(crate) fn sync_markdown_metadata_controls_ui(
         };
     }
 
-    for (slot, mut text) in field_text_query.iter_mut() {
+    for (slot, mut text, mut text_font) in field_text_query.iter_mut() {
         **text = markdown_metadata_field_label(
             &front_matter.fields,
             slot.field,
             state.markdown_metadata_focus == Some(slot.field),
         );
+        text_font.font_size = FontSize::Px(metrics.font_size);
     }
 
     for (dropdown, mut node) in dropdown_root_query.iter_mut() {
         let choices = choice_sets.for_field(dropdown.field);
         let open = state.markdown_metadata_dropdown == Some(dropdown.field) && !choices.is_empty();
         node.display = if open { Display::Flex } else { Display::None };
-        node.left = px(markdown_metadata_dropdown_left(
-            layout.geometry.paper_width,
-            dropdown.field,
-        ));
-        node.top = px(markdown_metadata_dropdown_top(dropdown.field));
-        node.width = px(markdown_metadata_dropdown_width(
-            layout.geometry.paper_width,
-        ));
+        node.left = px(metrics.dropdown_left(layout.geometry.paper_width, dropdown.field));
+        node.top = px(metrics.dropdown_top(dropdown.field));
+        node.width = px(metrics.dropdown_width(layout.geometry.paper_width));
         node.height = px(
             (choices.len().min(MARKDOWN_METADATA_DROPDOWN_VISIBLE_ROWS) as f32)
-                * MARKDOWN_METADATA_DROPDOWN_ROW_HEIGHT,
+                * metrics.dropdown_row_height,
         );
+        node.border = UiRect::all(px(metrics.border_width));
     }
 
     for (option, mut node, mut background) in option_button_query.iter_mut() {
@@ -415,11 +465,14 @@ pub(crate) fn sync_markdown_metadata_controls_ui(
         } else {
             BUTTON_NORMAL
         };
+        node.height = px(metrics.dropdown_row_height);
+        node.padding = UiRect::axes(px(metrics.field_horizontal_padding), px(0.0));
     }
 
-    for (slot, mut text) in option_text_query.iter_mut() {
+    for (slot, mut text, mut text_font) in option_text_query.iter_mut() {
         let choices = choice_sets.for_field(slot.field);
         **text = choices.get(slot.slot_index).cloned().unwrap_or_default();
+        text_font.font_size = FontSize::Px(metrics.font_size);
     }
 }
 
@@ -462,24 +515,64 @@ pub(crate) fn compact_markdown_metadata_value(value: &str) -> String {
     compact
 }
 
-pub(crate) fn markdown_metadata_dropdown_left(
-    panel_width: f32,
-    field: MarkdownMetadataField,
-) -> f32 {
-    let usable = (panel_width - MARKDOWN_METADATA_PANEL_PADDING * 2.0).max(1.0);
-    let column_width = ((usable - MARKDOWN_METADATA_COLUMN_GAP * 2.0) / 3.0).max(1.0);
-    let column = field.index() % 3;
-    MARKDOWN_METADATA_PANEL_PADDING + column as f32 * (column_width + MARKDOWN_METADATA_COLUMN_GAP)
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct MarkdownMetadataLayoutMetrics {
+    panel_height: f32,
+    panel_gap: f32,
+    panel_padding: f32,
+    row_gap: f32,
+    column_gap: f32,
+    field_height: f32,
+    field_horizontal_padding: f32,
+    dropdown_row_height: f32,
+    font_size: f32,
+    border_width: f32,
+    dropdown_offset: f32,
+    dropdown_min_width: f32,
 }
 
-pub(crate) fn markdown_metadata_dropdown_top(field: MarkdownMetadataField) -> f32 {
-    let row = field.index() / 3;
-    MARKDOWN_METADATA_PANEL_PADDING + row as f32 * (28.0 + MARKDOWN_METADATA_ROW_GAP) + 28.0 + 2.0
-}
+impl MarkdownMetadataLayoutMetrics {
+    fn for_zoom(zoom: f32) -> Self {
+        let zoom = zoom.max(f32::EPSILON);
+        Self {
+            panel_height: MARKDOWN_METADATA_PANEL_HEIGHT * zoom,
+            panel_gap: MARKDOWN_METADATA_PANEL_GAP * zoom,
+            panel_padding: MARKDOWN_METADATA_PANEL_PADDING * zoom,
+            row_gap: MARKDOWN_METADATA_ROW_GAP * zoom,
+            column_gap: MARKDOWN_METADATA_COLUMN_GAP * zoom,
+            field_height: MARKDOWN_METADATA_FIELD_HEIGHT * zoom,
+            field_horizontal_padding: MARKDOWN_METADATA_FIELD_HORIZONTAL_PADDING * zoom,
+            dropdown_row_height: MARKDOWN_METADATA_DROPDOWN_ROW_HEIGHT * zoom,
+            font_size: MARKDOWN_METADATA_FONT_SIZE * zoom,
+            border_width: MARKDOWN_METADATA_BORDER_WIDTH * zoom,
+            dropdown_offset: MARKDOWN_METADATA_DROPDOWN_OFFSET * zoom,
+            dropdown_min_width: MARKDOWN_METADATA_DROPDOWN_MIN_WIDTH * zoom,
+        }
+    }
 
-pub(crate) fn markdown_metadata_dropdown_width(panel_width: f32) -> f32 {
-    let usable = (panel_width - MARKDOWN_METADATA_PANEL_PADDING * 2.0).max(1.0);
-    ((usable - MARKDOWN_METADATA_COLUMN_GAP * 2.0) / 3.0).max(120.0)
+    fn header_offset(self) -> f32 {
+        self.panel_height + self.panel_gap
+    }
+
+    fn dropdown_left(self, panel_width: f32, field: MarkdownMetadataField) -> f32 {
+        let usable = (panel_width - self.panel_padding * 2.0).max(1.0);
+        let column_width = ((usable - self.column_gap * 2.0) / 3.0).max(1.0);
+        let column = field.index() % 3;
+        self.panel_padding + column as f32 * (column_width + self.column_gap)
+    }
+
+    fn dropdown_top(self, field: MarkdownMetadataField) -> f32 {
+        let row = field.index() / 3;
+        self.panel_padding
+            + row as f32 * (self.field_height + self.row_gap)
+            + self.field_height
+            + self.dropdown_offset
+    }
+
+    fn dropdown_width(self, panel_width: f32) -> f32 {
+        let usable = (panel_width - self.panel_padding * 2.0).max(1.0);
+        ((usable - self.column_gap * 2.0) / 3.0).max(self.dropdown_min_width)
+    }
 }
 
 pub(crate) fn handle_markdown_metadata_buttons(
@@ -840,7 +933,7 @@ pub(crate) fn markdown_metadata_header_offset(state: &EditorState) -> f32 {
         && markdown_front_matter_display(&state.document).is_some()
         && markdown_metadata_controls_scroll_visible(state)
     {
-        MARKDOWN_METADATA_PANEL_HEIGHT + MARKDOWN_METADATA_PANEL_GAP
+        MarkdownMetadataLayoutMetrics::for_zoom(state.zoom).header_offset()
     } else {
         0.0
     }
@@ -1143,6 +1236,50 @@ impl EditorState {
 #[cfg(test)]
 mod markdown_metadata_tests {
     use super::*;
+
+    fn assert_close(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 0.001,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    #[test]
+    fn front_matter_layout_metrics_follow_document_zoom() {
+        let zoomed_out = MarkdownMetadataLayoutMetrics::for_zoom(0.6);
+        let metrics = MarkdownMetadataLayoutMetrics::for_zoom(1.65);
+
+        assert_close(zoomed_out.panel_height, 56.4);
+        assert_close(zoomed_out.header_offset(), 62.4);
+        assert_close(zoomed_out.font_size, 6.6);
+        assert_close(metrics.panel_height, 155.1);
+        assert_close(metrics.header_offset(), 171.6);
+        assert_close(metrics.field_height, 46.2);
+        assert_close(metrics.dropdown_row_height, 39.6);
+        assert_close(metrics.font_size, 18.15);
+        assert_close(metrics.dropdown_top(MarkdownMetadataField::Type), 62.7);
+        assert_close(metrics.dropdown_top(MarkdownMetadataField::Status), 118.8);
+        assert_close(metrics.dropdown_width(300.0), 198.0);
+    }
+
+    #[test]
+    fn front_matter_header_reservation_uses_document_zoom() {
+        let mut world = World::new();
+        let mut state = EditorState::from_world(&mut world);
+        state.document_format = DocumentFormat::Markdown;
+        state.document = Document::from_text("---\nid: entity_eoghan_001\n---\nBody");
+        state.zoom = 1.65;
+
+        assert_close(markdown_metadata_header_offset(&state), 171.6);
+    }
+
+    #[test]
+    fn front_matter_ui_system_queries_are_disjoint() {
+        let mut world = World::new();
+        let mut system = IntoSystem::into_system(sync_markdown_metadata_controls_ui);
+
+        system.initialize(&mut world);
+    }
 
     #[test]
     fn parses_front_matter_with_bom_and_aliases() {
