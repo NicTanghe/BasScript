@@ -231,6 +231,7 @@ impl EditorState {
             processed_top_visual: self.processed_top_visual,
             plain_horizontal_scroll: self.plain_horizontal_scroll,
             processed_horizontal_scroll: self.processed_horizontal_scroll,
+            processed_header_scroll_progress: self.processed_header_scroll_progress,
             processed_zoom_anchor_bias_px: self.processed_zoom_anchor_bias_px,
             display_mode: self.display_mode,
             focused_panel: self.focused_panel,
@@ -312,6 +313,7 @@ impl EditorState {
         self.processed_top_visual = entry.processed_top_visual;
         self.plain_horizontal_scroll = entry.plain_horizontal_scroll;
         self.processed_horizontal_scroll = entry.processed_horizontal_scroll;
+        self.processed_header_scroll_progress = entry.processed_header_scroll_progress;
         self.processed_zoom_anchor_bias_px = entry.processed_zoom_anchor_bias_px;
         self.display_mode = entry.display_mode;
         self.focused_panel = entry.focused_panel;

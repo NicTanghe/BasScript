@@ -2190,6 +2190,7 @@ impl EditorState {
         self.processed_top_visual = 0;
         self.plain_horizontal_scroll = 0.0;
         self.processed_horizontal_scroll = 0.0;
+        self.processed_header_scroll_progress = 0.0;
         self.processed_zoom_anchor_bias_px = 0.0;
         self.processed_cache = None;
         self.processed_cache_dirty_from_line = Some(0);

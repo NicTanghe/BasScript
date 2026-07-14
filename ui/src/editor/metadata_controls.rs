@@ -398,7 +398,9 @@ pub(crate) fn sync_markdown_metadata_controls_ui(
     let anchor_offset_px =
         processed_anchor_scroll_offset_px(anchor_line_in_page, scaled_line_height(&state).max(1.0));
     let left = layout.geometry.paper_left - state.processed_horizontal_scroll;
-    let top = PAGE_OUTER_MARGIN - anchor_offset_px + state.processed_zoom_anchor_bias_px;
+    let top =
+        PAGE_OUTER_MARGIN - markdown_metadata_scrolled_header_offset(&state) - anchor_offset_px
+            + state.processed_zoom_anchor_bias_px;
     if let Ok(mut root) = root_query.single_mut() {
         root.display = Display::Flex;
         root.left = px(left);
@@ -925,18 +927,28 @@ pub(crate) fn parse_alias_input(input: &str) -> Vec<String> {
 }
 
 pub(crate) fn markdown_metadata_controls_scroll_visible(state: &EditorState) -> bool {
-    state.processed_top_visual < processed_page_step_lines().max(1)
+    markdown_metadata_full_header_offset(state) > 0.0
+        && state.processed_header_scroll_progress < 1.0 - f32::EPSILON
 }
 
-pub(crate) fn markdown_metadata_header_offset(state: &EditorState) -> f32 {
+pub(crate) fn markdown_metadata_full_header_offset(state: &EditorState) -> f32 {
     if state.document_format == DocumentFormat::Markdown
         && markdown_front_matter_display(&state.document).is_some()
-        && markdown_metadata_controls_scroll_visible(state)
     {
         MarkdownMetadataLayoutMetrics::for_zoom(state.zoom).header_offset()
     } else {
         0.0
     }
+}
+
+pub(crate) fn markdown_metadata_scrolled_header_offset(state: &EditorState) -> f32 {
+    markdown_metadata_full_header_offset(state)
+        * state.processed_header_scroll_progress.clamp(0.0, 1.0)
+}
+
+pub(crate) fn markdown_metadata_header_offset(state: &EditorState) -> f32 {
+    markdown_metadata_full_header_offset(state)
+        * (1.0 - state.processed_header_scroll_progress.clamp(0.0, 1.0))
 }
 
 pub(crate) fn markdown_metadata_hovered(
@@ -1228,6 +1240,7 @@ impl EditorState {
             .preferred_column
             .min(self.document.line_len_chars(self.cursor.position.line));
         self.processed_top_visual = 0;
+        self.processed_header_scroll_progress = 0.0;
         self.processed_zoom_anchor_bias_px = 0.0;
         Ok(())
     }
@@ -1271,6 +1284,15 @@ mod markdown_metadata_tests {
         state.zoom = 1.65;
 
         assert_close(markdown_metadata_header_offset(&state), 171.6);
+
+        state.processed_header_scroll_progress = 0.6;
+        let metrics = MarkdownMetadataLayoutMetrics::for_zoom(state.zoom);
+        let panel_top = PAGE_OUTER_MARGIN - markdown_metadata_scrolled_header_offset(&state);
+        let paper_top = PAGE_OUTER_MARGIN + markdown_metadata_header_offset(&state);
+        assert_close(
+            paper_top - (panel_top + metrics.panel_height),
+            metrics.panel_gap,
+        );
     }
 
     #[test]

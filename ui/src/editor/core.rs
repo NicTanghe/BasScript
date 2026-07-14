@@ -1389,6 +1389,7 @@ pub(crate) struct EditorState {
     pub(crate) focused_panel: PanelKind,
     pub(crate) plain_horizontal_scroll: f32,
     pub(crate) processed_horizontal_scroll: f32,
+    pub(crate) processed_header_scroll_progress: f32,
     pub(crate) processed_zoom_anchor_bias_px: f32,
     pub(crate) paths: DocumentPath,
     pub(crate) status_message: String,
@@ -1516,6 +1517,7 @@ pub(crate) struct EditorHistorySnapshot {
     pub(crate) processed_top_visual: usize,
     pub(crate) plain_horizontal_scroll: f32,
     pub(crate) processed_horizontal_scroll: f32,
+    pub(crate) processed_header_scroll_progress: f32,
     pub(crate) processed_zoom_anchor_bias_px: f32,
 }
 
@@ -1529,6 +1531,7 @@ pub(crate) struct DocumentNavigationEntry {
     pub(crate) processed_top_visual: usize,
     pub(crate) plain_horizontal_scroll: f32,
     pub(crate) processed_horizontal_scroll: f32,
+    pub(crate) processed_header_scroll_progress: f32,
     pub(crate) processed_zoom_anchor_bias_px: f32,
     pub(crate) display_mode: DisplayMode,
     pub(crate) focused_panel: PanelKind,
@@ -2047,6 +2050,7 @@ impl FromWorld for EditorState {
             focused_panel: PanelKind::Plain,
             plain_horizontal_scroll: 0.0,
             processed_horizontal_scroll: 0.0,
+            processed_header_scroll_progress: 0.0,
             processed_zoom_anchor_bias_px: 0.0,
             paths,
             status_message,
@@ -2426,6 +2430,7 @@ impl EditorState {
                 self.processed_preferred_column = None;
                 self.plain_horizontal_scroll = 0.0;
                 self.processed_horizontal_scroll = 0.0;
+                self.processed_header_scroll_progress = 0.0;
                 self.processed_zoom_anchor_bias_px = 0.0;
                 self.canvas_pan = Vec2::ZERO;
                 if document_format == DocumentFormat::Canvas {
@@ -2462,6 +2467,7 @@ impl EditorState {
             processed_top_visual: self.processed_top_visual,
             plain_horizontal_scroll: self.plain_horizontal_scroll,
             processed_horizontal_scroll: self.processed_horizontal_scroll,
+            processed_header_scroll_progress: self.processed_header_scroll_progress,
             processed_zoom_anchor_bias_px: self.processed_zoom_anchor_bias_px,
         }
     }
@@ -2508,6 +2514,7 @@ impl EditorState {
         self.processed_top_visual = snapshot.processed_top_visual;
         self.plain_horizontal_scroll = snapshot.plain_horizontal_scroll;
         self.processed_horizontal_scroll = snapshot.processed_horizontal_scroll;
+        self.processed_header_scroll_progress = snapshot.processed_header_scroll_progress;
         self.processed_zoom_anchor_bias_px = snapshot.processed_zoom_anchor_bias_px;
         if self.document_format == DocumentFormat::Canvas {
             self.display_mode = DisplayMode::Processed;

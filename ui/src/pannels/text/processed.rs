@@ -62,35 +62,29 @@ pub(crate) fn apply_processed_panel_vertical_scroll(
         state.processed_top_visual = 0;
         state.processed_top_line = 0;
         state.top_line = 0;
+        state.processed_header_scroll_progress = 0.0;
         state.processed_zoom_anchor_bias_px = 0.0;
         return false;
     }
 
     let line_height = scaled_line_height(state).max(1.0);
-    let requested_whole_lines = delta_lines.trunc() as isize;
-    let max_visual = all_lines.len().saturating_sub(1) as isize;
-    let current_visual = state.processed_top_visual.min(max_visual as usize) as isize;
-    let next_visual = (current_visual + requested_whole_lines).clamp(0, max_visual);
-    let actual_whole_lines = next_visual - current_visual;
-    state.processed_top_visual = next_visual as usize;
+    let before = (
+        state.processed_top_visual,
+        state.processed_header_scroll_progress,
+        state.processed_zoom_anchor_bias_px,
+    );
+    let delta_px = delta_lines * line_height;
+    let _unconsumed_px = if delta_px > 0.0 {
+        let remaining_px = apply_processed_header_scroll_px(state, delta_px);
+        apply_processed_visual_scroll_px(state, &all_lines, remaining_px, line_height)
+    } else {
+        let remaining_px =
+            apply_processed_visual_scroll_px(state, &all_lines, delta_px, line_height);
+        apply_processed_header_scroll_px(state, remaining_px)
+    };
 
-    let leftover_px = (delta_lines - actual_whole_lines as f32) * line_height;
-    state.processed_zoom_anchor_bias_px -= leftover_px;
-
-    while state.processed_zoom_anchor_bias_px <= -line_height
-        && state.processed_top_visual < all_lines.len().saturating_sub(1)
-    {
-        state.processed_zoom_anchor_bias_px += line_height;
-        state.processed_top_visual = state.processed_top_visual.saturating_add(1);
-    }
-    while state.processed_zoom_anchor_bias_px >= line_height && state.processed_top_visual > 0 {
-        state.processed_zoom_anchor_bias_px -= line_height;
-        state.processed_top_visual = state.processed_top_visual.saturating_sub(1);
-    }
-
-    state.processed_zoom_anchor_bias_px = state
-        .processed_zoom_anchor_bias_px
-        .clamp(-line_height, line_height);
+    // The scroll is bounded at the beginning and end of the rendered document.
+    // Any unconsumed input beyond those bounds is intentionally ignored.
 
     let source_line = all_lines
         .get(state.processed_top_visual)
@@ -100,7 +94,96 @@ pub(crate) fn apply_processed_panel_vertical_scroll(
     state.clamp_processed_top_line();
     state.top_line = source_line.min(state.max_top_line(visible_lines));
 
-    actual_whole_lines != 0 || leftover_px.abs() > f32::EPSILON
+    before
+        != (
+            state.processed_top_visual,
+            state.processed_header_scroll_progress,
+            state.processed_zoom_anchor_bias_px,
+        )
+}
+
+pub(crate) fn apply_processed_header_scroll_px(state: &mut EditorState, delta_px: f32) -> f32 {
+    if delta_px.abs() <= f32::EPSILON {
+        return 0.0;
+    }
+
+    let header_height = markdown_metadata_full_header_offset(state);
+    if header_height <= f32::EPSILON {
+        state.processed_header_scroll_progress = 0.0;
+        return delta_px;
+    }
+
+    let scrolled_px = header_height * state.processed_header_scroll_progress.clamp(0.0, 1.0);
+    if delta_px > 0.0 {
+        let applied_px = delta_px.min((header_height - scrolled_px).max(0.0));
+        state.processed_header_scroll_progress =
+            ((scrolled_px + applied_px) / header_height).clamp(0.0, 1.0);
+        delta_px - applied_px
+    } else {
+        let applied_px = (-delta_px).min(scrolled_px.max(0.0));
+        state.processed_header_scroll_progress =
+            ((scrolled_px - applied_px) / header_height).clamp(0.0, 1.0);
+        delta_px + applied_px
+    }
+}
+
+pub(crate) fn apply_processed_visual_scroll_px(
+    state: &mut EditorState,
+    all_lines: &[ProcessedVisualLine],
+    delta_px: f32,
+    base_line_height: f32,
+) -> f32 {
+    if delta_px.abs() <= f32::EPSILON || all_lines.is_empty() {
+        return delta_px;
+    }
+
+    let base_line_height = base_line_height.max(1.0);
+    let max_visual = all_lines.len().saturating_sub(1);
+    state.processed_top_visual = state.processed_top_visual.min(max_visual);
+    state.processed_zoom_anchor_bias_px -= delta_px;
+
+    if delta_px > 0.0 {
+        while state.processed_top_visual < max_visual {
+            let current_height =
+                processed_visual_line_height_units(state, &all_lines[state.processed_top_visual])
+                    .max(f32::EPSILON)
+                    * base_line_height;
+            if state.processed_zoom_anchor_bias_px > -current_height {
+                break;
+            }
+            state.processed_zoom_anchor_bias_px += current_height;
+            state.processed_top_visual = state.processed_top_visual.saturating_add(1);
+        }
+
+        let current_height =
+            processed_visual_line_height_units(state, &all_lines[state.processed_top_visual])
+                .max(f32::EPSILON)
+                * base_line_height;
+        if state.processed_top_visual == max_visual
+            && state.processed_zoom_anchor_bias_px < -current_height
+        {
+            let overflow_px = -current_height - state.processed_zoom_anchor_bias_px;
+            state.processed_zoom_anchor_bias_px = -current_height;
+            return overflow_px;
+        }
+    } else {
+        while state.processed_zoom_anchor_bias_px > 0.0 && state.processed_top_visual > 0 {
+            state.processed_top_visual = state.processed_top_visual.saturating_sub(1);
+            let previous_height =
+                processed_visual_line_height_units(state, &all_lines[state.processed_top_visual])
+                    .max(f32::EPSILON)
+                    * base_line_height;
+            state.processed_zoom_anchor_bias_px -= previous_height;
+        }
+
+        if state.processed_top_visual == 0 && state.processed_zoom_anchor_bias_px > 0.0 {
+            let overflow_px = state.processed_zoom_anchor_bias_px;
+            state.processed_zoom_anchor_bias_px = 0.0;
+            return -overflow_px;
+        }
+    }
+
+    0.0
 }
 
 pub(crate) fn apply_cursor_follow_scroll_policy(
@@ -126,12 +209,14 @@ pub(crate) fn apply_cursor_follow_scroll_policy(
                 );
                 if all_lines.is_empty() {
                     state.processed_top_visual = 0;
+                    state.processed_header_scroll_progress = 0.0;
                 } else {
                     state.processed_top_visual =
                         first_visual_index_for_source_line(&all_lines, state.processed_top_line)
                             .unwrap_or(0);
                 }
             }
+            state.processed_header_scroll_progress = if state.top_line == 0 { 0.0 } else { 1.0 };
         }
         PanelKind::Processed => {
             // Processed is the anchor: keep the formatted caret visible and let plain follow.
@@ -146,6 +231,7 @@ pub(crate) fn apply_cursor_follow_scroll_policy(
                 if all_lines.is_empty() {
                     state.processed_top_visual = 0;
                     state.processed_top_line = 0;
+                    state.processed_header_scroll_progress = 0.0;
                 } else if let Some((target_visual, _, _)) =
                     processed_cursor_visual_from_lines(state, &all_lines)
                 {
@@ -173,6 +259,10 @@ pub(crate) fn apply_cursor_follow_scroll_policy(
                 }
             }
 
+            if state.processed_top_visual > 0 {
+                state.processed_header_scroll_progress = 1.0;
+            }
+
             state.ensure_cursor_visible(visible_lines);
             state.clamp_processed_top_line();
         }
@@ -180,3 +270,130 @@ pub(crate) fn apply_cursor_follow_scroll_policy(
 }
 #[allow(unused_imports)]
 use super::*;
+
+#[cfg(test)]
+mod processed_scroll_tests {
+    use super::*;
+
+    fn assert_close(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 0.01,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    fn markdown_state_with_front_matter() -> EditorState {
+        let mut world = World::new();
+        let mut state = EditorState::from_world(&mut world);
+        state.document = Document::from_text(
+            "---\nid: entity_eoghan_001\ntarget: eoghan\ntype: character\n---\n# Eoghan\nlead\n## looks\nA description.",
+        );
+        state.document_format = DocumentFormat::Markdown;
+        state.display_mode = DisplayMode::Processed;
+        state.processed_paginated = true;
+        state.set_zoom(1.65);
+        state.reparse();
+        state
+    }
+
+    #[test]
+    fn front_matter_header_is_consumed_without_a_page_jump() {
+        let mut state = markdown_state_with_front_matter();
+        let panel_size = Vec2::new(1_200.0, 900.0);
+        let line_height = scaled_line_height(&state);
+        let header_height = markdown_metadata_full_header_offset(&state);
+        let first_delta_lines = header_height / line_height - 0.25;
+
+        let before = processed_anchor_page_top_for_state(&mut state, Some(panel_size)).unwrap();
+        assert!(apply_processed_panel_vertical_scroll(
+            &mut state,
+            Some(panel_size),
+            first_delta_lines,
+            40,
+        ));
+        let before_boundary =
+            processed_anchor_page_top_for_state(&mut state, Some(panel_size)).unwrap();
+        assert_close(before_boundary, before - first_delta_lines * line_height);
+        assert_eq!(state.processed_top_visual, 0);
+        assert_close(state.processed_zoom_anchor_bias_px, 0.0);
+        assert!(state.processed_header_scroll_progress < 1.0);
+
+        assert!(apply_processed_panel_vertical_scroll(
+            &mut state,
+            Some(panel_size),
+            0.5,
+            40,
+        ));
+        let after_boundary =
+            processed_anchor_page_top_for_state(&mut state, Some(panel_size)).unwrap();
+        assert_close(after_boundary, before_boundary - 0.5 * line_height);
+        assert_close(state.processed_header_scroll_progress, 1.0);
+
+        assert!(apply_processed_panel_vertical_scroll(
+            &mut state,
+            Some(panel_size),
+            -(first_delta_lines + 0.5),
+            40,
+        ));
+        let restored = processed_anchor_page_top_for_state(&mut state, Some(panel_size)).unwrap();
+        assert_close(restored, before);
+        assert_close(state.processed_header_scroll_progress, 0.0);
+        assert_close(state.processed_zoom_anchor_bias_px, 0.0);
+    }
+
+    #[test]
+    fn tall_markdown_rows_scroll_by_pixels_instead_of_jumping() {
+        let mut state = markdown_state_with_front_matter();
+        let panel_size = Vec2::new(1_200.0, 900.0);
+        let line_height = scaled_line_height(&state);
+        state.processed_header_scroll_progress = 1.0;
+
+        let before = processed_anchor_page_top_for_state(&mut state, Some(panel_size)).unwrap();
+        assert!(apply_processed_panel_vertical_scroll(
+            &mut state,
+            Some(panel_size),
+            1.0,
+            40,
+        ));
+        let after = processed_anchor_page_top_for_state(&mut state, Some(panel_size)).unwrap();
+
+        assert_close(after, before - line_height);
+        assert_eq!(state.processed_top_visual, 0);
+        assert_close(state.processed_zoom_anchor_bias_px, -line_height);
+    }
+
+    #[test]
+    fn small_scroll_steps_are_continuous_in_both_directions() {
+        let mut state = markdown_state_with_front_matter();
+        let panel_size = Vec2::new(1_200.0, 900.0);
+        let line_height = scaled_line_height(&state);
+        let initial = processed_anchor_page_top_for_state(&mut state, Some(panel_size)).unwrap();
+
+        for _ in 0..120 {
+            let before = processed_anchor_page_top_for_state(&mut state, Some(panel_size)).unwrap();
+            assert!(apply_processed_panel_vertical_scroll(
+                &mut state,
+                Some(panel_size),
+                0.1,
+                40,
+            ));
+            let after = processed_anchor_page_top_for_state(&mut state, Some(panel_size)).unwrap();
+            assert_close(after, before - 0.1 * line_height);
+        }
+
+        for _ in 0..120 {
+            let before = processed_anchor_page_top_for_state(&mut state, Some(panel_size)).unwrap();
+            assert!(apply_processed_panel_vertical_scroll(
+                &mut state,
+                Some(panel_size),
+                -0.1,
+                40,
+            ));
+            let after = processed_anchor_page_top_for_state(&mut state, Some(panel_size)).unwrap();
+            assert_close(after, before + 0.1 * line_height);
+        }
+
+        let restored = processed_anchor_page_top_for_state(&mut state, Some(panel_size)).unwrap();
+        assert_close(restored, initial);
+    }
+}

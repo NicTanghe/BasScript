@@ -349,6 +349,7 @@ mod modifier_key_tests {
                     processed_top_visual: index,
                     plain_horizontal_scroll: 0.0,
                     processed_horizontal_scroll: 0.0,
+                    processed_header_scroll_progress: 0.0,
                     processed_zoom_anchor_bias_px: 0.0,
                     display_mode: DisplayMode::Split,
                     focused_panel: PanelKind::Plain,

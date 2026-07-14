@@ -2237,6 +2237,11 @@ impl EditorState {
         self.top_line = line.saturating_sub(3);
         self.processed_top_line = self.top_line;
         self.processed_top_visual = self.top_line;
+        self.processed_header_scroll_progress = if self.processed_top_visual > 0 {
+            1.0
+        } else {
+            0.0
+        };
         self.story_query_sheet.open = false;
         self.status_message = format!("Opened story query source at line {}.", line + 1);
     }
