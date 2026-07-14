@@ -182,6 +182,7 @@ pub(crate) fn save_persistent_settings(settings: &PersistentSettings) -> io::Res
          \tdialogue_double_space_newline: {},\n\
          \tnon_dialogue_double_space_newline: {},\n\
          \tshow_system_titlebar: {},\n\
+         \tdefault_view_mode: \"{}\",\n\
          \tpage_margin_left: {:.3},\n\
          \tpage_margin_right: {:.3},\n\
          \tpage_margin_top: {:.3},\n\
@@ -192,6 +193,7 @@ pub(crate) fn save_persistent_settings(settings: &PersistentSettings) -> io::Res
         settings.dialogue_double_space_newline,
         settings.non_dialogue_double_space_newline,
         settings.show_system_titlebar,
+        settings.default_view_mode.settings_value(),
         settings.page_margin_left,
         settings.page_margin_right,
         settings.page_margin_top,
@@ -473,6 +475,10 @@ pub(crate) fn persistent_settings_from_ron(
         .unwrap_or(defaults.non_dialogue_double_space_newline);
     let show_system_titlebar =
         parse_ron_bool(contents, "show_system_titlebar").unwrap_or(defaults.show_system_titlebar);
+    let default_view_mode = parse_ron_string(contents, "default_view_mode")
+        .as_deref()
+        .and_then(DisplayMode::from_settings_value)
+        .unwrap_or(defaults.default_view_mode);
     let page_margin_left =
         parse_ron_f32(contents, "page_margin_left").unwrap_or(defaults.page_margin_left);
     let page_margin_right =
@@ -497,6 +503,7 @@ pub(crate) fn persistent_settings_from_ron(
         dialogue_double_space_newline: dialogue_value,
         non_dialogue_double_space_newline: non_dialogue_value,
         show_system_titlebar,
+        default_view_mode,
         page_margin_left,
         page_margin_right,
         page_margin_top,
@@ -663,6 +670,7 @@ pub(crate) fn load_legacy_toml_settings() -> Option<PersistentSettings> {
         .unwrap_or(defaults.non_dialogue_double_space_newline),
         show_system_titlebar: parse_toml_bool(&contents, "show_system_titlebar")
             .unwrap_or(defaults.show_system_titlebar),
+        default_view_mode: defaults.default_view_mode,
         page_margin_left: parse_toml_f32(&contents, "page_margin_left")
             .unwrap_or(defaults.page_margin_left),
         page_margin_right: parse_toml_f32(&contents, "page_margin_right")
@@ -720,6 +728,7 @@ pub(crate) fn persistent_settings_from_state(state: &EditorState) -> PersistentS
         dialogue_double_space_newline: state.dialogue_double_space_newline,
         non_dialogue_double_space_newline: state.non_dialogue_double_space_newline,
         show_system_titlebar: state.show_system_titlebar,
+        default_view_mode: state.default_view_mode,
         page_margin_left: state.page_margin_left,
         page_margin_right: state.page_margin_right,
         page_margin_top: state.page_margin_top,

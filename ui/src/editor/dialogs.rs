@@ -282,6 +282,33 @@ mod modifier_key_tests {
     }
 
     #[test]
+    fn default_view_mode_starts_rendered_and_loads_other_modes() {
+        let defaults = PersistentSettings::default();
+        let split = persistent_settings_from_ron("(\ndefault_view_mode: \"split\",\n)", &defaults);
+        let raw = persistent_settings_from_ron(
+            "(\ndefault_view_mode: \"processed_raw_current_line\",\n)",
+            &defaults,
+        );
+
+        assert_eq!(defaults.default_view_mode, DisplayMode::Processed);
+        assert_eq!(split.default_view_mode, DisplayMode::Split);
+        assert_eq!(raw.default_view_mode, DisplayMode::ProcessedRawCurrentLine);
+    }
+
+    #[test]
+    fn default_view_mode_cycle_reaches_every_available_mode() {
+        let mut mode = DisplayMode::Processed;
+        let mut visited = BTreeSet::new();
+        for _ in 0..4 {
+            visited.insert(mode.label());
+            mode = mode.next_default();
+        }
+
+        assert_eq!(visited.len(), 4);
+        assert_eq!(mode, DisplayMode::Processed);
+    }
+
+    #[test]
     fn link_toggle_compression_scales_with_speed_but_stays_bounded() {
         assert_eq!(link_toggle_compression_for_impact(0.0), 8.0);
         assert!(link_toggle_compression_for_impact(400.0) > 8.0);

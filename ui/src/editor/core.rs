@@ -431,6 +431,45 @@ impl DisplayMode {
             }
         }
     }
+
+    pub(crate) fn next_default(self) -> Self {
+        match self {
+            DisplayMode::ProcessedRawCurrentLine => DisplayMode::Processed,
+            DisplayMode::Processed => DisplayMode::Plain,
+            DisplayMode::Plain => DisplayMode::Split,
+            DisplayMode::Split => DisplayMode::ProcessedRawCurrentLine,
+        }
+    }
+
+    pub(crate) fn default_settings_label(self) -> &'static str {
+        match self {
+            DisplayMode::Split => "Split",
+            DisplayMode::Plain => "Plain",
+            DisplayMode::Processed => "Rendered",
+            DisplayMode::ProcessedRawCurrentLine => "Rendered + raw current line",
+        }
+    }
+
+    pub(crate) fn settings_value(self) -> &'static str {
+        match self {
+            DisplayMode::Split => "split",
+            DisplayMode::Plain => "plain",
+            DisplayMode::Processed => "processed",
+            DisplayMode::ProcessedRawCurrentLine => "processed_raw_current_line",
+        }
+    }
+
+    pub(crate) fn from_settings_value(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "split" => Some(DisplayMode::Split),
+            "plain" => Some(DisplayMode::Plain),
+            "processed" | "rendered" => Some(DisplayMode::Processed),
+            "processed_raw_current_line" | "rendered_raw_current_line" => {
+                Some(DisplayMode::ProcessedRawCurrentLine)
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Component)]
@@ -586,6 +625,7 @@ pub(crate) enum SettingsAction {
     NonDialogueDoubleSpaceNewline,
     ToggleProcessedPagination,
     ToggleVimMode,
+    CycleDefaultViewMode,
     ShowSystemTitlebar,
     ToggleProcessedGlass,
     ToggleExplorerGlass,
@@ -1410,6 +1450,7 @@ pub(crate) struct EditorState {
     pub(crate) processed_top_visual: usize,
     pub(crate) processed_preferred_column: Option<usize>,
     pub(crate) display_mode: DisplayMode,
+    pub(crate) default_view_mode: DisplayMode,
     pub(crate) focused_panel: PanelKind,
     pub(crate) plain_horizontal_scroll: f32,
     pub(crate) processed_horizontal_scroll: f32,
@@ -1662,6 +1703,7 @@ pub(crate) struct PersistentSettings {
     pub(crate) dialogue_double_space_newline: bool,
     pub(crate) non_dialogue_double_space_newline: bool,
     pub(crate) show_system_titlebar: bool,
+    pub(crate) default_view_mode: DisplayMode,
     pub(crate) page_margin_left: f32,
     pub(crate) page_margin_right: f32,
     pub(crate) page_margin_top: f32,
@@ -1676,6 +1718,7 @@ impl Default for PersistentSettings {
             dialogue_double_space_newline: false,
             non_dialogue_double_space_newline: false,
             show_system_titlebar: false,
+            default_view_mode: DisplayMode::Processed,
             page_margin_left: PAGE_TEXT_MARGIN_LEFT,
             page_margin_right: PAGE_TEXT_MARGIN_RIGHT,
             page_margin_top: PAGE_TEXT_MARGIN_TOP,
@@ -2102,8 +2145,14 @@ impl FromWorld for EditorState {
             processed_top_line: 0,
             processed_top_visual: 0,
             processed_preferred_column: None,
-            display_mode: DisplayMode::Split,
-            focused_panel: PanelKind::Plain,
+            display_mode: settings.default_view_mode,
+            default_view_mode: settings.default_view_mode,
+            focused_panel: match settings.default_view_mode {
+                DisplayMode::Processed | DisplayMode::ProcessedRawCurrentLine => {
+                    PanelKind::Processed
+                }
+                DisplayMode::Split | DisplayMode::Plain => PanelKind::Plain,
+            },
             plain_horizontal_scroll: 0.0,
             processed_horizontal_scroll: 0.0,
             processed_header_scroll_progress: 0.0,

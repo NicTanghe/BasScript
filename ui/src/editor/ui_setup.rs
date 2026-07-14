@@ -245,6 +245,10 @@ pub(crate) fn setup(
                                 font.clone(),
                                 SettingsAction::ToggleProcessedPagination,
                             ),
+                            settings_toggle_button(
+                                font.clone(),
+                                SettingsAction::CycleDefaultViewMode,
+                            ),
                             settings_toggle_button(font.clone(), SettingsAction::ToggleVimMode),
                             settings_toggle_button(
                                 font.clone(),
@@ -2485,6 +2489,14 @@ pub(crate) fn handle_settings_buttons(
                 state.status_message =
                     format!("Vim mode: {}", if state.vim_enabled { "ON" } else { "OFF" });
             }
+            SettingsAction::CycleDefaultViewMode => {
+                state.default_view_mode = state.default_view_mode.next_default();
+                settings_changed = true;
+                state.status_message = format!(
+                    "Default view: {} (used on next launch)",
+                    state.default_view_mode.default_settings_label()
+                );
+            }
             SettingsAction::ShowSystemTitlebar => {
                 state.show_system_titlebar = !state.show_system_titlebar;
                 settings_changed = true;
@@ -3419,6 +3431,10 @@ pub(crate) fn sync_settings_ui(
             SettingsAction::ToggleVimMode => {
                 format!("Vim mode: {}", if state.vim_enabled { "ON" } else { "OFF" })
             }
+            SettingsAction::CycleDefaultViewMode => format!(
+                "Default view: {}",
+                state.default_view_mode.default_settings_label()
+            ),
             SettingsAction::ShowSystemTitlebar => format!(
                 "Show system titlebar: {}",
                 if state.show_system_titlebar {
