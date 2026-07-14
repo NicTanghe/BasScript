@@ -2016,6 +2016,7 @@ pub(crate) fn toggle_processed_pagination(
 pub(crate) fn sync_processed_overlay_toggle_group(
     time: Res<Time>,
     state: Res<EditorState>,
+    resolved_widths: Res<ResolvedPanelWidths>,
     panel_query: Query<(&PanelBody, &ComputedNode)>,
     paper_query: Query<(&PanelPaper, &Node, &Visibility), Without<ProcessedOverlayToggleGroup>>,
     mut toggle_query: Query<
@@ -2048,7 +2049,7 @@ pub(crate) fn sync_processed_overlay_toggle_group(
     let processed_panel_size = panel_query
         .iter()
         .find(|(panel, _)| panel.kind == PanelKind::Processed)
-        .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
+        .map(|(panel, computed)| resolved_widths.panel_size(panel.kind, computed));
     let dt = time.delta_secs().clamp(0.0, 1.0 / 30.0);
 
     for (toggle, computed, mut spring, mut node, mut z_index) in toggle_query.iter_mut() {

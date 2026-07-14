@@ -1,5 +1,6 @@
 pub(crate) fn render_editor(
     body_query: Query<(&PanelBody, &ComputedNode)>,
+    resolved_widths: Res<ResolvedPanelWidths>,
     mut canvas_query: Query<(&PanelCanvas, &mut UiTransform)>,
     mut text_query: Query<
         (
@@ -184,7 +185,7 @@ pub(crate) fn render_editor(
 
     for (panel, computed) in body_query.iter() {
         let inverse_scale = computed.inverse_scale_factor();
-        let logical_size = computed.size() * inverse_scale;
+        let logical_size = resolved_widths.panel_size(panel.kind, computed);
         match panel.kind {
             PanelKind::Plain => {
                 plain_inverse_scale = inverse_scale;
@@ -538,6 +539,7 @@ pub(crate) fn render_editor(
 
 pub(crate) fn render_processed_images(
     body_query: Query<(&PanelBody, &ComputedNode)>,
+    resolved_widths: Res<ResolvedPanelWidths>,
     mut processed_image_query: Query<
         (
             &ProcessedImageBlockNode,
@@ -570,7 +572,7 @@ pub(crate) fn render_processed_images(
     let processed_panel_size = body_query
         .iter()
         .find(|(panel, _)| panel.kind == PanelKind::Processed)
-        .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
+        .map(|(panel, computed)| resolved_widths.panel_size(panel.kind, computed));
 
     let Some(processed_panel_size) = processed_panel_size
         .filter(|_| state.panel_visible(PanelKind::Processed))

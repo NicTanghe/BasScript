@@ -304,6 +304,7 @@ pub(crate) fn markdown_metadata_dropdown_option(
 
 pub(crate) fn sync_markdown_metadata_controls_ui(
     state: Res<EditorState>,
+    resolved_widths: Res<ResolvedPanelWidths>,
     body_query: Query<(&PanelBody, &ComputedNode)>,
     mut root_query: Query<&mut Node, With<MarkdownMetadataPanelRoot>>,
     mut row_query: Query<
@@ -382,7 +383,7 @@ pub(crate) fn sync_markdown_metadata_controls_ui(
     let Some(processed_panel_size) = body_query
         .iter()
         .find(|(panel, _)| panel.kind == PanelKind::Processed)
-        .map(|(_, computed)| computed.size() * computed.inverse_scale_factor())
+        .map(|(panel, computed)| resolved_widths.panel_size(panel.kind, computed))
         .filter(|size| size.x > 1.0 && size.y > 1.0)
     else {
         hide_markdown_metadata_controls(&mut root_query);

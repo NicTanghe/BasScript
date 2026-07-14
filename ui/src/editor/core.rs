@@ -126,6 +126,7 @@ impl Plugin for UiPlugin {
             .init_resource::<MouseSelectionState>()
             .init_resource::<CanvasDragState>()
             .init_resource::<PanelLayoutState>()
+            .init_resource::<ResolvedPanelWidths>()
             .init_resource::<PanelSplitterDragState>()
             .init_resource::<EditorImageCache>()
             .init_state::<UiScreenState>()
@@ -152,7 +153,9 @@ impl Plugin for UiPlugin {
                     sync_top_menu_visibility,
                     sync_rounded_window_surfaces,
                     sync_panel_display_mode,
-                    sync_panel_split_layout,
+                    sync_panel_split_layout
+                        .after(handle_window_shortcuts)
+                        .after(handle_panel_splitter_drag),
                     sync_command_menu_ui,
                     sync_story_query_sheet_ui,
                     sync_settings_ui,
@@ -239,7 +242,7 @@ impl Plugin for UiPlugin {
                     sync_middle_autoscroll_indicator.after(handle_middle_mouse_autoscroll),
                     style_panel_splitters,
                     blink_caret,
-                    render_editor,
+                    render_editor.after(sync_panel_split_layout),
                 )
                     .run_if(in_state(UiScreenState::Editor)),
             );
@@ -1577,6 +1580,32 @@ pub(crate) struct WorkspaceSelectionRepeatState {
 pub(crate) struct PanelLayoutState {
     pub(crate) workspace_width_px: f32,
     pub(crate) plain_ratio: f32,
+}
+
+#[derive(Resource, Default, Clone, Copy, Debug)]
+pub(crate) struct ResolvedPanelWidths {
+    plain: Option<f32>,
+    processed: Option<f32>,
+}
+
+impl ResolvedPanelWidths {
+    pub(crate) fn set(&mut self, plain: f32, processed: f32) {
+        self.plain = Some(plain.max(0.0));
+        self.processed = Some(processed.max(0.0));
+    }
+
+    pub(crate) fn panel_size(&self, kind: PanelKind, computed: &ComputedNode) -> Vec2 {
+        let inverse_scale = computed.inverse_scale_factor();
+        let mut logical_size = computed.size() * inverse_scale;
+        let resolved_width = match kind {
+            PanelKind::Plain => self.plain,
+            PanelKind::Processed => self.processed,
+        };
+        if let Some(width) = resolved_width {
+            logical_size.x = width;
+        }
+        logical_size
+    }
 }
 
 impl Default for PanelLayoutState {

@@ -1,6 +1,7 @@
 pub(crate) fn sync_panel_split_layout(
     state: Res<EditorState>,
     mut layout: ResMut<PanelLayoutState>,
+    mut resolved_widths: ResMut<ResolvedPanelWidths>,
     body_row_query: Query<&ComputedNode, With<EditorBodyRow>>,
     mut node_queries: ParamSet<(
         Query<&mut Node, With<WorkspaceSidebarPane>>,
@@ -43,6 +44,15 @@ pub(crate) fn sync_panel_split_layout(
     } else {
         0.0
     };
+
+    let (resolved_plain_width, resolved_processed_width) = target_panel_widths(
+        layout_display_mode,
+        state.document_format,
+        editor_width,
+        plain_width,
+        processed_width,
+    );
+    resolved_widths.set(resolved_plain_width, resolved_processed_width);
 
     for mut node in node_queries.p0().iter_mut() {
         node.width = px(workspace_width);
@@ -373,6 +383,65 @@ pub(crate) fn effective_workspace_width(
         clamp_workspace_width(layout, total_width, display_mode)
     } else {
         0.0
+    }
+}
+
+fn target_panel_widths(
+    display_mode: DisplayMode,
+    document_format: DocumentFormat,
+    editor_width: f32,
+    plain_width: f32,
+    processed_width: f32,
+) -> (f32, f32) {
+    if document_format == DocumentFormat::Canvas {
+        return (0.0, editor_width);
+    }
+
+    match display_mode {
+        DisplayMode::Split => (plain_width, processed_width),
+        DisplayMode::Plain => (editor_width, 0.0),
+        DisplayMode::Processed | DisplayMode::ProcessedRawCurrentLine => (0.0, editor_width),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn target_panel_width_uses_current_explorer_adjusted_editor_width() {
+        let total_width = 1_600.0;
+        let explorer_width = 300.0;
+        let (_, closed_width) = target_panel_widths(
+            DisplayMode::Processed,
+            DocumentFormat::Markdown,
+            total_width,
+            0.0,
+            0.0,
+        );
+        let (_, open_width) = target_panel_widths(
+            DisplayMode::Processed,
+            DocumentFormat::Markdown,
+            total_width - explorer_width,
+            0.0,
+            0.0,
+        );
+
+        assert_eq!(closed_width, 1_600.0);
+        assert_eq!(open_width, 1_300.0);
+    }
+
+    #[test]
+    fn canvas_always_uses_the_processed_panel_target_width() {
+        let widths = target_panel_widths(
+            DisplayMode::Plain,
+            DocumentFormat::Canvas,
+            900.0,
+            450.0,
+            450.0,
+        );
+
+        assert_eq!(widths, (0.0, 900.0));
     }
 }
 #[allow(unused_imports)]

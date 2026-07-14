@@ -68,6 +68,7 @@ pub(crate) fn sync_formatting_mark_overlays(
     mut commands: Commands,
     mut state: ResMut<EditorState>,
     fonts: Res<EditorFonts>,
+    resolved_widths: Res<ResolvedPanelWidths>,
     body_query: Query<(&PanelBody, &ComputedNode)>,
     canvas_query: Query<(Entity, &PanelCanvas)>,
     paper_query: Query<(Entity, &PanelPaper)>,
@@ -102,6 +103,7 @@ pub(crate) fn sync_formatting_mark_overlays(
     );
     collect_processed_formatting_marks(
         &mut state,
+        &resolved_widths,
         &body_query,
         &paper_query,
         &processed_layout_query,
@@ -261,6 +263,7 @@ fn collect_plain_formatting_marks(
 
 fn collect_processed_formatting_marks(
     state: &mut EditorState,
+    resolved_widths: &ResolvedPanelWidths,
     body_query: &Query<(&PanelBody, &ComputedNode)>,
     paper_query: &Query<(Entity, &PanelPaper)>,
     layout_query: &Query<(&ProcessedPaperText, &ComputedTextBlock, &ComputedNode)>,
@@ -272,7 +275,7 @@ fn collect_processed_formatting_marks(
     let panel_size = body_query
         .iter()
         .find(|(panel, _)| panel.kind == PanelKind::Processed)
-        .map(|(_, computed)| computed.size() * computed.inverse_scale_factor())
+        .map(|(panel, computed)| resolved_widths.panel_size(panel.kind, computed))
         .unwrap_or(Vec2::ZERO);
     let page_layout = processed_page_layout(panel_size, state);
     let page_step = page_layout.page_step_lines.max(1);
