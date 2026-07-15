@@ -3,12 +3,10 @@ pub(crate) fn platform_shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) ->
         return false;
     }
 
-    keys.any_pressed([
-        KeyCode::ControlLeft,
-        KeyCode::ControlRight,
-        KeyCode::SuperLeft,
-        KeyCode::SuperRight,
-    ])
+    modifier_active_this_frame(keys, KeyCode::ControlLeft)
+        || modifier_active_this_frame(keys, KeyCode::ControlRight)
+        || modifier_active_this_frame(keys, KeyCode::SuperLeft)
+        || modifier_active_this_frame(keys, KeyCode::SuperRight)
 }
 
 pub(crate) fn shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
@@ -16,7 +14,9 @@ pub(crate) fn shortcut_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
 }
 
 pub(crate) fn text_input_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
-    if keys.any_pressed([KeyCode::SuperLeft, KeyCode::SuperRight]) {
+    if modifier_active_this_frame(keys, KeyCode::SuperLeft)
+        || modifier_active_this_frame(keys, KeyCode::SuperRight)
+    {
         return true;
     }
 
@@ -24,17 +24,20 @@ pub(crate) fn text_input_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
         return false;
     }
 
-    keys.any_pressed([
-        KeyCode::ControlLeft,
-        KeyCode::ControlRight,
-        KeyCode::AltLeft,
-        KeyCode::AltRight,
-    ])
+    modifier_active_this_frame(keys, KeyCode::ControlLeft)
+        || modifier_active_this_frame(keys, KeyCode::ControlRight)
+        || modifier_active_this_frame(keys, KeyCode::AltLeft)
+        || modifier_active_this_frame(keys, KeyCode::AltRight)
 }
 
 pub(crate) fn alt_gr_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
-    keys.pressed(KeyCode::AltRight)
-        && keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
+    modifier_active_this_frame(keys, KeyCode::AltRight)
+        && (modifier_active_this_frame(keys, KeyCode::ControlLeft)
+            || modifier_active_this_frame(keys, KeyCode::ControlRight))
+}
+
+pub(crate) fn modifier_active_this_frame(keys: &ButtonInput<KeyCode>, key: KeyCode) -> bool {
+    keys.pressed(key) || keys.just_released(key)
 }
 
 pub(crate) fn text_input_should_skip_for_shortcut(
@@ -60,7 +63,8 @@ pub(crate) fn key_combination_matches_binding(
 }
 
 pub(crate) fn shift_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
-    keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight])
+    modifier_active_this_frame(keys, KeyCode::ShiftLeft)
+        || modifier_active_this_frame(keys, KeyCode::ShiftRight)
 }
 
 pub(crate) fn shortcut_just_pressed(keys: &ButtonInput<KeyCode>, binding: ShortcutBinding) -> bool {
@@ -83,10 +87,13 @@ pub(crate) fn shortcut_binding_modifier_pressed(
     keys: &ButtonInput<KeyCode>,
     binding: ShortcutBinding,
 ) -> bool {
-    let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
-    let alt = keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]);
-    let super_pressed = keys.any_pressed([KeyCode::SuperLeft, KeyCode::SuperRight]);
-    let space = binding.key != KeyCode::Space && keys.pressed(KeyCode::Space);
+    let ctrl = modifier_active_this_frame(keys, KeyCode::ControlLeft)
+        || modifier_active_this_frame(keys, KeyCode::ControlRight);
+    let alt = modifier_active_this_frame(keys, KeyCode::AltLeft)
+        || modifier_active_this_frame(keys, KeyCode::AltRight);
+    let super_pressed = modifier_active_this_frame(keys, KeyCode::SuperLeft)
+        || modifier_active_this_frame(keys, KeyCode::SuperRight);
+    let space = binding.key != KeyCode::Space && modifier_active_this_frame(keys, KeyCode::Space);
 
     match binding.modifier {
         ShortcutModifier::None => !ctrl && !alt && !super_pressed && !space,
@@ -147,6 +154,30 @@ mod modifier_key_tests {
             &save_combo,
             &save_input,
             &keybinds
+        ));
+    }
+
+    #[test]
+    fn shortcut_survives_modifier_release_batched_into_the_same_frame() {
+        let keybinds = KeybindSettings::default();
+        let input = KeyboardInput {
+            key_code: KeyCode::KeyZ,
+            logical_key: Key::Character("z".into()),
+            state: ButtonState::Pressed,
+            text: Some("z".into()),
+            repeat: false,
+            window: Entity::PLACEHOLDER,
+        };
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::ControlLeft);
+        keys.press(KeyCode::KeyZ);
+        keys.release(KeyCode::ControlLeft);
+
+        let undo = keybinds.binding(ShortcutAction::Undo);
+        assert!(shortcut_modifier_pressed(&keys));
+        assert!(shortcut_just_pressed(&keys, undo));
+        assert!(text_input_should_skip_for_shortcut(
+            &keys, &input, &keybinds
         ));
     }
 

@@ -28,18 +28,6 @@ pub(crate) fn handle_vim_input(
         return;
     }
 
-    if state.document_format == DocumentFormat::Canvas {
-        handle_canvas_vim_input(
-            &mut keyboard_inputs,
-            &keys,
-            &time,
-            &text_layout_query,
-            &mut repeat,
-            &mut state,
-        );
-        return;
-    }
-
     if state.workspace_prompt.is_some()
         || state.command_menu.is_some()
         || state.markdown_metadata_input_active()
@@ -65,6 +53,35 @@ pub(crate) fn handle_vim_input(
         .find(|(panel, _)| panel.kind == PanelKind::Processed)
         .map(|(_, computed)| computed.size() * computed.inverse_scale_factor());
     state.clamp_horizontal_scrolls(plain_panel_size, processed_panel_size);
+
+    if state.vim_mode == VimMode::Normal
+        && !text_input_modifier_pressed(&keys)
+        && !shift_modifier_pressed(&keys)
+        && keys.just_pressed(KeyCode::KeyU)
+    {
+        let changed = state.undo(visible_lines, plain_panel_size, processed_panel_size);
+        if changed {
+            state.status_message = "Undo".to_string();
+            apply_cursor_follow_scroll_policy(&mut state, processed_panel_size, visible_lines);
+        } else {
+            state.status_message = "Nothing to undo.".to_string();
+        }
+        for _ in keyboard_inputs.read() {}
+        reset_vim_repeat(&mut repeat);
+        return;
+    }
+
+    if state.document_format == DocumentFormat::Canvas {
+        handle_canvas_vim_input(
+            &mut keyboard_inputs,
+            &keys,
+            &time,
+            &text_layout_query,
+            &mut repeat,
+            &mut state,
+        );
+        return;
+    }
 
     if state.vim_mode != VimMode::Insert
         && handle_document_clipboard_key_shortcut(
