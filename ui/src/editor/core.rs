@@ -250,6 +250,12 @@ impl Plugin for UiPlugin {
             );
         app.add_systems(
             Update,
+            resolve_external_url_open_results
+                .before(render_editor)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
             sync_workspace_link_prompt_folder_options
                 .before(sync_workspace_prompt_ui)
                 .run_if(in_state(UiScreenState::Editor)),
@@ -1545,6 +1551,7 @@ pub(crate) struct EditorState {
     pub(crate) script_link_target_types: BTreeMap<String, String>,
     pub(crate) missing_script_link_targets: BTreeSet<String>,
     pub(crate) hovered_processed_link: Option<HoveredProcessedLink>,
+    pub(crate) pending_external_url_opens: Vec<PendingExternalUrlOpen>,
     pub(crate) workspace_ui_dirty: bool,
     pub(crate) undo_history: Vec<EditorHistorySnapshot>,
     pub(crate) redo_history: Vec<EditorHistorySnapshot>,
@@ -1689,6 +1696,13 @@ pub(crate) struct PanelSplitterDragState {
 }
 
 pub(crate) type DialogPathResult = Result<Option<PathBuf>, String>;
+
+pub(crate) type ExternalUrlOpenResult = Result<(), String>;
+
+pub(crate) struct PendingExternalUrlOpen {
+    pub(crate) target: String,
+    pub(crate) receiver: Arc<Mutex<mpsc::Receiver<ExternalUrlOpenResult>>>,
+}
 
 pub(crate) enum PendingDialog {
     Workspace(Arc<Mutex<mpsc::Receiver<DialogPathResult>>>),
@@ -2278,6 +2292,7 @@ impl FromWorld for EditorState {
             script_link_target_types: BTreeMap::new(),
             missing_script_link_targets: BTreeSet::new(),
             hovered_processed_link: None,
+            pending_external_url_opens: Vec::new(),
             workspace_ui_dirty: true,
             undo_history: Vec::new(),
             redo_history: Vec::new(),

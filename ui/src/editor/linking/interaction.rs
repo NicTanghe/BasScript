@@ -5,7 +5,7 @@ pub(crate) fn consume_script_link_click(
     is_start: bool,
     position: Position,
 ) -> bool {
-    if !is_start || shift_modifier_pressed(keys) || !state.open_script_link_at(position) {
+    if !is_start || shift_modifier_pressed(keys) || !state.open_link_at(position) {
         return false;
     }
 

@@ -1,6 +1,6 @@
 use basscript_core::{
-    EntityDocument, ScriptLinkSyntax, is_valid_target_key, scaffold_entity,
-    script_link_contains_visible_column, script_link_visible_column_range,
+    EntityDocument, MarkdownLink, ScriptLinkSyntax, extract_markdown_links, is_valid_target_key,
+    scaffold_entity, script_link_contains_visible_column, script_link_visible_column_range,
 };
 
 impl EditorState {
@@ -196,22 +196,39 @@ impl EditorState {
         }
     }
 
-    pub(crate) fn open_script_link_at(&mut self, position: Position) -> bool {
-        let Some(link) = self.script_link_at(position).cloned() else {
+    pub(crate) fn open_link_at(&mut self, position: Position) -> bool {
+        if let Some(link) = self.script_link_at(position).cloned() {
+            match self.resolve_script_link_path(&link) {
+                Ok(path) => {
+                    let metadata_warning = EntityDocument::load(&path).err();
+                    if self.navigate_to_path(path.clone())
+                        && let Some(error) = metadata_warning
+                    {
+                        self.status_message = format!(
+                            "Loaded {} with metadata warning: {error}",
+                            status_path_label(&path)
+                        );
+                    }
+                }
+                Err(message) => {
+                    self.status_message = message;
+                }
+            }
+
+            return true;
+        }
+
+        let Some(link) = self.external_markdown_link_at(position) else {
             return false;
         };
-
-        match self.resolve_script_link_path(&link) {
-            Ok(path) => {
-                let metadata_warning = EntityDocument::load(&path).err();
-                if self.navigate_to_path(path.clone())
-                    && let Some(error) = metadata_warning
-                {
-                    self.status_message = format!(
-                        "Loaded {} with metadata warning: {error}",
-                        status_path_label(&path)
-                    );
-                }
+        match open_external_url(&link.target) {
+            Ok(receiver) => {
+                self.status_message = format!("Opening {} in the browser...", link.target);
+                self.pending_external_url_opens
+                    .push(PendingExternalUrlOpen {
+                        target: link.target,
+                        receiver: Arc::new(Mutex::new(receiver)),
+                    });
             }
             Err(message) => {
                 self.status_message = message;
@@ -454,17 +471,175 @@ impl EditorState {
         })
     }
 
+    pub(crate) fn external_markdown_link_at(&self, position: Position) -> Option<MarkdownLink> {
+        if self.document_format != DocumentFormat::Markdown {
+            return None;
+        }
+        let line = self.parsed.get(position.line)?;
+        if !matches!(
+            line.kind,
+            LineKind::MarkdownHeading
+                | LineKind::MarkdownListItem
+                | LineKind::MarkdownQuote
+                | LineKind::MarkdownParagraph
+        ) {
+            return None;
+        }
+
+        extract_markdown_links(&line.raw).into_iter().find(|link| {
+            is_external_browser_url(&link.target)
+                && markdown_link_contains_mapped_column(link, position.column)
+        })
+    }
+
     pub(crate) fn hovered_processed_link_at(
         &self,
         position: Position,
     ) -> Option<HoveredProcessedLink> {
-        let link = self.script_link_at(position)?;
-        let visible = script_link_visible_column_range(link);
+        if let Some(link) = self.script_link_at(position) {
+            let visible = script_link_visible_column_range(link);
+            return Some(HoveredProcessedLink {
+                source_line: position.line,
+                raw_start_column: *visible.start(),
+                raw_end_column: visible.end().saturating_add(1),
+            });
+        }
+
+        let link = self.external_markdown_link_at(position)?;
         Some(HoveredProcessedLink {
             source_line: position.line,
-            raw_start_column: *visible.start(),
-            raw_end_column: visible.end().saturating_add(1),
+            raw_start_column: link.span.start,
+            raw_end_column: link.span.end,
         })
+    }
+}
+
+pub(crate) fn is_external_browser_url(target: &str) -> bool {
+    target.split_once("://").is_some_and(|(scheme, rest)| {
+        !rest.is_empty()
+            && (scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https"))
+    })
+}
+
+pub(crate) fn markdown_link_contains_mapped_column(link: &MarkdownLink, column: usize) -> bool {
+    link.span.start <= column && column <= link.span.end
+}
+
+pub(crate) fn open_external_url(
+    target: &str,
+) -> Result<mpsc::Receiver<ExternalUrlOpenResult>, String> {
+    if !is_external_browser_url(target) {
+        return Err(format!("Unsupported external link `{target}`."));
+    }
+
+    spawn_external_url(target)
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+fn spawn_external_url(target: &str) -> Result<mpsc::Receiver<ExternalUrlOpenResult>, String> {
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = std::process::Command::new("rundll32");
+        command.arg("url.dll,FileProtocolHandler").arg(target);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = std::process::Command::new("open");
+        command.arg(target);
+        command
+    };
+    #[cfg(target_os = "linux")]
+    let mut command = {
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(target);
+        command
+    };
+
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
+
+    let target = target.to_string();
+    let (sender, receiver) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("basscript-browser-open".to_string())
+        .spawn(move || {
+            let result = command
+                .output()
+                .map_err(|error| format!("Could not open {target}: {error}"))
+                .and_then(|output| {
+                    browser_launcher_result(
+                        &target,
+                        output.status.success(),
+                        &output.status.to_string(),
+                        &output.stderr,
+                    )
+                });
+            let _ = sender.send(result);
+        })
+        .map_err(|error| format!("Could not start the browser launcher: {error}"))?;
+    Ok(receiver)
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+fn spawn_external_url(_target: &str) -> Result<mpsc::Receiver<ExternalUrlOpenResult>, String> {
+    Err("Opening browser links is not supported on this platform.".to_string())
+}
+
+pub(crate) fn browser_launcher_result(
+    target: &str,
+    success: bool,
+    status: &str,
+    stderr: &[u8],
+) -> ExternalUrlOpenResult {
+    if success {
+        return Ok(());
+    }
+
+    let detail = String::from_utf8_lossy(stderr);
+    let detail = detail.trim();
+    if detail.is_empty() {
+        Err(format!(
+            "Could not open {target}: browser launcher exited with {status}."
+        ))
+    } else {
+        Err(format!("Could not open {target}: {detail}"))
+    }
+}
+
+pub(crate) fn resolve_external_url_open_results(mut state: ResMut<EditorState>) {
+    let mut completed = Vec::<(String, ExternalUrlOpenResult)>::new();
+    state.pending_external_url_opens.retain(|pending| {
+        let result = match pending.receiver.lock() {
+            Ok(receiver) => match receiver.try_recv() {
+                Ok(result) => Some(result),
+                Err(mpsc::TryRecvError::Empty) => None,
+                Err(mpsc::TryRecvError::Disconnected) => Some(Err(format!(
+                    "Could not open {}: browser launcher stopped before reporting a result.",
+                    pending.target
+                ))),
+            },
+            Err(error) => Some(Err(format!(
+                "Could not open {}: browser result receiver failed: {error}",
+                pending.target
+            ))),
+        };
+
+        if let Some(result) = result {
+            completed.push((pending.target.clone(), result));
+            false
+        } else {
+            true
+        }
+    });
+
+    for (target, result) in completed {
+        state.status_message = match result {
+            Ok(()) => format!("Opened {target} in the browser."),
+            Err(message) => message,
+        };
     }
 }
 
@@ -637,6 +812,58 @@ mod link_navigation_tests {
         assert_eq!(
             document_link_replacement("Eoghan", "eoghan", false),
             "[Eoghan]"
+        );
+    }
+
+    #[test]
+    fn recognizes_only_http_browser_links() {
+        assert!(is_external_browser_url("https://example.com/page"));
+        assert!(is_external_browser_url("HTTP://example.com/page"));
+        assert!(!is_external_browser_url("file:///tmp/page.html"));
+        assert!(!is_external_browser_url("javascript:alert(1)"));
+        assert!(!is_external_browser_url("https://"));
+    }
+
+    #[test]
+    fn collapsed_markdown_link_boundaries_are_clickable() {
+        let link = extract_markdown_links("[1](https://example.com)")
+            .into_iter()
+            .next()
+            .unwrap();
+
+        assert!(markdown_link_contains_mapped_column(&link, link.span.start));
+        assert!(markdown_link_contains_mapped_column(&link, link.span.end));
+        assert!(!markdown_link_contains_mapped_column(
+            &link,
+            link.span.end + 1
+        ));
+    }
+
+    #[test]
+    fn browser_launcher_failure_includes_stderr() {
+        let result = browser_launcher_result(
+            "https://example.com",
+            false,
+            "exit status: 3",
+            b"no browser is configured\n",
+        );
+
+        assert_eq!(
+            result,
+            Err("Could not open https://example.com: no browser is configured".to_string())
+        );
+    }
+
+    #[test]
+    fn browser_launcher_failure_without_stderr_includes_exit_status() {
+        let result = browser_launcher_result("https://example.com", false, "exit status: 3", b"");
+
+        assert_eq!(
+            result,
+            Err(
+                "Could not open https://example.com: browser launcher exited with exit status: 3."
+                    .to_string()
+            )
         );
     }
 }
