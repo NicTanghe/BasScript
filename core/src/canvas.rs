@@ -131,6 +131,49 @@ pub fn update_canvas_node_position(
         .map_err(|error| CanvasParseError::new(format!("could not write canvas JSON: {error}")))
 }
 
+pub fn update_canvas_node_geometry(
+    input: &str,
+    node_id: &str,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+) -> Result<String, CanvasParseError> {
+    let input = input.trim_start_matches('\u{feff}');
+
+    if input.trim().is_empty() {
+        return Ok(input.to_owned());
+    }
+
+    let mut root = serde_json::from_str::<Value>(input)
+        .map_err(|error| CanvasParseError::new(format!("invalid canvas JSON: {error}")))?;
+    let object = root
+        .as_object_mut()
+        .ok_or_else(|| CanvasParseError::new("canvas root must be a JSON object"))?;
+    let Some(nodes) = object.get_mut("nodes").and_then(Value::as_array_mut) else {
+        return serde_json::to_string_pretty(&root).map_err(|error| {
+            CanvasParseError::new(format!("could not write canvas JSON: {error}"))
+        });
+    };
+
+    for node in nodes {
+        let Some(node_object) = node.as_object_mut() else {
+            continue;
+        };
+        if node_object.get("id").and_then(Value::as_str) != Some(node_id) {
+            continue;
+        }
+
+        for (field, value) in [("x", x), ("y", y), ("width", width), ("height", height)] {
+            node_object.insert(field.to_owned(), json_number_from_f32(value)?);
+        }
+        break;
+    }
+
+    serde_json::to_string_pretty(&root)
+        .map_err(|error| CanvasParseError::new(format!("could not write canvas JSON: {error}")))
+}
+
 pub fn update_canvas_text_node_content(
     input: &str,
     node_id: &str,
@@ -302,6 +345,28 @@ mod tests {
 
         assert_eq!(node["x"], 12.5);
         assert_eq!(node["y"], -7.0);
+        assert_eq!(node["color"], "1");
+        assert_eq!(node["text"], "Note");
+    }
+
+    #[test]
+    fn updates_canvas_node_geometry_without_dropping_fields() {
+        let updated = update_canvas_node_geometry(
+            r#"{"nodes":[{"id":"a","type":"text","text":"Note","color":"1","x":0,"y":0,"width":260,"height":160}],"edges":[]}"#,
+            "a",
+            12.5,
+            -7.0,
+            345.5,
+            210.0,
+        )
+        .expect("updated canvas");
+        let value = serde_json::from_str::<Value>(&updated).expect("json");
+        let node = &value["nodes"][0];
+
+        assert_eq!(node["x"], 12.5);
+        assert_eq!(node["y"], -7.0);
+        assert_eq!(node["width"], 345.5);
+        assert_eq!(node["height"], 210.0);
         assert_eq!(node["color"], "1");
         assert_eq!(node["text"], "Note");
     }

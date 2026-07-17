@@ -4,6 +4,7 @@ pub(crate) const CANVAS_SCROLL_STEP_PX: f32 = 64.0;
 pub(crate) const CANVAS_VIEW_MARGIN: f32 = 120.0;
 pub(crate) const CANVAS_NODE_DEFAULT_WIDTH: f32 = 260.0;
 pub(crate) const CANVAS_NODE_DEFAULT_HEIGHT: f32 = 160.0;
+pub(crate) const CANVAS_NODE_RESIZE_BORDER_PX: f32 = 10.0;
 pub(crate) const CANVAS_TEXT_PADDING_X: f32 = 10.0;
 pub(crate) const CANVAS_TEXT_PADDING_Y: f32 = 10.0;
 
@@ -28,6 +29,11 @@ pub(crate) enum CanvasDragMode {
         node_id: String,
         undo_snapshot: Option<EditorHistorySnapshot>,
     },
+    ResizeNode {
+        node_id: String,
+        corner: CanvasResizeCorner,
+        undo_snapshot: Option<EditorHistorySnapshot>,
+    },
     SelectText {
         node_id: String,
         anchor: Position,
@@ -38,6 +44,14 @@ pub(crate) enum CanvasDragMode {
 pub(crate) enum CanvasPanButton {
     SpaceLeft,
     Middle,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CanvasResizeCorner {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
 }
 
 impl EditorState {
@@ -131,6 +145,22 @@ impl EditorState {
             })
     }
 
+    pub(crate) fn canvas_node_index_near_border_world(
+        &self,
+        world: Vec2,
+        tolerance: f32,
+    ) -> Option<usize> {
+        let canvas = self.canvas_document.as_ref()?;
+        canvas
+            .nodes
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, node)| {
+                canvas_node_is_near_border(node, world, tolerance).then_some(index)
+            })
+    }
+
     pub(crate) fn move_canvas_node_by_delta(&mut self, node_id: &str, delta: Vec2) -> bool {
         let Some((next_x, next_y)) = self
             .canvas_document
@@ -158,6 +188,59 @@ impl EditorState {
             Err(error) => {
                 self.canvas_parse_error = Some(error.to_string());
                 self.status_message = format!("Canvas move failed: {error}");
+                false
+            }
+        }
+    }
+
+    pub(crate) fn resize_canvas_node_by_delta(
+        &mut self,
+        node_id: &str,
+        delta: Vec2,
+        corner: CanvasResizeCorner,
+    ) -> bool {
+        let Some((next_position, next_size)) = self
+            .canvas_document
+            .as_ref()
+            .and_then(|canvas| canvas.nodes.iter().find(|node| node.id == node_id))
+            .map(|node| {
+                canvas_resized_node_geometry(
+                    Vec2::new(node.x, node.y),
+                    canvas_node_size(node.width, node.height),
+                    delta,
+                    corner,
+                )
+            })
+        else {
+            return false;
+        };
+
+        match update_canvas_node_geometry(
+            &self.document.to_text(),
+            node_id,
+            next_position.x,
+            next_position.y,
+            next_size.x,
+            next_size.y,
+        ) {
+            Ok(updated_document) => {
+                self.document = Document::from_text(&updated_document);
+                if let Some(node) = self
+                    .canvas_document
+                    .as_mut()
+                    .and_then(|canvas| canvas.nodes.iter_mut().find(|node| node.id == node_id))
+                {
+                    node.x = next_position.x;
+                    node.y = next_position.y;
+                    node.width = next_size.x;
+                    node.height = next_size.y;
+                }
+                self.canvas_parse_error = None;
+                true
+            }
+            Err(error) => {
+                self.canvas_parse_error = Some(error.to_string());
+                self.status_message = format!("Canvas resize failed: {error}");
                 false
             }
         }
@@ -556,6 +639,78 @@ pub(crate) fn canvas_node_size(width: f32, height: f32) -> Vec2 {
     )
 }
 
+pub(crate) fn canvas_resized_node_geometry(
+    position: Vec2,
+    size: Vec2,
+    delta: Vec2,
+    corner: CanvasResizeCorner,
+) -> (Vec2, Vec2) {
+    let from_left = matches!(
+        corner,
+        CanvasResizeCorner::TopLeft | CanvasResizeCorner::BottomLeft
+    );
+    let from_top = matches!(
+        corner,
+        CanvasResizeCorner::TopLeft | CanvasResizeCorner::TopRight
+    );
+    let next_size = Vec2::new(
+        (size.x + if from_left { -delta.x } else { delta.x }).max(CANVAS_NODE_DEFAULT_WIDTH),
+        (size.y + if from_top { -delta.y } else { delta.y }).max(CANVAS_NODE_DEFAULT_HEIGHT),
+    );
+    let next_position = Vec2::new(
+        position.x + if from_left { size.x - next_size.x } else { 0.0 },
+        position.y + if from_top { size.y - next_size.y } else { 0.0 },
+    );
+
+    (next_position, next_size)
+}
+
+pub(crate) fn canvas_node_is_near_border(
+    node: &basscript_core::CanvasNode,
+    world: Vec2,
+    tolerance: f32,
+) -> bool {
+    let size = canvas_node_size(node.width, node.height);
+    let min = Vec2::new(node.x, node.y);
+    let max = min + size;
+    let within_expanded_bounds = world.x >= min.x - tolerance
+        && world.x <= max.x + tolerance
+        && world.y >= min.y - tolerance
+        && world.y <= max.y + tolerance;
+    let near_edge = (world.x - min.x).abs() <= tolerance
+        || (world.x - max.x).abs() <= tolerance
+        || (world.y - min.y).abs() <= tolerance
+        || (world.y - max.y).abs() <= tolerance;
+
+    within_expanded_bounds && near_edge
+}
+
+pub(crate) fn canvas_closest_node_corner(
+    node: &basscript_core::CanvasNode,
+    world: Vec2,
+) -> (CanvasResizeCorner, Vec2) {
+    let min = Vec2::new(node.x, node.y);
+    let max = min + canvas_node_size(node.width, node.height);
+    let use_left = world.x < (min.x + max.x) * 0.5;
+    let use_top = world.y < (min.y + max.y) * 0.5;
+
+    match (use_left, use_top) {
+        (true, true) => (CanvasResizeCorner::TopLeft, min),
+        (false, true) => (CanvasResizeCorner::TopRight, Vec2::new(max.x, min.y)),
+        (true, false) => (CanvasResizeCorner::BottomLeft, Vec2::new(min.x, max.y)),
+        (false, false) => (CanvasResizeCorner::BottomRight, max),
+    }
+}
+
+pub(crate) fn canvas_resize_cursor_target(
+    cursor_position: Vec2,
+    world_position: Vec2,
+    node_corner: Vec2,
+    zoom: f32,
+) -> Vec2 {
+    cursor_position + (node_corner - world_position) * zoom.max(CANVAS_ZOOM_MIN)
+}
+
 pub(crate) fn handle_canvas_drag_input(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -565,7 +720,7 @@ pub(crate) fn handle_canvas_drag_input(
         &bevy::text::ComputedTextBlock,
         &ComputedNode,
     )>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut window_query: Query<&mut Window, With<PrimaryWindow>>,
     mut drag_state: ResMut<CanvasDragState>,
     mut state: ResMut<EditorState>,
 ) {
@@ -581,8 +736,10 @@ pub(crate) fn handle_canvas_drag_input(
         return;
     }
 
-    let cursor_position = window_query.iter().next().and_then(Window::cursor_position);
-    let Some(cursor_position) = cursor_position else {
+    let Some(mut window) = window_query.iter_mut().next() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
         return;
     };
 
@@ -594,7 +751,7 @@ pub(crate) fn handle_canvas_drag_input(
             &text_layout_query,
             &mut drag_state,
             &mut state,
-            cursor_position,
+            &mut window,
         );
         return;
     }
@@ -633,6 +790,16 @@ pub(crate) fn handle_canvas_drag_input(
             }
             state.move_canvas_node_by_delta(node_id, delta / zoom);
         }
+        CanvasDragMode::ResizeNode {
+            node_id,
+            corner,
+            undo_snapshot,
+        } => {
+            if let Some(snapshot) = undo_snapshot.take() {
+                state.push_undo_snapshot(snapshot);
+            }
+            state.resize_canvas_node_by_delta(node_id, delta / zoom, *corner);
+        }
         CanvasDragMode::SelectText { node_id, anchor } => {
             let panel_context = gather_scroll_panels_context(&panel_query, &state);
             let Some(panel_pos) = panel_context.processed_cursor_pos else {
@@ -665,8 +832,11 @@ pub(crate) fn start_canvas_drag_if_requested(
     )>,
     drag_state: &mut CanvasDragState,
     state: &mut EditorState,
-    cursor_position: Vec2,
+    window: &mut Window,
 ) {
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
     let panel_context = gather_scroll_panels_context(panel_query, state);
     if panel_context.hovered_panel != Some(PanelKind::Processed) {
         return;
@@ -678,25 +848,58 @@ pub(crate) fn start_canvas_drag_if_requested(
             return;
         };
         let world_pos = state.canvas_world_from_panel_pos(panel_pos);
-        let Some(node_index) = state.canvas_node_index_at_world(world_pos) else {
+        let node_index_at_world = state.canvas_node_index_at_world(world_pos);
+        let border_tolerance = CANVAS_NODE_RESIZE_BORDER_PX / state.zoom.max(CANVAS_ZOOM_MIN);
+        let resize_node_index = if let Some(node_index) = node_index_at_world {
+            state
+                .canvas_document
+                .as_ref()
+                .and_then(|canvas| canvas.nodes.get(node_index))
+                .is_some_and(|node| canvas_node_is_near_border(node, world_pos, border_tolerance))
+                .then_some(node_index)
+        } else {
+            state.canvas_node_index_near_border_world(world_pos, border_tolerance)
+        };
+        let Some(node_index) = resize_node_index.or(node_index_at_world) else {
             return;
         };
-        let Some(node_id) = state
+        let Some((node_id, resize_corner)) = state
             .canvas_document
             .as_ref()
             .and_then(|canvas| canvas.nodes.get(node_index))
-            .map(|node| node.id.clone())
+            .map(|node| {
+                let resize_corner = resize_node_index
+                    .is_some()
+                    .then(|| canvas_closest_node_corner(node, world_pos));
+                (node.id.clone(), resize_corner)
+            })
         else {
             return;
         };
 
         state.workspace_focused = false;
         state.focused_panel = PanelKind::Processed;
-        drag_state.active = Some(CanvasDragMode::MoveNode {
-            node_id,
-            undo_snapshot: Some(state.history_snapshot()),
-        });
-        drag_state.last_cursor_position = Some(cursor_position);
+        if let Some((corner, corner_position)) = resize_corner {
+            let cursor_target = canvas_resize_cursor_target(
+                cursor_position,
+                world_pos,
+                corner_position,
+                state.zoom,
+            );
+            window.set_cursor_position(Some(cursor_target));
+            drag_state.active = Some(CanvasDragMode::ResizeNode {
+                node_id,
+                corner,
+                undo_snapshot: Some(state.history_snapshot()),
+            });
+            drag_state.last_cursor_position = Some(cursor_target);
+        } else {
+            drag_state.active = Some(CanvasDragMode::MoveNode {
+                node_id,
+                undo_snapshot: Some(state.history_snapshot()),
+            });
+            drag_state.last_cursor_position = Some(cursor_position);
+        }
         return;
     }
 
@@ -786,6 +989,7 @@ pub(crate) fn canvas_drag_mode_still_active(
             button: CanvasPanButton::Middle,
         } => mouse_buttons.pressed(MouseButton::Middle),
         CanvasDragMode::MoveNode { .. } => mouse_buttons.pressed(MouseButton::Left),
+        CanvasDragMode::ResizeNode { .. } => mouse_buttons.pressed(MouseButton::Left),
         CanvasDragMode::SelectText { .. } => mouse_buttons.pressed(MouseButton::Left),
     }
 }
@@ -1002,3 +1206,93 @@ pub(crate) fn handle_canvas_text_edit_input(
 }
 #[allow(unused_imports)]
 use super::*;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_canvas_node() -> basscript_core::CanvasNode {
+        basscript_core::CanvasNode {
+            id: "card".to_owned(),
+            kind: CanvasNodeKind::Text {
+                text: String::new(),
+            },
+            x: 100.0,
+            y: 200.0,
+            width: 300.0,
+            height: 180.0,
+        }
+    }
+
+    #[test]
+    fn canvas_resize_border_hit_zone_covers_every_edge() {
+        let node = test_canvas_node();
+
+        assert!(canvas_node_is_near_border(
+            &node,
+            Vec2::new(105.0, 290.0),
+            10.0
+        ));
+        assert!(canvas_node_is_near_border(
+            &node,
+            Vec2::new(395.0, 290.0),
+            10.0
+        ));
+        assert!(canvas_node_is_near_border(
+            &node,
+            Vec2::new(250.0, 195.0),
+            10.0
+        ));
+        assert!(canvas_node_is_near_border(
+            &node,
+            Vec2::new(250.0, 385.0),
+            10.0
+        ));
+        assert!(!canvas_node_is_near_border(
+            &node,
+            Vec2::new(250.0, 290.0),
+            10.0
+        ));
+    }
+
+    #[test]
+    fn canvas_resize_anchors_the_opposite_corner() {
+        assert_eq!(
+            canvas_resized_node_geometry(
+                Vec2::new(100.0, 200.0),
+                Vec2::new(300.0, 180.0),
+                Vec2::new(-25.0, -35.0),
+                CanvasResizeCorner::TopLeft,
+            ),
+            (Vec2::new(75.0, 165.0), Vec2::new(325.0, 215.0))
+        );
+        assert_eq!(
+            canvas_resized_node_geometry(
+                Vec2::new(100.0, 200.0),
+                Vec2::new(300.0, 180.0),
+                Vec2::new(100.0, 100.0),
+                CanvasResizeCorner::TopLeft,
+            ),
+            (
+                Vec2::new(140.0, 220.0),
+                Vec2::new(CANVAS_NODE_DEFAULT_WIDTH, CANVAS_NODE_DEFAULT_HEIGHT),
+            )
+        );
+    }
+
+    #[test]
+    fn canvas_resize_selects_and_moves_to_the_closest_corner() {
+        let node = test_canvas_node();
+        let (corner, corner_position) = canvas_closest_node_corner(&node, Vec2::new(105.0, 250.0));
+        assert_eq!(corner, CanvasResizeCorner::TopLeft);
+
+        let target = canvas_resize_cursor_target(
+            Vec2::new(50.0, 60.0),
+            Vec2::new(105.0, 250.0),
+            corner_position,
+            2.0,
+        );
+
+        assert_eq!(target, Vec2::new(40.0, -40.0));
+    }
+}

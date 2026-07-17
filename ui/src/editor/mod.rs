@@ -9,8 +9,8 @@ use std::{
 use basscript_core::{
     CanvasDocument, CanvasNodeKind, Cursor, Document, DocumentFormat, DocumentPath, ImageEmbed,
     LineKind, LinkDisplayText, ParsedLine, Position, ScriptLink, StoryIndexDatabase,
-    parse_canvas_document, parse_document_with_format, update_canvas_node_position,
-    update_canvas_text_node_content,
+    parse_canvas_document, parse_document_with_format, update_canvas_node_geometry,
+    update_canvas_node_position, update_canvas_text_node_content,
 };
 use bevy::{
     app::AppExit,
