@@ -2,7 +2,7 @@
 	workspace_sidebar_visible: true,
 	top_menu_collapsed: true,
 	right_buttons_visible: true,
-	status_line_visible: false,
+	status_line_visible: true,
 	processed_link_color_mode: "colored",
 	processed_paginated: false,
 	formatting_marks_visible: false,

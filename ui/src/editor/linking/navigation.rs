@@ -196,7 +196,19 @@ impl EditorState {
         }
     }
 
-    pub(crate) fn open_link_at(&mut self, position: Position) -> bool {
+    pub(crate) fn open_link_at(
+        &mut self,
+        position: Position,
+        rendered_external_target: Option<&str>,
+        allow_raw_external_hit: bool,
+    ) -> bool {
+        if let Some(target) =
+            rendered_external_target.filter(|target| is_external_browser_url(target))
+        {
+            self.begin_external_url_open(target.to_string());
+            return true;
+        }
+
         if let Some(link) = self.script_link_at(position).cloned() {
             match self.resolve_script_link_path(&link) {
                 Ok(path) => {
@@ -218,15 +230,24 @@ impl EditorState {
             return true;
         }
 
+        if !allow_raw_external_hit {
+            return false;
+        }
+
         let Some(link) = self.external_markdown_link_at(position) else {
             return false;
         };
-        match open_external_url(&link.target) {
+        self.begin_external_url_open(link.target);
+        true
+    }
+
+    pub(crate) fn begin_external_url_open(&mut self, target: String) {
+        match open_external_url(&target) {
             Ok(receiver) => {
-                self.status_message = format!("Opening {} in the browser...", link.target);
+                self.status_message = format!("Opening {target} in the browser...");
                 self.pending_external_url_opens
                     .push(PendingExternalUrlOpen {
-                        target: link.target,
+                        target,
                         receiver: Arc::new(Mutex::new(receiver)),
                     });
             }
@@ -234,8 +255,6 @@ impl EditorState {
                 self.status_message = message;
             }
         }
-
-        true
     }
 
     pub(crate) fn document_navigation_entry(&self) -> DocumentNavigationEntry {
@@ -488,7 +507,7 @@ impl EditorState {
 
         extract_markdown_links(&line.raw).into_iter().find(|link| {
             is_external_browser_url(&link.target)
-                && markdown_link_contains_mapped_column(link, position.column)
+                && markdown_link_contains_label_column(link, position.column)
         })
     }
 
@@ -521,8 +540,8 @@ pub(crate) fn is_external_browser_url(target: &str) -> bool {
     })
 }
 
-pub(crate) fn markdown_link_contains_mapped_column(link: &MarkdownLink, column: usize) -> bool {
-    link.span.start <= column && column <= link.span.end
+pub(crate) fn markdown_link_contains_label_column(link: &MarkdownLink, column: usize) -> bool {
+    link.label_span.start <= column && column <= link.label_span.end
 }
 
 pub(crate) fn open_external_url(
@@ -825,17 +844,23 @@ mod link_navigation_tests {
     }
 
     #[test]
-    fn collapsed_markdown_link_boundaries_are_clickable() {
+    fn raw_markdown_link_hit_is_limited_to_the_label() {
         let link = extract_markdown_links("[1](https://example.com)")
             .into_iter()
             .next()
             .unwrap();
 
-        assert!(markdown_link_contains_mapped_column(&link, link.span.start));
-        assert!(markdown_link_contains_mapped_column(&link, link.span.end));
-        assert!(!markdown_link_contains_mapped_column(
+        assert!(markdown_link_contains_label_column(
             &link,
-            link.span.end + 1
+            link.label_span.start
+        ));
+        assert!(markdown_link_contains_label_column(
+            &link,
+            link.label_span.end
+        ));
+        assert!(!markdown_link_contains_label_column(
+            &link,
+            link.label_span.end + 2
         ));
     }
 

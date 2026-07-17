@@ -216,7 +216,7 @@ pub(crate) fn handle_mouse_selection(
         processed_line_height,
     );
     let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
-    let mut hit = None::<(PanelKind, Position)>;
+    let mut hit = None::<(PanelKind, Position, Option<String>, bool)>;
 
     for (panel, relative_cursor, computed) in panel_query.iter() {
         if !state.panel_visible(panel.kind) {
@@ -233,7 +233,7 @@ pub(crate) fn handle_mouse_selection(
         state.focused_panel = panel.kind;
 
         if state.document.is_empty() {
-            hit = Some((panel.kind, Position::default()));
+            hit = Some((panel.kind, Position::default(), None, true));
             break;
         }
 
@@ -300,31 +300,52 @@ pub(crate) fn handle_mouse_selection(
             };
 
             let line_in_page = fallback_line_in_page;
-            let display_column = processed_text_layout_query
+            let fallback_character_column = if panel_x <= text_left {
+                None
+            } else {
+                Some(
+                    ((panel_x.min(text_right) - text_left) / processed_char_width)
+                        .floor()
+                        .max(0.0) as usize,
+                )
+            };
+            let (display_column, character_column) = processed_text_layout_query
                 .iter()
                 .find(|(paper_text, _, _)| {
                     paper_text.slot == slot && paper_text.line_offset == line_in_page
                 })
-                .map_or(fallback_column, |(_, text_block, text_computed)| {
-                    let inverse_scale = text_computed.inverse_scale_factor();
-                    let global_for_line = page_index
-                        .saturating_mul(processed_step_lines)
-                        .saturating_add(line_in_page)
-                        .min(processed_all_lines.len().saturating_sub(1));
-                    let display_line = processed_all_lines
-                        .get(global_for_line)
-                        .map_or("", |line| line.text.as_str());
-                    let display_column = column_from_layout_x(
-                        text_block,
-                        0,
-                        local_x,
-                        display_line,
-                        inverse_scale,
-                        processed_char_width,
-                    )
-                    .unwrap_or(fallback_column);
-                    display_column
-                });
+                .map_or(
+                    (fallback_column, fallback_character_column),
+                    |(_, text_block, text_computed)| {
+                        let inverse_scale = text_computed.inverse_scale_factor();
+                        let global_for_line = page_index
+                            .saturating_mul(processed_step_lines)
+                            .saturating_add(line_in_page)
+                            .min(processed_all_lines.len().saturating_sub(1));
+                        let display_line = processed_all_lines
+                            .get(global_for_line)
+                            .map_or("", |line| line.text.as_str());
+                        (
+                            column_from_layout_x(
+                                text_block,
+                                0,
+                                local_x,
+                                display_line,
+                                inverse_scale,
+                                processed_char_width,
+                            )
+                            .unwrap_or(fallback_column),
+                            character_column_from_layout_x(
+                                text_block,
+                                0,
+                                local_x,
+                                display_line,
+                                inverse_scale,
+                                processed_char_width,
+                            ),
+                        )
+                    },
+                );
 
             let global_index = page_index
                 .saturating_mul(processed_step_lines)
@@ -342,7 +363,20 @@ pub(crate) fn handle_mouse_selection(
             let line = visual_line.source_line;
             let max_col = state.document.line_len_chars(line);
             let column = raw_column.min(max_col);
-            hit = Some((PanelKind::Processed, Position { line, column }));
+            let rendered_external_target = character_column
+                .and_then(|column| {
+                    processed_visual_link_hit_at_character_column(visual_line, column)
+                })
+                .map(|hit| hit.target)
+                .filter(|target| is_external_browser_url(target));
+            let allow_raw_external_hit = state.display_mode == DisplayMode::ProcessedRawCurrentLine
+                && line == state.cursor.position.line;
+            hit = Some((
+                PanelKind::Processed,
+                Position { line, column },
+                rendered_external_target,
+                allow_raw_external_hit,
+            ));
             break;
         }
 
@@ -380,11 +414,11 @@ pub(crate) fn handle_mouse_selection(
 
         let max_col = state.document.line_len_chars(line);
         let column = raw_column.min(max_col);
-        hit = Some((PanelKind::Plain, Position { line, column }));
+        hit = Some((PanelKind::Plain, Position { line, column }, None, true));
         break;
     }
 
-    let Some((_panel, position)) = hit else {
+    let Some((_panel, position, rendered_external_target, allow_raw_external_hit)) = hit else {
         return;
     };
 
@@ -408,7 +442,15 @@ pub(crate) fn handle_mouse_selection(
         state.workspace_focused = false;
     }
 
-    if consume_script_link_click(&mut state, &mut mouse_selection, &keys, is_start, position) {
+    if consume_script_link_click(
+        &mut state,
+        &mut mouse_selection,
+        &keys,
+        is_start,
+        position,
+        rendered_external_target.as_deref(),
+        allow_raw_external_hit,
+    ) {
         return;
     }
 
@@ -588,33 +630,54 @@ pub(crate) fn hovered_processed_link_at_cursor(
             .round()
             .max(0.0) as usize
     };
+    let fallback_character_column = if panel_x <= text_left {
+        None
+    } else {
+        Some(
+            ((panel_x.min(text_right) - text_left) / processed_char_width)
+                .floor()
+                .max(0.0) as usize,
+        )
+    };
 
     let line_in_page = fallback_line_in_page;
-    let display_column = processed_text_layout_query
+    let (display_column, character_column) = processed_text_layout_query
         .iter()
         .find(|(paper_text, _, _)| {
             paper_text.slot == slot && paper_text.line_offset == line_in_page
         })
-        .map_or(fallback_column, |(_, text_block, text_computed)| {
-            let inverse_scale = text_computed.inverse_scale_factor();
-            let global_for_line = page_index
-                .saturating_mul(processed_step_lines)
-                .saturating_add(line_in_page)
-                .min(processed_all_lines.len().saturating_sub(1));
-            let display_line = processed_all_lines
-                .get(global_for_line)
-                .map_or("", |line| line.text.as_str());
-            let display_column = column_from_layout_x(
-                text_block,
-                0,
-                local_x,
-                display_line,
-                inverse_scale,
-                processed_char_width,
-            )
-            .unwrap_or(fallback_column);
-            display_column
-        });
+        .map_or(
+            (fallback_column, fallback_character_column),
+            |(_, text_block, text_computed)| {
+                let inverse_scale = text_computed.inverse_scale_factor();
+                let global_for_line = page_index
+                    .saturating_mul(processed_step_lines)
+                    .saturating_add(line_in_page)
+                    .min(processed_all_lines.len().saturating_sub(1));
+                let display_line = processed_all_lines
+                    .get(global_for_line)
+                    .map_or("", |line| line.text.as_str());
+                (
+                    column_from_layout_x(
+                        text_block,
+                        0,
+                        local_x,
+                        display_line,
+                        inverse_scale,
+                        processed_char_width,
+                    )
+                    .unwrap_or(fallback_column),
+                    character_column_from_layout_x(
+                        text_block,
+                        0,
+                        local_x,
+                        display_line,
+                        inverse_scale,
+                        processed_char_width,
+                    ),
+                )
+            },
+        );
 
     let global_index = page_index
         .saturating_mul(processed_step_lines)
@@ -622,6 +685,22 @@ pub(crate) fn hovered_processed_link_at_cursor(
         .min(processed_all_lines.len().saturating_sub(1));
     let global_index = nearest_non_spacer_visual_index(&processed_all_lines, global_index)?;
     let visual_line = processed_all_lines.get(global_index)?;
+    if let Some(link_hit) = character_column
+        .and_then(|column| processed_visual_link_hit_at_character_column(visual_line, column))
+    {
+        return Some(HoveredProcessedLink {
+            source_line: visual_line.source_line,
+            raw_start_column: link_hit.raw_start_column,
+            raw_end_column: link_hit.raw_end_column,
+        });
+    }
+
+    let raw_current_line_mode_active = state.display_mode == DisplayMode::ProcessedRawCurrentLine
+        && visual_line.source_line == state.cursor.position.line;
+    if !raw_current_line_mode_active {
+        return None;
+    }
+
     let raw_column = processed_raw_column_from_display(visual_line, display_column);
     let line = visual_line.source_line;
     let max_col = state.document.line_len_chars(line);

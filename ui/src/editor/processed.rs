@@ -1954,6 +1954,42 @@ pub(crate) fn processed_visual_fragment_raw_range(
     ))
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ProcessedVisualLinkHit {
+    pub(crate) target: String,
+    pub(crate) raw_start_column: usize,
+    pub(crate) raw_end_column: usize,
+}
+
+pub(crate) fn processed_visual_link_hit_at_character_column(
+    visual_line: &ProcessedVisualLine,
+    character_column: usize,
+) -> Option<ProcessedVisualLinkHit> {
+    let mut display_start = 0usize;
+    for fragment in &visual_line.fragments {
+        let display_end = display_start.saturating_add(fragment.text.chars().count());
+        if character_column >= display_start && character_column < display_end {
+            let target = fragment.link_target.clone()?;
+            return Some(ProcessedVisualLinkHit {
+                target,
+                raw_start_column: visual_line
+                    .display_to_raw
+                    .get(display_start)
+                    .copied()
+                    .unwrap_or(visual_line.raw_start_column),
+                raw_end_column: visual_line
+                    .display_to_raw
+                    .get(display_end)
+                    .copied()
+                    .unwrap_or(visual_line.raw_end_column),
+            });
+        }
+        display_start = display_end;
+    }
+
+    None
+}
+
 pub(crate) fn processed_visual_fragment_count(visual_line: &ProcessedVisualLine) -> usize {
     visual_line
         .fragments
@@ -2039,6 +2075,32 @@ mod processed_markdown_inline_tests {
         );
         assert_eq!(prepared.link_targets[first - 1], None);
         assert_eq!(prepared.link_targets[first + 1], None);
+    }
+
+    #[test]
+    fn adjacent_rendered_links_keep_distinct_character_hits() {
+        let prepared = prepared_markdown("[a](https://a.example)[b](https://b.example)");
+        let mut lines = Vec::<ProcessedVisualLine>::new();
+        push_wrapped_visual_lines(
+            &mut lines,
+            0,
+            0,
+            false,
+            &prepared,
+            0,
+            prepared.text.chars().count(),
+            80,
+        );
+
+        assert_eq!(lines[0].text, "ab");
+        assert_eq!(
+            processed_visual_link_hit_at_character_column(&lines[0], 0).map(|hit| hit.target),
+            Some("https://a.example".to_string())
+        );
+        assert_eq!(
+            processed_visual_link_hit_at_character_column(&lines[0], 1).map(|hit| hit.target),
+            Some("https://b.example".to_string())
+        );
     }
 
     #[test]
@@ -2658,6 +2720,39 @@ pub(crate) fn column_from_layout_x(
     })?;
 
     Some(byte_to_char_index(line_text, *best_byte))
+}
+
+pub(crate) fn character_column_from_layout_x(
+    text_block: &ComputedTextBlock,
+    line_index: usize,
+    x: f32,
+    line_text: &str,
+    inverse_scale: f32,
+    fallback_char_width: f32,
+) -> Option<usize> {
+    if line_text.is_empty() {
+        return None;
+    }
+
+    let boundaries = line_boundaries(
+        text_block,
+        line_index,
+        line_text,
+        inverse_scale,
+        fallback_char_width,
+    );
+    for window in boundaries.windows(2) {
+        let [(byte_index, start_x), (_, end_x)] = window else {
+            continue;
+        };
+        let left = start_x.min(*end_x);
+        let right = start_x.max(*end_x);
+        if x >= left && x < right {
+            return Some(byte_to_char_index(line_text, *byte_index));
+        }
+    }
+
+    None
 }
 
 pub(crate) fn char_to_byte_index(input: &str, column: usize) -> usize {
