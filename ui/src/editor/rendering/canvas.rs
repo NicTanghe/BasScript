@@ -15,6 +15,19 @@ pub(crate) struct CanvasRenderedNodeText {
     pub(crate) index: usize,
 }
 
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub(crate) struct CanvasRenderedTextStyle {
+    pub(crate) font_scale: f32,
+    pub(crate) line_height_scale: f32,
+}
+
+impl CanvasRenderedTextStyle {
+    pub(crate) const NORMAL: Self = Self {
+        font_scale: 1.0,
+        line_height_scale: 1.0,
+    };
+}
+
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct CanvasRenderedTextSelection {
     pub(crate) node_index: usize,
@@ -103,7 +116,11 @@ pub(crate) fn sync_canvas_board(
             Without<CanvasRenderedTextCaret>,
         ),
     >,
-    mut text_query: Query<(&CanvasRenderedNodeText, &mut TextFont, &mut LineHeight)>,
+    mut text_query: Query<(&CanvasRenderedTextStyle, &mut TextFont, &mut LineHeight)>,
+    mut text_node_query: Query<
+        (&CanvasRenderedNodeText, &mut Node),
+        (Without<CanvasRenderedNode>, Without<CanvasRenderedEdge>),
+    >,
     mut image_query: Query<
         (&CanvasRenderedImage, &mut Visibility),
         (
@@ -225,11 +242,11 @@ pub(crate) fn sync_canvas_board(
         *visibility = Visibility::Visible;
     }
 
-    let text_font_size = canvas_text_font_size(zoom);
-    let text_line_height = canvas_text_line_height(zoom);
-    for (_, mut text_font, mut line_height) in text_query.iter_mut() {
-        text_font.font_size = FontSize::Px(text_font_size);
-        *line_height = LineHeight::Px(text_line_height);
+    for (style, mut text_font, mut line_height) in text_query.iter_mut() {
+        update_canvas_text_metrics(zoom, style, &mut text_font, &mut line_height);
+    }
+    for (_, mut text_node) in text_node_query.iter_mut() {
+        update_canvas_text_padding(zoom, &mut text_node);
     }
 
     for (canvas_image, mut visibility) in image_query.iter_mut() {
@@ -433,14 +450,15 @@ pub(crate) fn spawn_canvas_node(
                     TextColor(COLOR_TEXT_MUTED),
                     Node {
                         position_type: PositionType::Absolute,
-                        left: px(CANVAS_TEXT_PADDING_X),
-                        top: px(CANVAS_TEXT_PADDING_Y),
-                        right: px(CANVAS_TEXT_PADDING_X),
-                        bottom: px(CANVAS_TEXT_PADDING_Y),
+                        left: px(canvas_text_padding_x(zoom)),
+                        top: px(canvas_text_padding_y(zoom)),
+                        right: px(canvas_text_padding_x(zoom)),
+                        bottom: px(canvas_text_padding_y(zoom)),
                         overflow: Overflow::clip(),
                         ..default()
                     },
                     CanvasRenderedNodeText { index },
+                    CanvasRenderedTextStyle::NORMAL,
                 ));
             }
             CanvasNodeKind::Group { label } => {
@@ -450,20 +468,21 @@ pub(crate) fn spawn_canvas_node(
                         fonts,
                         FontVariant::Bold,
                         DocumentFormat::Canvas,
-                        canvas_text_font_size(zoom).max(8.0),
+                        canvas_text_font_size(zoom),
                     ),
                     LineHeight::Px(canvas_text_line_height(zoom)),
                     TextColor(COLOR_TEXT_MUTED),
                     Node {
                         position_type: PositionType::Absolute,
-                        left: px(CANVAS_TEXT_PADDING_X),
-                        top: px(CANVAS_TEXT_PADDING_Y),
-                        right: px(CANVAS_TEXT_PADDING_X),
-                        bottom: px(CANVAS_TEXT_PADDING_Y),
+                        left: px(canvas_text_padding_x(zoom)),
+                        top: px(canvas_text_padding_y(zoom)),
+                        right: px(canvas_text_padding_x(zoom)),
+                        bottom: px(canvas_text_padding_y(zoom)),
                         overflow: Overflow::clip(),
                         ..default()
                     },
                     CanvasRenderedNodeText { index },
+                    CanvasRenderedTextStyle::NORMAL,
                 ));
             }
             CanvasNodeKind::Unknown { node_type } => {
@@ -479,14 +498,15 @@ pub(crate) fn spawn_canvas_node(
                     TextColor(COLOR_TEXT_MUTED),
                     Node {
                         position_type: PositionType::Absolute,
-                        left: px(CANVAS_TEXT_PADDING_X),
-                        top: px(CANVAS_TEXT_PADDING_Y),
-                        right: px(CANVAS_TEXT_PADDING_X),
-                        bottom: px(CANVAS_TEXT_PADDING_Y),
+                        left: px(canvas_text_padding_x(zoom)),
+                        top: px(canvas_text_padding_y(zoom)),
+                        right: px(canvas_text_padding_x(zoom)),
+                        bottom: px(canvas_text_padding_y(zoom)),
                         overflow: Overflow::clip(),
                         ..default()
                     },
                     CanvasRenderedNodeText { index },
+                    CanvasRenderedTextStyle::NORMAL,
                 ));
             }
         });
@@ -530,15 +550,16 @@ pub(crate) fn spawn_canvas_text_preview(
         TextColor(COLOR_TEXT_MAIN),
         Node {
             position_type: PositionType::Absolute,
-            left: px(CANVAS_TEXT_PADDING_X),
-            top: px(CANVAS_TEXT_PADDING_Y),
-            right: px(CANVAS_TEXT_PADDING_X),
-            bottom: px(CANVAS_TEXT_PADDING_Y),
+            left: px(canvas_text_padding_x(zoom)),
+            top: px(canvas_text_padding_y(zoom)),
+            right: px(canvas_text_padding_x(zoom)),
+            bottom: px(canvas_text_padding_y(zoom)),
             overflow: Overflow::clip(),
             ..default()
         },
         ZIndex(1),
         CanvasRenderedNodeText { index },
+        CanvasRenderedTextStyle::NORMAL,
     ));
 }
 
@@ -564,15 +585,16 @@ pub(crate) fn spawn_canvas_rendered_text_preview(
             TextColor(COLOR_TEXT_MAIN),
             Node {
                 position_type: PositionType::Absolute,
-                left: px(CANVAS_TEXT_PADDING_X),
-                top: px(CANVAS_TEXT_PADDING_Y),
-                right: px(CANVAS_TEXT_PADDING_X),
-                bottom: px(CANVAS_TEXT_PADDING_Y),
+                left: px(canvas_text_padding_x(zoom)),
+                top: px(canvas_text_padding_y(zoom)),
+                right: px(canvas_text_padding_x(zoom)),
+                bottom: px(canvas_text_padding_y(zoom)),
                 overflow: Overflow::clip(),
                 ..default()
             },
             ZIndex(1),
             CanvasRenderedNodeText { index },
+            CanvasRenderedTextStyle::NORMAL,
         ))
         .with_children(|text_parent| {
             for span in canvas_rendered_text_spans(text) {
@@ -586,6 +608,10 @@ pub(crate) fn spawn_canvas_rendered_text_preview(
                     ),
                     LineHeight::Px(line_height * span.style.line_height_scale),
                     TextColor(span.style.color),
+                    CanvasRenderedTextStyle {
+                        font_scale: span.style.font_scale,
+                        line_height_scale: span.style.line_height_scale,
+                    },
                 ));
             }
         });
@@ -802,8 +828,8 @@ pub(crate) fn canvas_text_selection_rects(
             let height = rect.height() as f32 * inverse_scale;
             (left.is_finite() && top.is_finite() && width.is_finite() && height.is_finite())
                 .then_some((
-                    CANVAS_TEXT_PADDING_X + left,
-                    CANVAS_TEXT_PADDING_Y + top,
+                    canvas_text_padding_x(zoom) + left,
+                    canvas_text_padding_y(zoom) + top,
                     width.max(1.0),
                     height.max(1.0),
                 ))
@@ -850,8 +876,8 @@ pub(crate) fn canvas_text_selection_rects_fallback(
         let right_x = line_end as f32 * fallback_char_width;
         let line_top = line as f32 * fallback_line_height;
         rects.push((
-            CANVAS_TEXT_PADDING_X + left_x.min(right_x),
-            CANVAS_TEXT_PADDING_Y
+            canvas_text_padding_x(zoom) + left_x.min(right_x),
+            canvas_text_padding_y(zoom)
                 + (line_top + caret_vertical_offset(fallback_line_height)).max(0.0),
             (right_x - left_x).abs().max(1.0),
             fallback_line_height.max(1.0),
@@ -897,8 +923,8 @@ pub(crate) fn canvas_text_caret_rect(
         let height = rect.height() as f32 * inverse_scale;
         if left.is_finite() && top.is_finite() && width.is_finite() && height.is_finite() {
             return Some((
-                CANVAS_TEXT_PADDING_X + (left + caret_x_offset_for_state(state)).max(0.0),
-                CANVAS_TEXT_PADDING_Y + top.max(0.0),
+                canvas_text_padding_x(zoom) + (left + caret_x_offset_for_state(state)).max(0.0),
+                canvas_text_padding_y(zoom) + top.max(0.0),
                 width.max(1.0),
                 height.max(1.0),
             ));
@@ -906,10 +932,10 @@ pub(crate) fn canvas_text_caret_rect(
     }
 
     Some((
-        CANVAS_TEXT_PADDING_X
+        canvas_text_padding_x(zoom)
             + (cursor.column as f32 * fallback_char_width + caret_x_offset_for_state(state))
                 .max(0.0),
-        CANVAS_TEXT_PADDING_Y
+        canvas_text_padding_y(zoom)
             + (cursor.line as f32 * fallback_line_height
                 + caret_vertical_offset(fallback_line_height))
             .max(0.0),
@@ -1055,15 +1081,16 @@ pub(crate) fn spawn_canvas_image_or_placeholder(
                     TextColor(COLOR_TEXT_MUTED),
                     Node {
                         position_type: PositionType::Absolute,
-                        left: px(CANVAS_TEXT_PADDING_X),
-                        top: px(CANVAS_TEXT_PADDING_Y),
-                        right: px(CANVAS_TEXT_PADDING_X),
-                        bottom: px(CANVAS_TEXT_PADDING_Y),
+                        left: px(canvas_text_padding_x(zoom)),
+                        top: px(canvas_text_padding_y(zoom)),
+                        right: px(canvas_text_padding_x(zoom)),
+                        bottom: px(canvas_text_padding_y(zoom)),
                         overflow: Overflow::clip(),
                         ..default()
                     },
                     Visibility::Hidden,
                     CanvasRenderedNodeText { index },
+                    CanvasRenderedTextStyle::NORMAL,
                     CanvasRenderedImageError {
                         handle: image_handle,
                     },
@@ -1095,15 +1122,35 @@ pub(crate) fn spawn_canvas_image_error(
         TextColor(COLOR_TEXT_MUTED),
         Node {
             position_type: PositionType::Absolute,
-            left: px(CANVAS_TEXT_PADDING_X),
-            top: px(CANVAS_TEXT_PADDING_Y),
-            right: px(CANVAS_TEXT_PADDING_X),
-            bottom: px(CANVAS_TEXT_PADDING_Y),
+            left: px(canvas_text_padding_x(zoom)),
+            top: px(canvas_text_padding_y(zoom)),
+            right: px(canvas_text_padding_x(zoom)),
+            bottom: px(canvas_text_padding_y(zoom)),
             overflow: Overflow::clip(),
             ..default()
         },
         CanvasRenderedNodeText { index },
+        CanvasRenderedTextStyle::NORMAL,
     ));
+}
+
+pub(crate) fn update_canvas_text_metrics(
+    zoom: f32,
+    style: &CanvasRenderedTextStyle,
+    text_font: &mut TextFont,
+    line_height: &mut LineHeight,
+) {
+    text_font.font_size = FontSize::Px(canvas_text_font_size(zoom) * style.font_scale);
+    *line_height = LineHeight::Px(canvas_text_line_height(zoom) * style.line_height_scale);
+}
+
+pub(crate) fn update_canvas_text_padding(zoom: f32, node: &mut Node) {
+    let padding_x = px(canvas_text_padding_x(zoom));
+    let padding_y = px(canvas_text_padding_y(zoom));
+    node.left = padding_x;
+    node.top = padding_y;
+    node.right = padding_x;
+    node.bottom = padding_y;
 }
 
 pub(crate) fn canvas_image_load_failed(asset_server: &AssetServer, handle: &Handle<Image>) -> bool {
@@ -1454,3 +1501,60 @@ pub(crate) fn canvas_edge_segment_rect(
 }
 #[allow(unused_imports)]
 use super::*;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::ecs::system::{IntoSystem, System};
+    use bevy::prelude::World;
+
+    #[test]
+    fn canvas_board_system_queries_are_disjoint() {
+        let mut world = World::new();
+        let mut system = IntoSystem::into_system(sync_canvas_board);
+
+        system.initialize(&mut world);
+    }
+
+    #[test]
+    fn canvas_text_metrics_keep_rendered_span_scale_when_zoom_changes() {
+        let style = CanvasRenderedTextStyle {
+            font_scale: 1.5,
+            line_height_scale: 1.75,
+        };
+        let mut text_font = TextFont::default();
+        let mut line_height = LineHeight::Px(0.0);
+
+        update_canvas_text_metrics(1.0, &style, &mut text_font, &mut line_height);
+        assert_eq!(text_font.font_size, FontSize::Px(18.0));
+        assert_eq!(line_height, LineHeight::Px(26.25));
+
+        update_canvas_text_metrics(2.0, &style, &mut text_font, &mut line_height);
+        assert_eq!(text_font.font_size, FontSize::Px(36.0));
+        assert_eq!(line_height, LineHeight::Px(52.5));
+    }
+
+    #[test]
+    fn canvas_text_and_padding_scale_linearly_at_zoom_extremes() {
+        const TOLERANCE: f32 = 0.000_01;
+        let base_columns =
+            (CANVAS_NODE_DEFAULT_WIDTH - CANVAS_TEXT_PADDING_X * 2.0) / canvas_text_char_width(1.0);
+        for zoom in [CANVAS_ZOOM_MIN, 1.0, CANVAS_ZOOM_MAX] {
+            assert!((canvas_text_font_size(zoom) - FONT_SIZE * zoom).abs() < TOLERANCE);
+            assert!((canvas_text_line_height(zoom) - FONT_SIZE * 1.25 * zoom).abs() < TOLERANCE);
+            assert!((canvas_text_padding_x(zoom) - CANVAS_TEXT_PADDING_X * zoom).abs() < TOLERANCE);
+            assert!((canvas_text_padding_y(zoom) - CANVAS_TEXT_PADDING_Y * zoom).abs() < TOLERANCE);
+            let mut node = Node::default();
+            update_canvas_text_padding(zoom, &mut node);
+            assert_eq!(node.left, px(CANVAS_TEXT_PADDING_X * zoom));
+            assert_eq!(node.top, px(CANVAS_TEXT_PADDING_Y * zoom));
+            assert_eq!(node.right, px(CANVAS_TEXT_PADDING_X * zoom));
+            assert_eq!(node.bottom, px(CANVAS_TEXT_PADDING_Y * zoom));
+
+            let visible_columns = (CANVAS_NODE_DEFAULT_WIDTH * zoom
+                - canvas_text_padding_x(zoom) * 2.0)
+                / canvas_text_char_width(zoom);
+            assert!((visible_columns - base_columns).abs() < TOLERANCE);
+        }
+    }
+}

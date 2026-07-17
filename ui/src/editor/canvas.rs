@@ -342,11 +342,11 @@ pub(crate) fn canvas_text_position_from_world(
 ) -> Position {
     let zoom = zoom.max(CANVAS_ZOOM_MIN);
     let local_screen = (world_pos - Vec2::new(node.x, node.y)) * zoom;
-    let text_x = (local_screen.x - CANVAS_TEXT_PADDING_X).max(0.0);
-    let text_y = (local_screen.y - CANVAS_TEXT_PADDING_Y).max(0.0);
+    let text_x = (local_screen.x - canvas_text_padding_x(zoom)).max(0.0);
+    let text_y = (local_screen.y - canvas_text_padding_y(zoom)).max(0.0);
     let document = Document::from_text(text);
-    let line_height = canvas_text_line_height(zoom).max(1.0);
-    let char_width = canvas_text_char_width(zoom).max(1.0);
+    let line_height = canvas_text_line_height(zoom);
+    let char_width = canvas_text_char_width(zoom);
     let fallback_line =
         ((text_y / line_height).floor() as usize).min(document.line_count().saturating_sub(1));
     let fallback_column =
@@ -530,15 +530,23 @@ pub(crate) fn canvas_text_arrow_key(key: KeyCode) -> bool {
 }
 
 pub(crate) fn canvas_text_font_size(zoom: f32) -> f32 {
-    (FONT_SIZE * zoom.max(CANVAS_ZOOM_MIN)).clamp(7.0, 28.0)
+    FONT_SIZE * zoom.max(CANVAS_ZOOM_MIN)
 }
 
 pub(crate) fn canvas_text_line_height(zoom: f32) -> f32 {
-    (canvas_text_font_size(zoom) * 1.25).max(1.0)
+    canvas_text_font_size(zoom) * 1.25
 }
 
 pub(crate) fn canvas_text_char_width(zoom: f32) -> f32 {
-    (canvas_text_font_size(zoom) * 0.55).max(1.0)
+    canvas_text_font_size(zoom) * 0.55
+}
+
+pub(crate) fn canvas_text_padding_x(zoom: f32) -> f32 {
+    CANVAS_TEXT_PADDING_X * zoom.max(CANVAS_ZOOM_MIN)
+}
+
+pub(crate) fn canvas_text_padding_y(zoom: f32) -> f32 {
+    CANVAS_TEXT_PADDING_Y * zoom.max(CANVAS_ZOOM_MIN)
 }
 
 pub(crate) fn canvas_node_size(width: f32, height: f32) -> Vec2 {

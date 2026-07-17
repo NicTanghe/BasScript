@@ -3,7 +3,7 @@
 	top_menu_collapsed: true,
 	right_buttons_visible: false,
 	status_line_visible: false,
-	processed_link_color_mode: "hovered",
+	processed_link_color_mode: "colored",
 	processed_paginated: false,
 	formatting_marks_visible: false,
 )
