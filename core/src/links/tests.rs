@@ -98,6 +98,35 @@ fn renders_labelled_links_as_visible_text() {
 }
 
 #[test]
+fn extracts_and_renders_standard_markdown_links() {
+    let raw = r#"Sources: \[[1](https://one.example), [2](https://two.example)\]"#;
+    let links = extract_markdown_links(raw);
+
+    assert_eq!(links.len(), 2);
+    assert_eq!(links[0].label, "1");
+    assert_eq!(links[0].target, "https://one.example");
+    assert_eq!(links[1].label, "2");
+    assert_eq!(links[1].target, "https://two.example");
+
+    let rendered = render_markdown_link_text(raw);
+    assert_eq!(rendered.text, "Sources: [1, 2]");
+    assert_eq!(
+        rendered.display_to_raw.last().copied(),
+        Some(raw.chars().count())
+    );
+}
+
+#[test]
+fn markdown_links_ignore_images_code_spans_and_escaped_openers() {
+    let raw = r#"![image](image.png) `[code](https://code.example)` \[plain](https://plain.example) [link](https://link.example)"#;
+    let links = extract_markdown_links(raw);
+
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].label, "link");
+    assert_eq!(links[0].target, "https://link.example");
+}
+
+#[test]
 fn computes_visible_click_range_for_labelled_links() {
     let link = extract_script_links("[that door](door-kitchen-main)")
         .into_iter()

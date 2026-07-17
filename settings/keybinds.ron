@@ -7,10 +7,11 @@
 	redo: "Ctrl+Shift+Z",
 	zoom_in: "Ctrl+=",
 	zoom_out: "Ctrl+-",
-	plain_view: "Ctrl+3",
+	plain_view: "Ctrl+4",
 	processed_view: "Ctrl+2",
 	processed_raw_current_line_view: "Ctrl+1",
-	split_view: "Ctrl+4",
+	split_view: "Ctrl+3",
 	toggle_explorer: "Space+E",
 	toggle_top_menu: "Mod+B",
+	toggle_right_buttons: "Space+B",
 )

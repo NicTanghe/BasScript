@@ -517,6 +517,22 @@ pub(crate) fn build_link_targets(
         .collect()
 }
 
+pub(crate) fn build_markdown_link_targets(
+    display_to_raw: &[usize],
+    markdown_links: &[basscript_core::MarkdownLink],
+) -> Vec<Option<String>> {
+    (0..display_to_raw.len().saturating_sub(1))
+        .map(|index| {
+            let raw_start = display_to_raw[index];
+            let raw_end = display_to_raw[index + 1];
+            markdown_links
+                .iter()
+                .find(|link| raw_start < link.label_span.end && raw_end > link.label_span.start)
+                .map(|link| link.target.clone())
+        })
+        .collect()
+}
+
 pub(crate) fn prepare_processed_line_text(
     parsed_line: &ParsedLine,
     raw_override_active: bool,
@@ -552,13 +568,40 @@ pub(crate) fn prepare_processed_line_text(
         } else {
             None
         };
-    let rendered = if raw_override_active {
+    let script_rendered = if raw_override_active {
         identity_link_display_text(&rendered_raw)
     } else {
         basscript_core::render_script_link_text(&rendered_raw)
     };
-    let display_to_raw = rendered
-        .display_to_raw
+    let (rendered, display_to_rendered_raw, markdown_link_targets) = if !raw_override_active
+        && markdown_inline_emphasis_allowed(effective_kind)
+    {
+        let markdown_links = basscript_core::extract_markdown_links(&script_rendered.text);
+        let markdown_rendered = basscript_core::render_markdown_link_text(&script_rendered.text);
+        let markdown_link_targets =
+            build_markdown_link_targets(&markdown_rendered.display_to_raw, &markdown_links);
+        let display_to_rendered_raw = markdown_rendered
+            .display_to_raw
+            .iter()
+            .map(|column| {
+                script_rendered
+                    .display_to_raw
+                    .get(*column)
+                    .copied()
+                    .unwrap_or_else(|| *script_rendered.display_to_raw.last().unwrap_or(&0))
+            })
+            .collect::<Vec<_>>();
+        (
+            markdown_rendered,
+            display_to_rendered_raw,
+            markdown_link_targets,
+        )
+    } else {
+        let display_to_rendered_raw = script_rendered.display_to_raw.clone();
+        let link_targets = vec![None; script_rendered.text.chars().count()];
+        (script_rendered, display_to_rendered_raw, link_targets)
+    };
+    let display_to_raw = display_to_rendered_raw
         .iter()
         .map(|column| {
             rendered_raw_to_source
@@ -568,11 +611,16 @@ pub(crate) fn prepare_processed_line_text(
                 .unwrap_or_else(|| raw_column_base.saturating_add(*column))
         })
         .collect::<Vec<_>>();
-    let link_targets = if raw_override_active {
+    let script_link_targets = if raw_override_active {
         vec![None; rendered.text.chars().count()]
     } else {
         build_link_targets(&display_to_raw, &parsed_line.script_links)
     };
+    let link_targets = markdown_link_targets
+        .into_iter()
+        .zip(script_link_targets)
+        .map(|(markdown, script)| markdown.or(script))
+        .collect::<Vec<_>>();
     let prepared = PreparedProcessedText {
         inline_styles: vec![InlineTextStyle::default(); rendered.text.chars().count()],
         text: rendered.text,
@@ -1965,6 +2013,32 @@ mod processed_markdown_inline_tests {
             (0..=raw.chars().count()).collect::<Vec<_>>()
         );
         assert_eq!(prepared.continuation_indent_width, 2);
+    }
+
+    #[test]
+    fn renders_markdown_citations_as_compact_link_labels() {
+        let raw = r#"- Sources: \[[1](https://one.example), [2](https://two.example)\]"#;
+        let prepared = prepared_markdown(raw);
+
+        assert_eq!(prepared.text, "• Sources: [1, 2]");
+        assert_eq!(
+            prepared.display_to_raw.last().copied(),
+            Some(raw.chars().count())
+        );
+
+        let chars = prepared.text.chars().collect::<Vec<_>>();
+        let first = chars.iter().position(|ch| *ch == '1').unwrap();
+        let second = chars.iter().position(|ch| *ch == '2').unwrap();
+        assert_eq!(
+            prepared.link_targets[first].as_deref(),
+            Some("https://one.example")
+        );
+        assert_eq!(
+            prepared.link_targets[second].as_deref(),
+            Some("https://two.example")
+        );
+        assert_eq!(prepared.link_targets[first - 1], None);
+        assert_eq!(prepared.link_targets[first + 1], None);
     }
 
     #[test]

@@ -1,8 +1,10 @@
 use std::{error::Error, fmt, io, ops::Range, path::PathBuf};
 
 mod entities;
+mod markdown;
 mod syntax;
 
+pub use markdown::{extract_markdown_links, render_markdown_link_text};
 pub use syntax::{
     extract_script_links, is_valid_target_key, render_script_link_text,
     script_link_contains_visible_column, script_link_visible_column_range,
@@ -20,6 +22,14 @@ pub struct ScriptLink {
     pub label: String,
     pub target: String,
     pub syntax: ScriptLinkSyntax,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MarkdownLink {
+    pub span: Range<usize>,
+    pub label_span: Range<usize>,
+    pub label: String,
+    pub target: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
