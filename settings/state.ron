@@ -1,7 +1,7 @@
 (
 	workspace_sidebar_visible: true,
 	top_menu_collapsed: true,
-	right_buttons_visible: true,
+	right_buttons_visible: false,
 	status_line_visible: false,
 	processed_link_color_mode: "hovered",
 	processed_paginated: false,

@@ -2098,6 +2098,35 @@ impl PendingDialog {
     }
 }
 
+fn cursor_for_loaded_document(document: &mut Document, document_format: DocumentFormat) -> Cursor {
+    if document_format != DocumentFormat::Markdown {
+        return Cursor::default();
+    }
+
+    let Some(front_matter) = markdown_front_matter_display(document) else {
+        return Cursor::default();
+    };
+
+    let body_line = front_matter.closing_line_index.saturating_add(1);
+    let position = if body_line < document.line_count() {
+        Position {
+            line: body_line,
+            column: 0,
+        }
+    } else {
+        let closing_line = front_matter.closing_line_index;
+        document.insert_newline(Position {
+            line: closing_line,
+            column: document.line_len_chars(closing_line),
+        })
+    };
+
+    Cursor {
+        position,
+        preferred_column: position.column,
+    }
+}
+
 impl FromWorld for EditorState {
     fn from_world(_world: &mut World) -> Self {
         let paths = DocumentPath::new(DEFAULT_LOAD_PATH, DEFAULT_SAVE_PATH);
@@ -2106,7 +2135,8 @@ impl FromWorld for EditorState {
         let theme_settings = load_theme_settings();
         let saved_workspace_root = settings.workspace_root_path.clone();
         let keybinds = load_keybind_settings();
-        let (document, document_format, status_message) = match Document::load(&paths.load_path) {
+        let (mut document, document_format, status_message) = match Document::load(&paths.load_path)
+        {
             Ok(doc) => {
                 let format = detect_document_format(&paths.load_path, &doc);
                 (
@@ -2133,13 +2163,14 @@ impl FromWorld for EditorState {
             }
         };
 
+        let cursor = cursor_for_loaded_document(&mut document, document_format);
         let parsed = parse_document_with_format(&document, document_format);
 
         let mut next = Self {
             document,
             parsed,
             document_format,
-            cursor: Cursor::default(),
+            cursor,
             selection_anchor: None,
             top_line: 0,
             processed_top_line: 0,
@@ -2510,14 +2541,15 @@ impl EditorState {
 
     pub(crate) fn load_from_path(&mut self, path: PathBuf) -> bool {
         match Document::load(&path) {
-            Ok(document) => {
+            Ok(mut document) => {
                 let document_format = detect_document_format(&path, &document);
+                let cursor = cursor_for_loaded_document(&mut document, document_format);
                 self.document = document;
                 self.document_format = document_format;
                 self.set_zoom(self.zoom);
                 self.clear_script_link_target_cache();
                 self.reparse();
-                self.cursor = Cursor::default();
+                self.cursor = cursor;
                 self.selection_anchor = None;
                 self.vim_pending_operator = None;
                 self.vim_visual_anchor = None;
@@ -2846,4 +2878,48 @@ pub(crate) fn is_fountain_hint(trimmed: &str) -> bool {
     trimmed
         .chars()
         .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || " .()'-".contains(ch))
+}
+
+#[cfg(test)]
+mod loaded_document_cursor_tests {
+    use super::*;
+
+    #[test]
+    fn loading_markdown_starts_on_the_body_in_every_display_mode() {
+        let path = std::env::temp_dir().join(format!(
+            "basscript-front-matter-cursor-{}-{}.md",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        fs::write(&path, "---\ntarget: example\n---\n# Body").expect("write Markdown fixture");
+
+        let mut world = World::new();
+        let mut state = EditorState::from_world(&mut world);
+        for mode in [
+            DisplayMode::Split,
+            DisplayMode::Plain,
+            DisplayMode::Processed,
+            DisplayMode::ProcessedRawCurrentLine,
+        ] {
+            state.display_mode = mode;
+            assert!(state.load_from_path(path.clone()));
+            assert_eq!(state.display_mode, mode);
+            assert_eq!(state.cursor.position, Position { line: 3, column: 0 });
+        }
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn front_matter_only_markdown_gets_an_editable_body_line() {
+        let mut document = Document::from_text("---\ntarget: example\n---");
+
+        let cursor = cursor_for_loaded_document(&mut document, DocumentFormat::Markdown);
+
+        assert_eq!(cursor.position, Position { line: 3, column: 0 });
+        assert_eq!(document.to_text(), "---\ntarget: example\n---\n");
+    }
 }
