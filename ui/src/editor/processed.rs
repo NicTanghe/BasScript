@@ -418,6 +418,7 @@ pub(crate) struct PreparedProcessedText {
     pub(crate) display_to_raw: Vec<usize>,
     pub(crate) link_targets: Vec<Option<String>>,
     pub(crate) inline_styles: Vec<InlineTextStyle>,
+    pub(crate) continuation_indent_width: usize,
 }
 
 pub(crate) fn identity_link_display_text(input: &str) -> LinkDisplayText {
@@ -426,6 +427,67 @@ pub(crate) fn identity_link_display_text(input: &str) -> LinkDisplayText {
         text: input.to_owned(),
         display_to_raw: (0..=char_count).collect(),
     }
+}
+
+pub(crate) fn markdown_list_rendered_raw_to_source(
+    raw: &str,
+    rendered_raw: &str,
+) -> Option<Vec<usize>> {
+    let leading = leading_markdown_whitespace(raw);
+    let trimmed = raw.chars().skip(leading).collect::<Vec<_>>();
+    let rendered_len = rendered_raw.chars().count();
+
+    let (mut mapping, rendered_prefix_len, raw_content_start) =
+        if let Some(marker_end) = unordered_list_content_start(&trimmed) {
+            if let Some((_, _, content_start)) = markdown_checklist_marker(&trimmed, marker_end) {
+                (vec![0], 0, leading.saturating_add(content_start))
+            } else {
+                (
+                    vec![
+                        0,
+                        leading.saturating_add(1),
+                        leading.saturating_add(marker_end),
+                    ],
+                    2,
+                    leading.saturating_add(marker_end),
+                )
+            }
+        } else if let Some((prefix, content_start)) = ordered_list_content_start(&trimmed) {
+            let prefix_len = prefix.chars().count();
+            let raw_content_start = markdown_checklist_marker(&trimmed, content_start)
+                .map_or(content_start, |(_, _, checklist_content_start)| {
+                    checklist_content_start
+                });
+            let mut prefix_mapping = Vec::with_capacity(prefix_len.saturating_add(2));
+            prefix_mapping.push(0);
+            prefix_mapping.extend((1..=prefix_len).map(|index| leading.saturating_add(index)));
+            prefix_mapping.push(leading.saturating_add(raw_content_start));
+            (
+                prefix_mapping,
+                prefix_len.saturating_add(1),
+                leading.saturating_add(raw_content_start),
+            )
+        } else {
+            return None;
+        };
+
+    let content_len = rendered_len.checked_sub(rendered_prefix_len)?;
+    mapping.extend((1..=content_len).map(|offset| raw_content_start.saturating_add(offset)));
+    (mapping.len() == rendered_len.saturating_add(1)).then_some(mapping)
+}
+
+pub(crate) fn markdown_list_continuation_indent_width(raw: &str) -> usize {
+    let leading = leading_markdown_whitespace(raw);
+    let trimmed = raw.chars().skip(leading).collect::<Vec<_>>();
+    if let Some(marker_end) = unordered_list_content_start(&trimmed) {
+        return if markdown_checklist_marker(&trimmed, marker_end).is_some() {
+            0
+        } else {
+            2
+        };
+    }
+    ordered_list_content_start(&trimmed)
+        .map_or(0, |(prefix, _)| prefix.chars().count().saturating_add(1))
 }
 
 pub(crate) fn build_link_targets(
@@ -481,6 +543,15 @@ pub(crate) fn prepare_processed_line_text(
     if !raw_override_active && parsed_line.raw.ends_with("  ") {
         rendered_raw.truncate(rendered_raw.trim_end_matches(' ').len());
     }
+    let effective_kind = render_override
+        .map(|override_style| &override_style.kind)
+        .unwrap_or(&parsed_line.kind);
+    let rendered_raw_to_source =
+        if !raw_override_active && matches!(effective_kind, LineKind::MarkdownListItem) {
+            markdown_list_rendered_raw_to_source(&parsed_line.raw, &rendered_raw)
+        } else {
+            None
+        };
     let rendered = if raw_override_active {
         identity_link_display_text(&rendered_raw)
     } else {
@@ -489,21 +560,31 @@ pub(crate) fn prepare_processed_line_text(
     let display_to_raw = rendered
         .display_to_raw
         .iter()
-        .map(|column| raw_column_base.saturating_add(*column))
+        .map(|column| {
+            rendered_raw_to_source
+                .as_ref()
+                .and_then(|mapping| mapping.get(*column))
+                .copied()
+                .unwrap_or_else(|| raw_column_base.saturating_add(*column))
+        })
         .collect::<Vec<_>>();
     let link_targets = if raw_override_active {
         vec![None; rendered.text.chars().count()]
     } else {
         build_link_targets(&display_to_raw, &parsed_line.script_links)
     };
-    let effective_kind = render_override
-        .map(|override_style| &override_style.kind)
-        .unwrap_or(&parsed_line.kind);
     let prepared = PreparedProcessedText {
         inline_styles: vec![InlineTextStyle::default(); rendered.text.chars().count()],
         text: rendered.text,
         display_to_raw,
         link_targets,
+        continuation_indent_width: if !raw_override_active
+            && matches!(effective_kind, LineKind::MarkdownListItem)
+        {
+            markdown_list_continuation_indent_width(&parsed_line.raw)
+        } else {
+            0
+        },
     };
     let prepared = if !raw_override_active && markdown_inline_emphasis_allowed(effective_kind) {
         apply_markdown_inline_emphasis(prepared)
@@ -558,6 +639,7 @@ pub(crate) fn prepare_image_embed_line_text(parsed_line: &ParsedLine) -> Prepare
         text: rendered.text,
         display_to_raw,
         link_targets,
+        continuation_indent_width: 0,
     }
 }
 
@@ -746,6 +828,7 @@ pub(crate) fn build_emphasized_processed_text(
         display_to_raw,
         link_targets,
         inline_styles,
+        continuation_indent_width: prepared.continuation_indent_width,
     }
 }
 
@@ -1190,7 +1273,6 @@ pub(crate) fn push_wrapped_visual_lines(
     wrap_columns: usize,
 ) {
     let chars = prepared_text.text.chars().collect::<Vec<_>>();
-    let max_content_columns = wrap_columns.saturating_sub(indent_width).max(1);
     let segment_start = segment_start.min(chars.len());
     let segment_end = segment_end.min(chars.len());
 
@@ -1224,6 +1306,13 @@ pub(crate) fn push_wrapped_visual_lines(
 
     let mut start = segment_start;
     while start < segment_end {
+        let continuation_indent = if start > segment_start {
+            prepared_text.continuation_indent_width
+        } else {
+            0
+        };
+        let visual_indent_width = indent_width.saturating_add(continuation_indent);
+        let max_content_columns = wrap_columns.saturating_sub(visual_indent_width).max(1);
         let max_end = (start + max_content_columns).min(segment_end);
         let mut split = max_end;
 
@@ -1238,10 +1327,10 @@ pub(crate) fn push_wrapped_visual_lines(
         }
 
         let mut fragments = Vec::<ProcessedVisualFragment>::new();
-        if indent_width > 0 {
+        if visual_indent_width > 0 {
             push_processed_fragment(
                 &mut fragments,
-                " ".repeat(indent_width),
+                " ".repeat(visual_indent_width),
                 false,
                 None,
                 InlineTextStyle::default(),
@@ -1304,7 +1393,7 @@ pub(crate) fn push_wrapped_visual_lines(
             .get(split)
             .copied()
             .unwrap_or(raw_start_column);
-        let mut display_to_raw = vec![raw_start_column; indent_width.saturating_add(1)];
+        let mut display_to_raw = vec![raw_start_column; visual_indent_width.saturating_add(1)];
         display_to_raw.extend(
             prepared_text.display_to_raw[start.saturating_add(1)..=split]
                 .iter()
@@ -1653,8 +1742,15 @@ pub(crate) fn processed_cursor_visual_from_lines<'a>(
     state: &EditorState,
     lines: &'a [ProcessedVisualLine],
 ) -> Option<(usize, usize, &'a ProcessedVisualLine)> {
-    let source_line = state.cursor.position.line;
-    let raw_column = state.cursor.position.column;
+    processed_position_visual_from_lines(state.cursor.position, lines)
+}
+
+pub(crate) fn processed_position_visual_from_lines(
+    position: Position,
+    lines: &[ProcessedVisualLine],
+) -> Option<(usize, usize, &ProcessedVisualLine)> {
+    let source_line = position.line;
+    let raw_column = position.column;
 
     let relevant = lines
         .iter()
@@ -1853,6 +1949,64 @@ mod processed_markdown_inline_tests {
         let prepared = prepared_markdown("A manual break  ");
 
         assert_eq!(prepared.text, "A manual break");
+    }
+
+    #[test]
+    fn markdown_list_mapping_replaces_the_marker_without_shifting_the_caret() {
+        let raw = "- The ant-eye view keeps mundane details grounded";
+        let prepared = prepared_markdown(raw);
+
+        assert_eq!(
+            prepared.text,
+            "• The ant-eye view keeps mundane details grounded"
+        );
+        assert_eq!(
+            prepared.display_to_raw,
+            (0..=raw.chars().count()).collect::<Vec<_>>()
+        );
+        assert_eq!(prepared.continuation_indent_width, 2);
+    }
+
+    #[test]
+    fn wrapped_markdown_list_rows_use_a_hanging_indent_for_caret_geometry() {
+        let prepared = prepared_markdown(
+            "- The ant-eye view lingers on mundane details to keep the conflict grounded",
+        );
+        let mut lines = Vec::<ProcessedVisualLine>::new();
+        push_wrapped_visual_lines(
+            &mut lines,
+            0,
+            0,
+            false,
+            &prepared,
+            0,
+            prepared.text.chars().count(),
+            24,
+        );
+
+        assert!(lines.len() > 1);
+        assert!(lines[0].text.starts_with("• "));
+        for continuation in &lines[1..] {
+            assert!(continuation.text.starts_with("  "));
+            assert!(continuation.text.chars().count() <= 24);
+            assert_eq!(
+                processed_display_column_from_raw(continuation, continuation.raw_start_column),
+                2
+            );
+        }
+
+        let second = &lines[1];
+        let (visual_index, display_column, visual_line) = processed_position_visual_from_lines(
+            Position {
+                line: 0,
+                column: second.raw_start_column,
+            },
+            &lines,
+        )
+        .expect("wrapped list caret should resolve to a visual row");
+        assert_eq!(visual_index, 1);
+        assert_eq!(display_column, 2);
+        assert!(std::ptr::eq(visual_line, second));
     }
 
     #[test]
