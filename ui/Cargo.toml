@@ -4,11 +4,11 @@ version = "0.1.51"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.19", features = ["bmp", "http", "https", "jpeg", "webp"] }
+bevy = { path = "../../Hamerons_bevy", features = ["bmp", "http", "https", "jpeg", "webp"] }
 basscript-core = { path = "../core" }
 chrono = { version = "0.4.44", default-features = false, features = ["clock"] }
 lopdf = { version = "0.39", default-features = false }
-parley = { version = "0.9.0", default-features = false, features = ["std"] }
+parley = { version = "0.11.0", default-features = false, features = ["std"] }
 printpdf = { version = "0.9.1", default-features = false, features = ["bmp", "jpeg", "png", "text_layout", "webp"] }
 ron = "0.12"
 rfd = { version = "0.15", default-features = false }
