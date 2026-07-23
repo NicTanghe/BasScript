@@ -20,6 +20,7 @@ pub(crate) const LEGACY_KEYBINDS_SETTINGS_PATH: &str = "scripts/keybinds.ron";
 pub(crate) const LEGACY_SETTINGS_PATH: &str = "scripts/settings.toml";
 pub(crate) const PROCESSED_PAPER_CAPACITY: usize = 16;
 pub(crate) const SELECTION_RECT_CAPACITY: usize = 512;
+pub(crate) const DRAWING_COLOR_COUNT: usize = 5;
 
 pub(crate) const FONT_SIZE: f32 = 12.0;
 pub(crate) const LINE_HEIGHT: f32 = 12.0;
@@ -122,6 +123,7 @@ impl Plugin for UiPlugin {
             .init_resource::<vector_stroke_render::StrokeDocument>()
             .init_resource::<DrawingSession>()
             .init_resource::<DrawingPenState>()
+            .init_resource::<PenUiPointerState>()
             .init_resource::<NativeGlassState>()
             .init_resource::<DialogState>()
             .init_resource::<MiddleAutoscrollState>()
@@ -186,6 +188,7 @@ impl Plugin for UiPlugin {
                     handle_formatting_marks_toggle,
                     handle_status_line_toggle,
                     handle_drawing_mode_toggle.after(sync_drawing_session),
+                    handle_drawing_color_buttons,
                     handle_workspace_file_buttons,
                     handle_workspace_folder_buttons,
                     handle_markdown_metadata_buttons,
@@ -262,6 +265,13 @@ impl Plugin for UiPlugin {
             );
         app.add_systems(
             PreUpdate,
+            route_pen_to_ui_pointer
+                .after(bevy::input::InputSystems)
+                .before(bevy::ui::UiSystems::Focus),
+        );
+        app.add_systems(PostUpdate, restore_mouse_cursor_after_pen_ui);
+        app.add_systems(
+            PreUpdate,
             sync_drawing_input
                 .before(vector_stroke_render::StrokeInputSystems::Collect)
                 .run_if(in_state(UiScreenState::Editor)),
@@ -292,6 +302,13 @@ impl Plugin for UiPlugin {
             sync_drawing_surface
                 .after(render_editor)
                 .after(handle_drawing_mode_toggle)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
+            sync_drawing_color_palette
+                .after(handle_drawing_mode_toggle)
+                .after(handle_drawing_color_buttons)
                 .run_if(in_state(UiScreenState::Editor)),
         );
         app.add_systems(OnExit(UiScreenState::Editor), hide_drawing_render_overlay);
@@ -1318,6 +1335,11 @@ pub(crate) enum ThemeColorTarget {
     ExplorerBackground,
     ProcessedBackground,
     SelectionBackground,
+    DrawingPen1,
+    DrawingPen2,
+    DrawingPen3,
+    DrawingPen4,
+    DrawingPen5,
     LinkFallback,
     LinkProp,
     LinkPlace,
@@ -1339,7 +1361,7 @@ impl ThemeColorTarget {
         if self.is_link_color() {
             "Adjust processed-view link colors by YAML `type`. Unmapped types use Fallback, and hover uses the HSV value offset."
         } else {
-            "Adjust editor shell colors, selection colors, and glass surfaces."
+            "Adjust editor shell, selection, and five drawing pen colors, plus glass surfaces."
         }
     }
 
@@ -1350,6 +1372,11 @@ impl ThemeColorTarget {
             Self::ExplorerBackground => "Explorer",
             Self::ProcessedBackground => "Processed pane",
             Self::SelectionBackground => "Selection background",
+            Self::DrawingPen1 => "Pen color 1",
+            Self::DrawingPen2 => "Pen color 2",
+            Self::DrawingPen3 => "Pen color 3",
+            Self::DrawingPen4 => "Pen color 4",
+            Self::DrawingPen5 => "Pen color 5",
             Self::LinkFallback => "Fallback",
             Self::LinkProp => "Prop",
             Self::LinkPlace => "Place",
@@ -1366,6 +1393,11 @@ impl ThemeColorTarget {
             Self::ExplorerBackground => "explorer background",
             Self::ProcessedBackground => "processed pane background",
             Self::SelectionBackground => "selection background",
+            Self::DrawingPen1 => "pen color 1",
+            Self::DrawingPen2 => "pen color 2",
+            Self::DrawingPen3 => "pen color 3",
+            Self::DrawingPen4 => "pen color 4",
+            Self::DrawingPen5 => "pen color 5",
             Self::LinkFallback => "fallback link color",
             Self::LinkProp => "prop link color",
             Self::LinkPlace => "place link color",
@@ -1385,6 +1417,17 @@ impl ThemeColorTarget {
                 | Self::LinkFaction
                 | Self::LinkConcept
         )
+    }
+
+    pub(crate) fn drawing_pen_index(self) -> Option<usize> {
+        match self {
+            Self::DrawingPen1 => Some(0),
+            Self::DrawingPen2 => Some(1),
+            Self::DrawingPen3 => Some(2),
+            Self::DrawingPen4 => Some(3),
+            Self::DrawingPen5 => Some(4),
+            _ => None,
+        }
     }
 }
 
@@ -1561,6 +1604,9 @@ pub(crate) struct EditorState {
     pub(crate) processed_bg_color: Color,
     pub(crate) selection_bg_rgba: Vec4,
     pub(crate) selection_bg_color: Color,
+    pub(crate) drawing_color_rgba: [Vec4; DRAWING_COLOR_COUNT],
+    pub(crate) drawing_colors: [Color; DRAWING_COLOR_COUNT],
+    pub(crate) drawing_color_index: usize,
     pub(crate) link_fallback_rgba: Vec4,
     pub(crate) link_fallback_color: Color,
     pub(crate) link_prop_rgba: Vec4,
@@ -1838,6 +1884,7 @@ pub(crate) struct ThemeSettings {
     pub(crate) explorer_background: Vec4,
     pub(crate) processed_background: Vec4,
     pub(crate) selection_background: Vec4,
+    pub(crate) drawing_colors: [Vec4; DRAWING_COLOR_COUNT],
     pub(crate) link_fallback: Vec4,
     pub(crate) link_prop: Vec4,
     pub(crate) link_place: Vec4,
@@ -1858,6 +1905,13 @@ impl Default for ThemeSettings {
             explorer_background: Vec4::new(0.86, 0.87, 0.89, 1.0),
             processed_background: Vec4::new(0.82, 0.83, 0.84, 1.0),
             selection_background: Vec4::new(0.16, 0.43, 0.88, 0.36),
+            drawing_colors: [
+                Vec4::new(0.125, 0.129, 0.141, 1.0),
+                Vec4::new(0.839, 0.271, 0.271, 1.0),
+                Vec4::new(0.184, 0.435, 0.922, 1.0),
+                Vec4::new(0.184, 0.620, 0.357, 1.0),
+                Vec4::new(0.878, 0.624, 0.243, 1.0),
+            ],
             link_fallback: Vec4::new(0.10, 0.38, 0.72, 1.0),
             link_prop: Vec4::new(0.68, 0.40, 0.10, 1.0),
             link_place: Vec4::new(0.12, 0.50, 0.34, 1.0),
@@ -1941,6 +1995,15 @@ impl ThemeSettings {
     pub(crate) fn selection_background_color(&self) -> Color {
         let rgba = self.selection_background_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    pub(crate) fn drawing_colors_clamped(&self) -> [Vec4; DRAWING_COLOR_COUNT] {
+        self.drawing_colors.map(clamp_vec4_rgba)
+    }
+
+    pub(crate) fn drawing_colors_color(&self) -> [Color; DRAWING_COLOR_COUNT] {
+        self.drawing_colors_clamped()
+            .map(|rgba| Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w))
     }
 
     pub(crate) fn link_fallback_clamped(&self) -> Vec4 {
@@ -2305,6 +2368,9 @@ impl FromWorld for EditorState {
             processed_bg_color: theme_settings.processed_background_color(),
             selection_bg_rgba: theme_settings.selection_background_clamped(),
             selection_bg_color: theme_settings.selection_background_color(),
+            drawing_color_rgba: theme_settings.drawing_colors_clamped(),
+            drawing_colors: theme_settings.drawing_colors_color(),
+            drawing_color_index: 0,
             link_fallback_rgba: theme_settings.link_fallback_clamped(),
             link_fallback_color: theme_settings.link_fallback_color(),
             link_prop_rgba: theme_settings.link_prop_clamped(),

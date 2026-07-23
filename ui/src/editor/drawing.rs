@@ -1,4 +1,7 @@
-use std::{collections::HashMap, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Instant,
+};
 
 use bevy::{
     input::{
@@ -10,7 +13,7 @@ use bevy::{
     window::PrimaryWindow,
 };
 use vector_stroke_render::{
-    CanvasExtent, CanvasId, DocumentLimits, LayerId, PenTilt, StrokeDocument, StrokeId,
+    CanvasExtent, CanvasId, DocumentLimits, LayerId, PenTilt, Srgba8, StrokeDocument, StrokeId,
     StrokePoint, StrokeResampler, VectorCanvasView, VectorStrokeInputBlocker, VectorStrokeSettings,
     VectorStrokeTarget, load_ron_file, save_ron_atomic,
 };
@@ -31,6 +34,27 @@ pub(crate) struct DrawingRenderCamera;
 
 #[derive(Component)]
 pub(crate) struct DrawingVectorView;
+
+#[derive(Component)]
+pub(crate) struct DrawingColorPalette;
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct DrawingColorButton {
+    pub(crate) index: usize,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct DrawingColorSwatch {
+    pub(crate) index: usize,
+}
+
+#[derive(Resource, Default)]
+pub(crate) struct PenUiPointerState {
+    contacts: HashSet<PenId>,
+    preserve_mouse_left: bool,
+    position: Option<(PenId, Entity, Vec2)>,
+    original_cursor_positions: HashMap<Entity, Option<Vec2>>,
+}
 
 #[derive(Resource, Debug)]
 pub(crate) struct DrawingSession {
@@ -146,6 +170,142 @@ pub(crate) fn handle_drawing_mode_toggle(
             "Drawing visible. Pen contact draws; the pen eraser erases. Linked {}.",
             link
         );
+    }
+}
+
+pub(crate) fn handle_drawing_color_buttons(
+    interaction_query: Query<
+        (&Interaction, &DrawingColorButton),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut state: ResMut<EditorState>,
+) {
+    for (interaction, button) in interaction_query.iter() {
+        if *interaction != Interaction::Pressed || button.index >= DRAWING_COLOR_COUNT {
+            continue;
+        }
+
+        state.drawing_color_index = button.index;
+        state.status_message = format!("Selected pen color {}.", button.index + 1);
+    }
+}
+
+pub(crate) fn sync_drawing_color_palette(
+    state: Res<EditorState>,
+    mut palette_query: Query<&mut Node, With<DrawingColorPalette>>,
+    mut swatch_query: Query<(&DrawingColorSwatch, &mut BackgroundColor)>,
+    mut button_query: Query<(&DrawingColorButton, &mut BorderColor)>,
+) {
+    let visible = state.drawing_mode_enabled
+        && drawing_file_is_supported(&state.paths.load_path)
+        && state.right_buttons_visible;
+    for mut node in palette_query.iter_mut() {
+        node.display = if visible {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
+    for (swatch, mut color) in swatch_query.iter_mut() {
+        if let Some(next) = state.drawing_colors.get(swatch.index) {
+            color.0 = *next;
+        }
+    }
+    for (button, mut border) in button_query.iter_mut() {
+        *border = BorderColor::all(if button.index == state.drawing_color_index {
+            COLOR_ACTION
+        } else {
+            Color::NONE
+        });
+    }
+}
+
+pub(crate) fn route_pen_to_ui_pointer(
+    mut messages: MessageReader<PenInput>,
+    mut window_query: Query<&mut Window>,
+    mut mouse_buttons: ResMut<ButtonInput<MouseButton>>,
+    mut pointer_state: ResMut<PenUiPointerState>,
+) {
+    for message in messages.read() {
+        if !message.pen.primary {
+            continue;
+        }
+
+        if let Some(position) = message.pen.position.filter(|position| position.is_finite()) {
+            pointer_state.position = Some((message.pen.device, message.pen.window, position));
+        }
+
+        match &message.action {
+            PenAction::Button {
+                button: PenButton::Contact,
+                state: ButtonState::Pressed,
+                ..
+            } => {
+                if pointer_state.contacts.is_empty() {
+                    pointer_state.preserve_mouse_left = mouse_buttons.pressed(MouseButton::Left);
+                }
+                if pointer_state.contacts.insert(message.pen.device) {
+                    mouse_buttons.press(MouseButton::Left);
+                }
+            }
+            PenAction::Button {
+                button: PenButton::Contact,
+                state: ButtonState::Released,
+                ..
+            }
+            | PenAction::Left => {
+                pointer_state.contacts.remove(&message.pen.device);
+                if matches!(
+                    pointer_state.position,
+                    Some((device, _, _)) if device == message.pen.device
+                ) && matches!(&message.action, PenAction::Left)
+                {
+                    pointer_state.position = None;
+                }
+                if pointer_state.contacts.is_empty() {
+                    if !pointer_state.preserve_mouse_left {
+                        mouse_buttons.release(MouseButton::Left);
+                    }
+                    pointer_state.preserve_mouse_left = false;
+                }
+            }
+            PenAction::Entered
+            | PenAction::Moved(_)
+            | PenAction::Button {
+                button: PenButton::Barrel | PenButton::Other(_),
+                ..
+            } => {}
+        }
+    }
+
+    if let Some((_, window_entity, position)) = pointer_state.position
+        && let Ok(mut window) = window_query.get_mut(window_entity)
+    {
+        pointer_state
+            .original_cursor_positions
+            .entry(window_entity)
+            .or_insert_with(|| window.cursor_position());
+        // UI focus reads Window's internal cursor position, but a normally changed
+        // Window makes Bevy/Winit warp the OS mouse cursor in Last. Keep this
+        // transient and invisible to change detection, then restore it in PostUpdate.
+        window
+            .bypass_change_detection()
+            .set_cursor_position(Some(position));
+    }
+}
+
+pub(crate) fn restore_mouse_cursor_after_pen_ui(
+    mut window_query: Query<&mut Window>,
+    mut pointer_state: ResMut<PenUiPointerState>,
+) {
+    let original_cursor_positions = std::mem::take(&mut pointer_state.original_cursor_positions);
+    for (window_entity, position) in original_cursor_positions {
+        if let Ok(mut window) = window_query.get_mut(window_entity) {
+            window
+                .bypass_change_detection()
+                .set_cursor_position(position);
+        }
     }
 }
 
@@ -456,6 +616,12 @@ pub(crate) fn sync_drawing_input(
     // so one physical pen event can create only one authoritative stroke.
     stroke_settings.enable_pen = false;
     stroke_settings.enable_mouse = false;
+    if let Some(color) = state
+        .drawing_color_rgba
+        .get(state.drawing_color_index.min(DRAWING_COLOR_COUNT - 1))
+    {
+        stroke_settings.pen_style.color = drawing_color_to_srgba8(*color);
+    }
     target.clear();
 
     let Ok(window) = window_query.single() else {
@@ -710,6 +876,9 @@ fn drawing_point_from_pen(
     started: Instant,
 ) -> Option<StrokePoint> {
     let viewport = drawing_viewport_to_ui(message.pen.position?, ui_scale)?;
+    if !session.allowed_viewport?.contains(viewport) {
+        return None;
+    }
     if blocker.blocks(viewport) {
         return None;
     }
@@ -738,6 +907,16 @@ fn drawing_point_from_pen(
         twist: data.twist.map(|twist| twist as f32),
         elapsed_ms: Some(elapsed_millis(started.elapsed())),
     })
+}
+
+fn drawing_color_to_srgba8(rgba: Vec4) -> Srgba8 {
+    let rgba = clamp_vec4_rgba(rgba);
+    Srgba8::new(
+        (rgba.x * 255.0).round() as u8,
+        (rgba.y * 255.0).round() as u8,
+        (rgba.z * 255.0).round() as u8,
+        (rgba.w * 255.0).round() as u8,
+    )
 }
 
 fn drawing_viewport_to_ui(viewport: Vec2, ui_scale: f32) -> Option<Vec2> {
@@ -1161,6 +1340,120 @@ mod tests {
 
         assert_eq!(transform.translation, Vec3::new(-322.0, 208.0, 0.0));
         assert_eq!(transform.scale, Vec3::new(1.05, 1.05, 1.0));
+    }
+
+    #[test]
+    fn drawing_color_is_converted_to_persisted_srgba8() {
+        assert_eq!(
+            drawing_color_to_srgba8(Vec4::new(0.5, 0.25, 1.2, -1.0)),
+            Srgba8::new(128, 64, 255, 0)
+        );
+    }
+
+    #[test]
+    fn drawing_theme_colors_load_individually_with_defaults() {
+        let defaults = ThemeSettings::default();
+        let loaded =
+            theme_settings_from_ron("(\n drawing_color_2: (0.1, 0.2, 0.3, 0.4),\n)", &defaults);
+
+        assert_eq!(loaded.drawing_colors[0], defaults.drawing_colors[0]);
+        assert_eq!(loaded.drawing_colors[1], Vec4::new(0.1, 0.2, 0.3, 0.4));
+        assert_eq!(loaded.drawing_colors[2], defaults.drawing_colors[2]);
+    }
+
+    #[test]
+    fn pen_contact_drives_the_normal_ui_pointer() {
+        #[derive(Resource, Default)]
+        struct CapturedCursor {
+            position: Option<Vec2>,
+            window_changed: bool,
+        }
+
+        fn capture_cursor(window_query: Query<Ref<Window>>, mut captured: ResMut<CapturedCursor>) {
+            if let Ok(window) = window_query.single() {
+                captured.position = window.cursor_position();
+                captured.window_changed = window.is_changed();
+            }
+        }
+
+        let mut app = App::new();
+        app.add_message::<PenInput>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<PenUiPointerState>()
+            .init_resource::<CapturedCursor>()
+            .add_systems(
+                Update,
+                (
+                    route_pen_to_ui_pointer,
+                    capture_cursor.after(route_pen_to_ui_pointer),
+                ),
+            )
+            .add_systems(PostUpdate, restore_mouse_cursor_after_pen_ui);
+        let window = app.world_mut().spawn(Window::default()).id();
+        let pen = PenInfo {
+            window,
+            device: PenId::Device(11),
+            primary: true,
+            position: Some(Vec2::new(120.0, 80.0)),
+            tool: PenToolKind::Pen,
+        };
+
+        app.update();
+        app.world_mut().write_message(PenInput {
+            pen,
+            action: PenAction::Button {
+                button: PenButton::Contact,
+                state: ButtonState::Pressed,
+                data: PenData::default(),
+            },
+        });
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<CapturedCursor>().position,
+            Some(Vec2::new(120.0, 80.0))
+        );
+        assert!(!app.world().resource::<CapturedCursor>().window_changed);
+        assert_eq!(
+            app.world()
+                .entity(window)
+                .get::<Window>()
+                .unwrap()
+                .cursor_position(),
+            None
+        );
+        assert!(
+            app.world()
+                .resource::<ButtonInput<MouseButton>>()
+                .pressed(MouseButton::Left)
+        );
+
+        app.world_mut().write_message(PenInput {
+            pen,
+            action: PenAction::Button {
+                button: PenButton::Contact,
+                state: ButtonState::Released,
+                data: PenData::default(),
+            },
+        });
+        app.update();
+        assert!(
+            !app.world()
+                .resource::<ButtonInput<MouseButton>>()
+                .pressed(MouseButton::Left)
+        );
+    }
+
+    #[test]
+    fn drawing_surface_queries_are_disjoint() {
+        let mut app = App::new();
+        let editor = EditorState::from_world(app.world_mut());
+        app.insert_resource(editor)
+            .insert_resource(StrokeDocument::default())
+            .insert_resource(DrawingSession::default())
+            .add_systems(Update, sync_drawing_surface);
+
+        app.update();
     }
 
     #[test]

@@ -522,6 +522,11 @@ pub(crate) fn setup(
                                         font.clone(),
                                         ThemeColorTarget::SelectionBackground
                                     ),
+                                    theme_color_row(font.clone(), ThemeColorTarget::DrawingPen1),
+                                    theme_color_row(font.clone(), ThemeColorTarget::DrawingPen2),
+                                    theme_color_row(font.clone(), ThemeColorTarget::DrawingPen3),
+                                    theme_color_row(font.clone(), ThemeColorTarget::DrawingPen4),
+                                    theme_color_row(font.clone(), ThemeColorTarget::DrawingPen5),
                                     theme_only_setting_button(
                                         font.clone(),
                                         SettingsAction::ToggleProcessedGlass,
@@ -1844,6 +1849,7 @@ pub(crate) fn processed_overlay_toggle_group_bundle(
                 DrawingModeToggle,
                 DrawingModeToggleLabel,
             ),
+            drawing_color_palette_bundle(),
             processed_overlay_toggle_button(
                 font,
                 "Status: shown",
@@ -1851,6 +1857,54 @@ pub(crate) fn processed_overlay_toggle_group_bundle(
                 StatusLineToggleLabel,
             ),
         ],
+    )
+}
+
+pub(crate) fn drawing_color_palette_bundle() -> impl Bundle {
+    (
+        DrawingColorPalette,
+        Node {
+            display: Display::None,
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            column_gap: px(4.0),
+            ..default()
+        },
+        children![
+            drawing_color_button(0),
+            drawing_color_button(1),
+            drawing_color_button(2),
+            drawing_color_button(3),
+            drawing_color_button(4),
+        ],
+    )
+}
+
+pub(crate) fn drawing_color_button(index: usize) -> impl Bundle {
+    (
+        Button,
+        DrawingColorButton { index },
+        Node {
+            width: px(22.0),
+            height: px(22.0),
+            padding: UiRect::all(px(2.0)),
+            border: UiRect::all(px(2.0)),
+            border_radius: BorderRadius::all(px(4.0)),
+            ..default()
+        },
+        BackgroundColor(BUTTON_NORMAL),
+        BorderColor::all(Color::NONE),
+        children![(
+            Node {
+                width: percent(100.0),
+                height: percent(100.0),
+                border_radius: BorderRadius::all(px(2.0)),
+                ..default()
+            },
+            BackgroundColor(Color::BLACK),
+            DrawingColorSwatch { index },
+        )],
     )
 }
 
@@ -1961,6 +2015,7 @@ pub(crate) fn style_toolbar_buttons(
                 With<ProcessedPaginationToggle>,
                 With<FormattingMarksToggle>,
                 With<DrawingModeToggle>,
+                With<DrawingColorButton>,
                 With<StatusLineToggle>,
                 With<WorkspaceLinkFolderOption>,
             )>,

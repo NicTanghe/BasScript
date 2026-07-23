@@ -271,6 +271,7 @@ pub(crate) fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
     let explorer_background = theme.explorer_background_clamped();
     let processed_background = theme.processed_background_clamped();
     let selection_background = theme.selection_background_clamped();
+    let drawing_colors = theme.drawing_colors_clamped();
     let link_fallback = theme.link_fallback_clamped();
     let link_prop = theme.link_prop_clamped();
     let link_place = theme.link_place_clamped();
@@ -285,6 +286,11 @@ pub(crate) fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
          \texplorer_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tprocessed_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tselection_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tdrawing_color_1: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tdrawing_color_2: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tdrawing_color_3: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tdrawing_color_4: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tdrawing_color_5: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tlink_fallback: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tlink_prop: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tlink_place: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
@@ -316,6 +322,26 @@ pub(crate) fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
         selection_background.y,
         selection_background.z,
         selection_background.w,
+        drawing_colors[0].x,
+        drawing_colors[0].y,
+        drawing_colors[0].z,
+        drawing_colors[0].w,
+        drawing_colors[1].x,
+        drawing_colors[1].y,
+        drawing_colors[1].z,
+        drawing_colors[1].w,
+        drawing_colors[2].x,
+        drawing_colors[2].y,
+        drawing_colors[2].z,
+        drawing_colors[2].w,
+        drawing_colors[3].x,
+        drawing_colors[3].y,
+        drawing_colors[3].z,
+        drawing_colors[3].w,
+        drawing_colors[4].x,
+        drawing_colors[4].y,
+        drawing_colors[4].z,
+        drawing_colors[4].w,
         link_fallback.x,
         link_fallback.y,
         link_fallback.z,
@@ -584,6 +610,10 @@ pub(crate) fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) 
         });
     let legacy_processed_link =
         parse_ron_vec4(contents, "processed_link").unwrap_or(defaults.link_fallback);
+    let drawing_colors = std::array::from_fn(|index| {
+        parse_ron_vec4(contents, &format!("drawing_color_{}", index + 1))
+            .unwrap_or(defaults.drawing_colors[index])
+    });
     let link_fallback = parse_ron_vec4(contents, "link_fallback").unwrap_or(legacy_processed_link);
     let link_prop = parse_ron_vec4(contents, "link_prop").unwrap_or(defaults.link_prop);
     let link_place = parse_ron_vec4(contents, "link_place").unwrap_or(defaults.link_place);
@@ -613,6 +643,7 @@ pub(crate) fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) 
             selection_background.z.clamp(0.0, 1.0),
             selection_background.w.clamp(0.0, 1.0),
         ),
+        drawing_colors: drawing_colors.map(clamp_vec4_rgba),
         link_fallback: clamp_vec4_rgba(link_fallback),
         link_prop: clamp_vec4_rgba(link_prop),
         link_place: clamp_vec4_rgba(link_place),
@@ -772,6 +803,7 @@ pub(crate) fn theme_settings_from_state(state: &EditorState) -> ThemeSettings {
             state.selection_bg_rgba.z.clamp(0.0, 1.0),
             state.selection_bg_rgba.w.clamp(0.0, 1.0),
         ),
+        drawing_colors: state.drawing_color_rgba.map(clamp_vec4_rgba),
         link_fallback: clamp_vec4_rgba(state.link_fallback_rgba),
         link_prop: clamp_vec4_rgba(state.link_prop_rgba),
         link_place: clamp_vec4_rgba(state.link_place_rgba),
@@ -808,6 +840,9 @@ pub(crate) fn sync_theme_colors(state: &mut EditorState) {
         state.selection_bg_rgba.z,
         state.selection_bg_rgba.w,
     );
+    state.drawing_color_rgba = state.drawing_color_rgba.map(clamp_vec4_rgba);
+    state.drawing_colors = state.drawing_color_rgba.map(color_from_rgba);
+    state.drawing_color_index = state.drawing_color_index.min(DRAWING_COLOR_COUNT - 1);
     state.link_fallback_rgba = clamp_vec4_rgba(state.link_fallback_rgba);
     state.link_fallback_color = color_from_rgba(state.link_fallback_rgba);
     state.link_prop_rgba = clamp_vec4_rgba(state.link_prop_rgba);
@@ -835,6 +870,13 @@ pub(crate) fn theme_rgba_for_target(state: &EditorState, target: ThemeColorTarge
         ThemeColorTarget::ExplorerBackground => state.explorer_bg_rgba,
         ThemeColorTarget::ProcessedBackground => state.processed_bg_rgba,
         ThemeColorTarget::SelectionBackground => state.selection_bg_rgba,
+        target @ (ThemeColorTarget::DrawingPen1
+        | ThemeColorTarget::DrawingPen2
+        | ThemeColorTarget::DrawingPen3
+        | ThemeColorTarget::DrawingPen4
+        | ThemeColorTarget::DrawingPen5) => {
+            state.drawing_color_rgba[target.drawing_pen_index().unwrap()]
+        }
         ThemeColorTarget::LinkFallback => state.link_fallback_rgba,
         ThemeColorTarget::LinkProp => state.link_prop_rgba,
         ThemeColorTarget::LinkPlace => state.link_place_rgba,
@@ -851,6 +893,13 @@ pub(crate) fn theme_color_for_target(state: &EditorState, target: ThemeColorTarg
         ThemeColorTarget::ExplorerBackground => state.explorer_bg_color,
         ThemeColorTarget::ProcessedBackground => state.processed_bg_color,
         ThemeColorTarget::SelectionBackground => state.selection_bg_color,
+        target @ (ThemeColorTarget::DrawingPen1
+        | ThemeColorTarget::DrawingPen2
+        | ThemeColorTarget::DrawingPen3
+        | ThemeColorTarget::DrawingPen4
+        | ThemeColorTarget::DrawingPen5) => {
+            state.drawing_colors[target.drawing_pen_index().unwrap()]
+        }
         ThemeColorTarget::LinkFallback => state.link_fallback_color,
         ThemeColorTarget::LinkProp => state.link_prop_color,
         ThemeColorTarget::LinkPlace => state.link_place_color,
@@ -867,6 +916,13 @@ pub(crate) fn set_active_theme_rgba(state: &mut EditorState, rgba: Vec4) {
         ThemeColorTarget::ExplorerBackground => state.explorer_bg_rgba = rgba,
         ThemeColorTarget::ProcessedBackground => state.processed_bg_rgba = rgba,
         ThemeColorTarget::SelectionBackground => state.selection_bg_rgba = rgba,
+        target @ (ThemeColorTarget::DrawingPen1
+        | ThemeColorTarget::DrawingPen2
+        | ThemeColorTarget::DrawingPen3
+        | ThemeColorTarget::DrawingPen4
+        | ThemeColorTarget::DrawingPen5) => {
+            state.drawing_color_rgba[target.drawing_pen_index().unwrap()] = rgba;
+        }
         ThemeColorTarget::LinkFallback => state.link_fallback_rgba = rgba,
         ThemeColorTarget::LinkProp => state.link_prop_rgba = rgba,
         ThemeColorTarget::LinkPlace => state.link_place_rgba = rgba,
@@ -912,7 +968,12 @@ impl EditorState {
             | ThemeColorTarget::TopMenuBackground
             | ThemeColorTarget::ExplorerBackground
             | ThemeColorTarget::ProcessedBackground
-            | ThemeColorTarget::SelectionBackground => self.link_fallback_rgba,
+            | ThemeColorTarget::SelectionBackground
+            | ThemeColorTarget::DrawingPen1
+            | ThemeColorTarget::DrawingPen2
+            | ThemeColorTarget::DrawingPen3
+            | ThemeColorTarget::DrawingPen4
+            | ThemeColorTarget::DrawingPen5 => self.link_fallback_rgba,
         }
     }
 }

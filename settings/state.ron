@@ -2,9 +2,9 @@
 	workspace_sidebar_visible: true,
 	top_menu_collapsed: false,
 	right_buttons_visible: true,
-	status_line_visible: false,
+	status_line_visible: true,
 	processed_link_color_mode: "colored",
 	processed_paginated: true,
 	formatting_marks_visible: false,
-	application_zoom: 1.700,
+	application_zoom: 2.300,
 )
