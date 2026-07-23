@@ -30,6 +30,9 @@ pub(crate) const TEXT_PADDING_Y: f32 = 10.0;
 pub(crate) const ZOOM_MIN: f32 = 0.6;
 pub(crate) const ZOOM_MAX: f32 = 1.8;
 pub(crate) const ZOOM_STEP: f32 = 0.1;
+pub(crate) const APPLICATION_ZOOM_MIN: f32 = 0.5;
+pub(crate) const APPLICATION_ZOOM_MAX: f32 = 2.5;
+pub(crate) const APPLICATION_ZOOM_STEP: f32 = 0.1;
 pub(crate) const NAVIGATION_REPEAT_INITIAL_DELAY_SECS: f32 = 0.30;
 pub(crate) const NAVIGATION_REPEAT_INTERVAL_SECS: f32 = 0.045;
 pub(crate) const WORKSPACE_SELECTION_REPEAT_INITIAL_DELAY_SECS: f32 = 0.10;
@@ -147,6 +150,7 @@ impl Plugin for UiPlugin {
                     sync_processed_overlay_toggle_group.after(render_editor),
                     style_workspace_file_entry_text,
                     sync_workspace_prompt_ui,
+                    handle_application_zoom_input,
                     handle_window_shortcuts,
                     sync_window_chrome,
                     sync_glass_surfaces,
@@ -1526,6 +1530,7 @@ pub(crate) struct EditorState {
     pub(crate) page_margin_top: f32,
     pub(crate) page_margin_bottom: f32,
     pub(crate) zoom: f32,
+    pub(crate) application_zoom: f32,
     pub(crate) measured_line_step: f32,
     pub(crate) processed_cache: Option<ProcessedCache>,
     pub(crate) processed_cache_dirty_from_line: Option<usize>,
@@ -1752,6 +1757,7 @@ pub(crate) struct PersistentUiState {
     pub(crate) processed_link_color_mode: ProcessedLinkColorMode,
     pub(crate) processed_paginated: bool,
     pub(crate) formatting_marks_visible: bool,
+    pub(crate) application_zoom: f32,
 }
 
 impl Default for PersistentUiState {
@@ -1764,6 +1770,7 @@ impl Default for PersistentUiState {
             processed_link_color_mode: ProcessedLinkColorMode::Colored,
             processed_paginated: true,
             formatting_marks_visible: false,
+            application_zoom: 1.0,
         }
     }
 }
@@ -2267,6 +2274,9 @@ impl FromWorld for EditorState {
             page_margin_top: settings.page_margin_top,
             page_margin_bottom: settings.page_margin_bottom,
             zoom: 1.0,
+            application_zoom: ui_state
+                .application_zoom
+                .clamp(APPLICATION_ZOOM_MIN, APPLICATION_ZOOM_MAX),
             measured_line_step: LINE_HEIGHT,
             processed_cache: None,
             processed_cache_dirty_from_line: Some(0),

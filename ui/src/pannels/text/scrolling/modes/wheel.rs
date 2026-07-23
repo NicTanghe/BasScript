@@ -32,6 +32,11 @@ pub(crate) fn handle_mouse_scroll(
     }
 
     if platform_shortcut_modifier_pressed(&keys) {
+        if application_zoom_modifier_pressed(&keys) {
+            for _ in mouse_wheels.read() {}
+            return;
+        }
+
         let mut zoom_steps = 0.0_f32;
 
         for wheel in mouse_wheels.read() {
@@ -175,6 +180,9 @@ pub(crate) fn handle_canvas_mouse_scroll(
     }
 
     if platform_shortcut_modifier_pressed(keys) {
+        if application_zoom_modifier_pressed(keys) {
+            return;
+        }
         if dy.abs() > f32::EPSILON {
             let old_zoom = state.zoom.max(CANVAS_ZOOM_MIN);
             let cursor_world = panel_context

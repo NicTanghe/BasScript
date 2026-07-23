@@ -880,12 +880,18 @@ pub(crate) fn workspace_file_list_hovered(
 
 pub(crate) fn handle_workspace_mouse_scroll(
     mut mouse_wheels: MessageReader<MouseWheel>,
+    keys: Res<ButtonInput<KeyCode>>,
     state: Res<EditorState>,
     mut list_query: Query<
         (&RelativeCursorPosition, &ComputedNode, &mut ScrollPosition),
         With<WorkspaceFileList>,
     >,
 ) {
+    if application_zoom_modifier_pressed(&keys) {
+        for _ in mouse_wheels.read() {}
+        return;
+    }
+
     if !state.workspace_sidebar_visible {
         return;
     }

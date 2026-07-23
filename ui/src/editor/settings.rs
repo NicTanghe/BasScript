@@ -243,6 +243,7 @@ pub(crate) fn save_persistent_ui_state(ui_state: &PersistentUiState) -> io::Resu
          \tprocessed_link_color_mode: \"{}\",\n\
          \tprocessed_paginated: {},\n\
          \tformatting_marks_visible: {},\n\
+         \tapplication_zoom: {:.3},\n\
          )\n",
         ui_state.workspace_sidebar_visible,
         ui_state.top_menu_collapsed,
@@ -251,6 +252,7 @@ pub(crate) fn save_persistent_ui_state(ui_state: &PersistentUiState) -> io::Resu
         ui_state.processed_link_color_mode.settings_value(),
         ui_state.processed_paginated,
         ui_state.formatting_marks_visible,
+        ui_state.application_zoom,
     );
 
     fs::write(&path, contents)?;
@@ -542,6 +544,9 @@ pub(crate) fn persistent_ui_state_from_ron(
         parse_ron_bool(contents, "processed_paginated").unwrap_or(defaults.processed_paginated);
     let formatting_marks_visible = parse_ron_bool(contents, "formatting_marks_visible")
         .unwrap_or(defaults.formatting_marks_visible);
+    let application_zoom = parse_ron_f32(contents, "application_zoom")
+        .unwrap_or(defaults.application_zoom)
+        .clamp(APPLICATION_ZOOM_MIN, APPLICATION_ZOOM_MAX);
 
     PersistentUiState {
         workspace_sidebar_visible,
@@ -551,6 +556,7 @@ pub(crate) fn persistent_ui_state_from_ron(
         processed_link_color_mode,
         processed_paginated,
         formatting_marks_visible,
+        application_zoom,
     }
 }
 
@@ -750,6 +756,7 @@ pub(crate) fn persistent_ui_state_from_state(state: &EditorState) -> PersistentU
         processed_link_color_mode: state.processed_link_color_mode,
         processed_paginated: state.processed_paginated,
         formatting_marks_visible: state.formatting_marks_visible,
+        application_zoom: state.application_zoom,
     }
 }
 

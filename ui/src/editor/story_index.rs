@@ -20,6 +20,7 @@ pub(crate) struct EditorStoryIndex {
 pub(crate) enum EditorStoryIndexStatus {
     Ready,
     Created,
+    LocalCache,
     Recreated,
     Failed,
 }
@@ -55,6 +56,7 @@ impl EditorStoryIndexStatus {
         match self {
             Self::Ready => "ready",
             Self::Created => "created",
+            Self::LocalCache => "local-cache",
             Self::Recreated => "rebuilt",
             Self::Failed => "failed",
         }
@@ -112,8 +114,37 @@ impl EditorState {
     }
 
     pub(crate) fn refresh_story_index_for_workspace(&mut self) -> Option<String> {
-        let workspace_root = self.workspace_root.clone()?;
-        Some(self.open_story_index_for_workspace(&workspace_root))
+        let database = self
+            .story_index
+            .as_ref()
+            .and_then(|index| index.database.clone())?;
+        let scan = database.scan_workspace_files();
+        let index = self.story_index.as_mut()?;
+
+        match scan {
+            Ok(scan) => {
+                index.file_count = scan.file_count;
+                index.entity_count = scan.entity_count;
+                index.entity_error_count = scan.entity_error_count;
+                index.scene_count = scan.scene_count;
+                index.appearance_count = scan.appearance_count;
+                let message = format!(
+                    "Story index refreshed at {}. {}",
+                    database.database_path().display(),
+                    story_index_scan_summary(&scan),
+                );
+                info!("[story-index] {message}");
+                Some(message)
+            }
+            Err(error) => {
+                let message = format!(
+                    "Story index refresh failed at {}: {error}",
+                    database.database_path().display(),
+                );
+                warn!("[story-index] {message}");
+                Some(message)
+            }
+        }
     }
 
     pub(crate) fn story_index_visible_label(&self) -> String {
@@ -128,6 +159,7 @@ pub(crate) fn editor_story_index_status(status: &StoryIndexOpenStatus) -> Editor
     match status {
         StoryIndexOpenStatus::Created => EditorStoryIndexStatus::Created,
         StoryIndexOpenStatus::Ready => EditorStoryIndexStatus::Ready,
+        StoryIndexOpenStatus::LocalCache { .. } => EditorStoryIndexStatus::LocalCache,
         StoryIndexOpenStatus::Recreated { .. } => EditorStoryIndexStatus::Recreated,
     }
 }
@@ -151,6 +183,16 @@ pub(crate) fn story_index_status_message(
             format!(
                 "Story index ready at {}. {scan_summary}",
                 report.database.database_path().display()
+            )
+        }
+        StoryIndexOpenStatus::LocalCache {
+            workspace_database_path,
+            reason,
+        } => {
+            format!(
+                "Story index uses local cache {} because workspace database {} is unavailable ({reason}). {scan_summary}",
+                report.database.database_path().display(),
+                workspace_database_path.display(),
             )
         }
         StoryIndexOpenStatus::Recreated {

@@ -986,6 +986,15 @@ pub(crate) fn sync_story_query_sheet_ui(
         .saturating_sub(first_visible_page)
         .min(PROCESSED_PAPER_CAPACITY)
         .max(1);
+    let continuous_start = first_visible_page.saturating_mul(page_step_lines);
+    let continuous_end = continuous_start
+        .saturating_add(continuous_visible_page_count.saturating_mul(page_step_lines))
+        .min(state.story_query_sheet.visual_lines.len());
+    let continuous_lines = state
+        .story_query_sheet
+        .visual_lines
+        .get(continuous_start..continuous_end)
+        .unwrap_or(&[]);
     let continuous_top_padding = (result_geometry.text_top - result_geometry.paper_top).max(0.0);
     let continuous_bottom_padding =
         if first_visible_page.saturating_add(continuous_visible_page_count) >= total_pages {
@@ -1007,9 +1016,13 @@ pub(crate) fn sync_story_query_sheet_ui(
             continue;
         }
 
-        let page_top = processed_page_top_for_slot(
+        let page_top = processed_content_page_top_for_slot(
+            &state,
+            continuous_lines,
             &result_geometry,
             paper.slot,
+            page_step_lines,
+            processed_line_height,
             processed_page_step_pixels,
             processed_anchor_offset_px,
         ) + state.story_query_sheet.result_scroll_anchor_bias_px;
@@ -1021,10 +1034,24 @@ pub(crate) fn sync_story_query_sheet_ui(
         node.width = px(result_geometry.paper_width);
         node.height = if !state.processed_paginated && paper.slot == 0 {
             px(
-                processed_page_step_pixels * continuous_visible_page_count as f32
+                processed_content_height_px(&state, continuous_lines, processed_line_height)
                     + continuous_top_padding
                     + continuous_bottom_padding,
             )
+        } else if !state.processed_paginated {
+            let slot_start = paper
+                .slot
+                .saturating_mul(page_step_lines)
+                .min(continuous_lines.len());
+            let slot_end = slot_start
+                .saturating_add(page_step_lines)
+                .min(continuous_lines.len());
+            px(processed_content_height_px(
+                &state,
+                &continuous_lines[slot_start..slot_end],
+                processed_line_height,
+            )
+            .max(1.0))
         } else {
             px(result_geometry.paper_height)
         };
@@ -1043,9 +1070,13 @@ pub(crate) fn sync_story_query_sheet_ui(
         *visibility = Visibility::Visible;
     }
 
-    for (_, mut node, mut transform) in rendered_text_node_query.iter_mut() {
+    for (rendered_text, mut node, mut transform) in rendered_text_node_query.iter_mut() {
         node.left = px(result_geometry.text_left - result_geometry.paper_left);
-        node.top = px(result_geometry.text_top - result_geometry.paper_top);
+        node.top = px(processed_text_top_in_paper(
+            &state,
+            &result_geometry,
+            rendered_text.slot,
+        ));
         node.width = px(result_geometry.text_width);
         node.height = px(result_geometry.text_height);
         node.overflow = Overflow::visible();
@@ -1461,6 +1492,11 @@ pub(crate) fn handle_story_query_sheet_mouse_scroll(
     let shift_horizontal = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
 
     if platform_shortcut_modifier_pressed(&keys) {
+        if application_zoom_modifier_pressed(&keys) {
+            for _ in mouse_wheels.read() {}
+            return;
+        }
+
         let mut zoom_steps = 0.0_f32;
         for wheel in mouse_wheels.read() {
             let y = match wheel.unit {

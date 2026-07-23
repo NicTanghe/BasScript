@@ -253,6 +253,13 @@ pub(crate) fn render_editor(
         .saturating_sub(first_visible_page)
         .min(PROCESSED_PAPER_CAPACITY)
         .max(1);
+    let continuous_start = first_visible_page.saturating_mul(processed_page_step_lines);
+    let continuous_end = continuous_start
+        .saturating_add(continuous_visible_page_count.saturating_mul(processed_page_step_lines))
+        .min(processed_all_lines.len());
+    let continuous_lines = processed_all_lines
+        .get(continuous_start..continuous_end)
+        .unwrap_or(&[]);
     let continuous_top_padding =
         (processed_geometry.text_top - processed_geometry.paper_top).max(0.0);
     let continuous_bottom_padding = if first_visible_page
@@ -282,9 +289,13 @@ pub(crate) fn render_editor(
             continue;
         }
 
-        let page_top = processed_page_top_for_slot(
+        let page_top = processed_content_page_top_for_slot(
+            &state,
+            continuous_lines,
             &processed_geometry,
             panel_paper.slot,
+            processed_page_step_lines,
+            processed_line_height,
             processed_page_step_pixels,
             processed_anchor_offset_px,
         ) + processed_zoom_bias_px;
@@ -295,10 +306,24 @@ pub(crate) fn render_editor(
         node.width = px(processed_geometry.paper_width);
         node.height = if !state.processed_paginated && panel_paper.slot == 0 {
             px(
-                processed_page_step_pixels * continuous_visible_page_count as f32
+                processed_content_height_px(&state, continuous_lines, processed_line_height)
                     + continuous_top_padding
                     + continuous_bottom_padding,
             )
+        } else if !state.processed_paginated {
+            let slot_start = panel_paper
+                .slot
+                .saturating_mul(processed_page_step_lines)
+                .min(continuous_lines.len());
+            let slot_end = slot_start
+                .saturating_add(processed_page_step_lines)
+                .min(continuous_lines.len());
+            px(processed_content_height_px(
+                &state,
+                &continuous_lines[slot_start..slot_end],
+                processed_line_height,
+            )
+            .max(1.0))
         } else {
             px(processed_geometry.paper_height)
         };
@@ -353,8 +378,11 @@ pub(crate) fn render_editor(
         );
         let line_height_units = processed_visual_line_height_units(&state, visual_line);
         let next_left = px(processed_geometry.text_left - processed_geometry.paper_left);
-        let next_top = px(processed_geometry.text_top - processed_geometry.paper_top
-            + line_top_units * processed_line_height);
+        let next_top = px(processed_text_top_in_paper(
+            &state,
+            &processed_geometry,
+            paper_text.slot,
+        ) + line_top_units * processed_line_height);
         let next_width = px(processed_geometry.text_width);
         let next_height = px(line_height_units * processed_line_height);
         if node.left != next_left {
@@ -381,7 +409,6 @@ pub(crate) fn render_editor(
     }
 
     let text_left_in_paper = processed_geometry.text_left - processed_geometry.paper_left;
-    let text_top_in_paper = processed_geometry.text_top - processed_geometry.paper_top;
     let checklist_icon_size = (processed_line_height * 0.72).clamp(8.0, 16.0);
     let checklist_icon_gap = (processed_line_height * 0.20).clamp(2.0, 4.0);
 
@@ -426,9 +453,11 @@ pub(crate) fn render_editor(
         let line_top_units =
             processed_visual_line_top_units(&state, &processed_all_lines, page_start, line_offset);
         node.left = px((text_left_in_paper - checklist_icon_size - checklist_icon_gap).max(0.0));
-        node.top = px(text_top_in_paper
-            + line_top_units * processed_line_height
-            + ((processed_line_height - checklist_icon_size) * 0.5).max(0.0));
+        node.top = px(
+            processed_text_top_in_paper(&state, &processed_geometry, icon.slot)
+                + line_top_units * processed_line_height
+                + ((processed_line_height - checklist_icon_size) * 0.5).max(0.0),
+        );
         node.width = px(checklist_icon_size);
         node.height = px(checklist_icon_size);
         *visibility = Visibility::Visible;
@@ -616,7 +645,6 @@ pub(crate) fn render_processed_images(
     );
     let first_visible_page = processed_view.start_index / processed_page_step_lines;
     let text_left_in_paper = processed_geometry.text_left - processed_geometry.paper_left;
-    let text_top_in_paper = processed_geometry.text_top - processed_geometry.paper_top;
 
     for (image_block_node, mut image_node, mut node, mut visibility) in
         processed_image_query.iter_mut()
@@ -683,7 +711,7 @@ pub(crate) fn render_processed_images(
         let left = text_left_in_paper + (max_width - display_width) * 0.5;
         let line_top_units =
             processed_visual_line_top_units(&state, &processed_all_lines, page_start, line_offset);
-        let top = text_top_in_paper
+        let top = processed_text_top_in_paper(&state, &processed_geometry, image_block_node.slot)
             + line_top_units * processed_line_height
             + ((reserved_height - display_height) * 0.5).max(0.0);
 

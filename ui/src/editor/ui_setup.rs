@@ -3,7 +3,9 @@ pub(crate) fn setup(
     asset_server: Res<AssetServer>,
     mut images: ResMut<Assets<Image>>,
     state: Res<EditorState>,
+    mut ui_scale: ResMut<UiScale>,
 ) {
+    ui_scale.0 = state.application_zoom;
     commands.spawn((Camera2d, IsDefaultUiCamera));
 
     let fonts = EditorFonts {
@@ -2794,6 +2796,7 @@ pub(crate) fn reset_settings_menu_scroll_on_open(
 
 pub(crate) fn handle_settings_menu_mouse_scroll(
     mut mouse_wheels: MessageReader<MouseWheel>,
+    keys: Res<ButtonInput<KeyCode>>,
     screen_state: Res<State<UiScreenState>>,
     mut scroll_query: Query<(
         &SettingsMenuScrollArea,
@@ -2803,6 +2806,11 @@ pub(crate) fn handle_settings_menu_mouse_scroll(
     )>,
     content_query: Query<(&SettingsMenuScrollContent, &ComputedNode)>,
 ) {
+    if application_zoom_modifier_pressed(&keys) {
+        for _ in mouse_wheels.read() {}
+        return;
+    }
+
     let screen = *screen_state.get();
     let Some((_, relative_cursor, viewport, mut scroll_position)) = scroll_query
         .iter_mut()

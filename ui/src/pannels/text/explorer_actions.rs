@@ -580,6 +580,7 @@ pub(crate) fn handle_workspace_link_prompt_buttons(
 
 pub(crate) fn handle_workspace_link_folder_mouse_scroll(
     mut mouse_wheels: MessageReader<MouseWheel>,
+    keys: Res<ButtonInput<KeyCode>>,
     mut viewport_query: Query<
         (&RelativeCursorPosition, &ComputedNode, &mut ScrollPosition),
         With<WorkspaceLinkFolderOptionsRoot>,
@@ -592,6 +593,11 @@ pub(crate) fn handle_workspace_link_folder_mouse_scroll(
         ),
     >,
 ) {
+    if application_zoom_modifier_pressed(&keys) {
+        for _ in mouse_wheels.read() {}
+        return;
+    }
+
     let Ok((cursor, viewport, mut scroll)) = viewport_query.single_mut() else {
         return;
     };

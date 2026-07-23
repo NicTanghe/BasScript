@@ -200,15 +200,78 @@ pub(crate) fn processed_page_top_for_slot(
     geometry.paper_top + slot as f32 * page_step_px - anchor_scroll_offset_px
 }
 
-pub(crate) fn processed_text_top_for_slot(
+pub(crate) fn processed_content_height_px(
+    state: &EditorState,
+    lines: &[ProcessedVisualLine],
+    line_height: f32,
+) -> f32 {
+    lines
+        .iter()
+        .map(|line| processed_visual_line_height_units(state, line))
+        .sum::<f32>()
+        * line_height.max(1.0)
+}
+
+pub(crate) fn processed_text_top_in_paper(
+    state: &EditorState,
     geometry: &ProcessedPageGeometry,
     slot: usize,
+) -> f32 {
+    if state.processed_paginated || slot == 0 {
+        (geometry.text_top - geometry.paper_top).max(0.0)
+    } else {
+        0.0
+    }
+}
+
+pub(crate) fn processed_content_page_top_for_slot(
+    state: &EditorState,
+    visible_lines: &[ProcessedVisualLine],
+    geometry: &ProcessedPageGeometry,
+    slot: usize,
+    page_step_lines: usize,
+    line_height: f32,
     page_step_px: f32,
     anchor_scroll_offset_px: f32,
 ) -> f32 {
-    let page_top =
-        processed_page_top_for_slot(geometry, slot, page_step_px, anchor_scroll_offset_px);
-    page_top + (geometry.text_top - geometry.paper_top)
+    if state.processed_paginated {
+        return processed_page_top_for_slot(geometry, slot, page_step_px, anchor_scroll_offset_px);
+    }
+
+    let preceding_line_count = slot
+        .saturating_mul(page_step_lines.max(1))
+        .min(visible_lines.len());
+    let preceding_height =
+        processed_content_height_px(state, &visible_lines[..preceding_line_count], line_height);
+    let top_padding = if slot == 0 {
+        0.0
+    } else {
+        (geometry.text_top - geometry.paper_top).max(0.0)
+    };
+
+    geometry.paper_top + top_padding + preceding_height - anchor_scroll_offset_px
+}
+
+pub(crate) fn processed_content_text_top_for_slot(
+    state: &EditorState,
+    visible_lines: &[ProcessedVisualLine],
+    geometry: &ProcessedPageGeometry,
+    slot: usize,
+    page_step_lines: usize,
+    line_height: f32,
+    page_step_px: f32,
+    anchor_scroll_offset_px: f32,
+) -> f32 {
+    processed_content_page_top_for_slot(
+        state,
+        visible_lines,
+        geometry,
+        slot,
+        page_step_lines,
+        line_height,
+        page_step_px,
+        anchor_scroll_offset_px,
+    ) + processed_text_top_in_paper(state, geometry, slot)
 }
 
 pub(crate) fn processed_anchor_page_top_for_state(
@@ -341,9 +404,16 @@ fn processed_caret_screen_y(state: &mut EditorState, panel_size: Vec2) -> Option
         line_height,
     );
     let page_step_px = processed_page_step_px(&layout.geometry, state.zoom);
-    let page_text_top =
-        processed_text_top_for_slot(&layout.geometry, slot, page_step_px, anchor_offset)
-            + state.processed_zoom_anchor_bias_px;
+    let page_text_top = processed_content_text_top_for_slot(
+        state,
+        &view.lines,
+        &layout.geometry,
+        slot,
+        step_lines,
+        line_height,
+        page_step_px,
+        anchor_offset,
+    ) + state.processed_zoom_anchor_bias_px;
     let page_start = caret_page.saturating_mul(step_lines);
     let line_in_page = caret_visual_index % step_lines;
     let line_top =
@@ -2001,6 +2071,112 @@ pub(crate) fn processed_visual_fragment_count(visual_line: &ProcessedVisualLine)
 #[cfg(test)]
 mod processed_markdown_inline_tests {
     use super::*;
+
+    fn visual_line_with_override(
+        kind: LineKind,
+        markdown_heading_level: Option<u8>,
+    ) -> ProcessedVisualLine {
+        ProcessedVisualLine {
+            source_line: 0,
+            text: "line".to_string(),
+            fragments: vec![ProcessedVisualFragment {
+                text: "line".to_string(),
+                is_link: false,
+                link_target: None,
+                inline_style: InlineTextStyle::default(),
+            }],
+            display_to_raw: (0..=4).collect(),
+            raw_start_column: 0,
+            raw_end_column: 4,
+            markdown_checklist_checked: None,
+            image_block: None,
+            render_override: Some(ProcessedLineRenderOverride {
+                kind,
+                markdown_heading_level,
+            }),
+            is_spacer: false,
+        }
+    }
+
+    fn assert_close(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 0.01,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    #[test]
+    fn continuous_slots_follow_accumulated_variable_line_heights() {
+        let mut world = World::new();
+        let mut state = EditorState::from_world(&mut world);
+        state.processed_paginated = false;
+        let lines = vec![
+            visual_line_with_override(LineKind::MarkdownHeading, Some(1)),
+            visual_line_with_override(LineKind::MarkdownParagraph, None),
+            visual_line_with_override(LineKind::MarkdownParagraph, None),
+        ];
+        let geometry = ProcessedPageGeometry {
+            paper_left: 0.0,
+            paper_top: 14.0,
+            paper_width: 500.0,
+            paper_height: 800.0,
+            page_gap: 0.0,
+            text_left: 40.0,
+            text_top: 44.0,
+            text_width: 420.0,
+            text_height: 740.0,
+        };
+        let line_height = 12.0;
+
+        let second_slot_top = processed_content_page_top_for_slot(
+            &state,
+            &lines,
+            &geometry,
+            1,
+            2,
+            line_height,
+            800.0,
+            0.0,
+        );
+        let first_slot_text_top =
+            processed_text_top_in_paper(&state, &geometry, 0) + geometry.paper_top;
+        let first_slot_content_height =
+            processed_content_height_px(&state, &lines[..2], line_height);
+
+        assert_close(
+            second_slot_top,
+            first_slot_text_top + first_slot_content_height,
+        );
+        assert_close(processed_text_top_in_paper(&state, &geometry, 1), 0.0);
+    }
+
+    #[test]
+    fn paginated_slots_keep_fixed_page_spacing_and_per_page_margins() {
+        let mut world = World::new();
+        let mut state = EditorState::from_world(&mut world);
+        state.processed_paginated = true;
+        let lines = vec![
+            visual_line_with_override(LineKind::MarkdownHeading, Some(1)),
+            visual_line_with_override(LineKind::MarkdownParagraph, None),
+        ];
+        let geometry = ProcessedPageGeometry {
+            paper_left: 0.0,
+            paper_top: 14.0,
+            paper_width: 500.0,
+            paper_height: 776.0,
+            page_gap: 24.0,
+            text_left: 40.0,
+            text_top: 44.0,
+            text_width: 420.0,
+            text_height: 716.0,
+        };
+
+        assert_close(
+            processed_content_page_top_for_slot(&state, &lines, &geometry, 1, 2, 12.0, 800.0, 5.0),
+            809.0,
+        );
+        assert_close(processed_text_top_in_paper(&state, &geometry, 1), 30.0);
+    }
 
     fn style(bold: bool, italic: bool) -> InlineTextStyle {
         InlineTextStyle { bold, italic }

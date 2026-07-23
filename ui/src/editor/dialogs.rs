@@ -49,7 +49,8 @@ pub(crate) fn text_input_should_skip_for_shortcut(
         && (clipboard_shortcut_matches(keys, input.key_code)
             || SHORTCUT_ACTIONS.iter().copied().any(|action| {
                 key_combination_matches_binding(keys, input.key_code, keybinds.binding(action))
-            }))
+            })
+            || application_zoom_key_combination_pressed(keys, input.key_code))
 }
 
 pub(crate) fn key_combination_matches_binding(
@@ -247,6 +248,46 @@ mod modifier_key_tests {
     }
 
     #[test]
+    fn application_zoom_requires_platform_shift_plus_or_minus() {
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::ControlLeft);
+        keys.press(KeyCode::ShiftLeft);
+        keys.press(KeyCode::Equal);
+
+        let document_binding = KeybindSettings::default().binding(ShortcutAction::ZoomIn);
+        assert!(!shortcut_just_pressed(&keys, document_binding));
+        assert!(application_zoom_modifier_pressed(&keys));
+        assert!(application_zoom_key_combination_pressed(
+            &keys,
+            KeyCode::Equal,
+        ));
+        assert!(!application_zoom_key_combination_pressed(
+            &keys,
+            KeyCode::Minus,
+        ));
+
+        let input = KeyboardInput {
+            key_code: KeyCode::Equal,
+            logical_key: Key::Character("+".into()),
+            state: ButtonState::Pressed,
+            text: Some("+".into()),
+            repeat: false,
+            window: Entity::PLACEHOLDER,
+        };
+        assert!(text_input_should_skip_for_shortcut(
+            &keys,
+            &input,
+            &KeybindSettings::default(),
+        ));
+
+        let mut document_keys = ButtonInput::<KeyCode>::default();
+        document_keys.press(KeyCode::ControlLeft);
+        document_keys.press(KeyCode::Equal);
+        assert!(shortcut_just_pressed(&document_keys, document_binding));
+        assert!(!application_zoom_modifier_pressed(&document_keys));
+    }
+
+    #[test]
     fn space_b_matches_the_default_right_buttons_binding() {
         let mut keys = ButtonInput::<KeyCode>::default();
         keys.press(KeyCode::Space);
@@ -301,6 +342,17 @@ mod modifier_key_tests {
 
         assert!(defaults.processed_paginated);
         assert!(!continuous.processed_paginated);
+    }
+
+    #[test]
+    fn application_zoom_is_persistent_and_clamped_to_supported_bounds() {
+        let defaults = PersistentUiState::default();
+        let enlarged = persistent_ui_state_from_ron("(\napplication_zoom: 1.8,\n)", &defaults);
+        let too_large = persistent_ui_state_from_ron("(\napplication_zoom: 99.0,\n)", &defaults);
+
+        assert_eq!(defaults.application_zoom, 1.0);
+        assert_eq!(enlarged.application_zoom, 1.8);
+        assert_eq!(too_large.application_zoom, APPLICATION_ZOOM_MAX);
     }
 
     #[test]
@@ -555,6 +607,72 @@ pub(crate) fn handle_window_shortcuts(
     if !handled {
         return;
     }
+}
+
+pub(crate) fn handle_application_zoom_input(
+    mut mouse_wheels: MessageReader<MouseWheel>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut ui_scale: ResMut<UiScale>,
+    mut state: ResMut<EditorState>,
+) {
+    let keyboard_zoom_allowed = state.pending_keybind_capture.is_none();
+    let mut zoom_steps = 0.0_f32;
+
+    if keyboard_zoom_allowed && application_zoom_key_combination_pressed(&keys, KeyCode::Equal) {
+        zoom_steps += 1.0;
+    }
+    if keyboard_zoom_allowed && application_zoom_key_combination_pressed(&keys, KeyCode::Minus) {
+        zoom_steps -= 1.0;
+    }
+
+    let wheel_zoom_active = application_zoom_modifier_pressed(&keys);
+    for wheel in mouse_wheels.read() {
+        if !wheel_zoom_active {
+            continue;
+        }
+        zoom_steps += match wheel.unit {
+            MouseScrollUnit::Line => wheel.y,
+            MouseScrollUnit::Pixel => wheel.y / 120.0,
+        };
+    }
+
+    if zoom_steps.abs() <= f32::EPSILON {
+        return;
+    }
+
+    let next_zoom = (state.application_zoom + zoom_steps * APPLICATION_ZOOM_STEP)
+        .clamp(APPLICATION_ZOOM_MIN, APPLICATION_ZOOM_MAX);
+    if (next_zoom - state.application_zoom).abs() <= f32::EPSILON {
+        return;
+    }
+
+    state.application_zoom = next_zoom;
+    ui_scale.0 = next_zoom;
+    state.status_message = format!(
+        "Application zoom: {}% (document zoom: {}%)",
+        (next_zoom * 100.0).round() as u32,
+        state.zoom_percent(),
+    );
+    if let Err(error) = save_editor_ui_state(&state) {
+        warn!("[state] Failed saving application zoom: {error}");
+        state.status_message = format!(
+            "Application zoom: {}% (state save failed: {error})",
+            (next_zoom * 100.0).round() as u32,
+        );
+    }
+}
+
+pub(crate) fn application_zoom_key_combination_pressed(
+    keys: &ButtonInput<KeyCode>,
+    key: KeyCode,
+) -> bool {
+    matches!(key, KeyCode::Equal | KeyCode::Minus)
+        && keys.just_pressed(key)
+        && application_zoom_modifier_pressed(keys)
+}
+
+pub(crate) fn application_zoom_modifier_pressed(keys: &ButtonInput<KeyCode>) -> bool {
+    shift_modifier_pressed(keys) && platform_shortcut_modifier_pressed(keys)
 }
 
 pub(crate) fn sync_window_chrome(

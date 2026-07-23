@@ -753,6 +753,7 @@ impl EditorState {
                     index.status,
                     EditorStoryIndexStatus::Ready
                         | EditorStoryIndexStatus::Created
+                        | EditorStoryIndexStatus::LocalCache
                         | EditorStoryIndexStatus::Recreated
                 )
             })

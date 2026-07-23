@@ -296,7 +296,6 @@ fn collect_processed_formatting_marks(
         .map(|(entity, paper)| (paper.slot, entity))
         .collect::<BTreeMap<_, _>>();
     let text_left = page_layout.geometry.text_left - page_layout.geometry.paper_left;
-    let text_top = page_layout.geometry.text_top - page_layout.geometry.paper_top;
     let font_size = scaled_font_size(state);
     let base_line_height = scaled_line_height(state).max(1.0);
     let fallback_width = scaled_char_width(state).max(1.0);
@@ -324,7 +323,7 @@ fn collect_processed_formatting_marks(
             computed.inverse_scale_factor(),
             fallback_width,
         );
-        let top = text_top
+        let top = processed_text_top_in_paper(state, &page_layout.geometry, paper_text.slot)
             + processed_visual_line_top_units(
                 state,
                 &all_lines,

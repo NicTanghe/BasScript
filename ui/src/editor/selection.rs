@@ -257,13 +257,43 @@ pub(crate) fn handle_mouse_selection(
             let mut clicked_page = None;
             for slot in 0..PROCESSED_PAPER_CAPACITY {
                 let page_index = first_visible_page.saturating_add(slot);
-                let page_top = processed_page_top_for_slot(
+                let page_start = page_index.saturating_mul(processed_step_lines);
+                if page_start >= processed_all_lines.len() {
+                    break;
+                }
+                let page_top = processed_content_page_top_for_slot(
+                    &state,
+                    &processed_view.lines,
                     &geometry,
                     slot,
+                    processed_step_lines,
+                    processed_line_height,
                     processed_step_px,
                     processed_anchor_offset_px,
                 ) + processed_zoom_bias_px;
-                let page_bottom = page_top + geometry.paper_height;
+                let page_bottom = if state.processed_paginated {
+                    page_top + geometry.paper_height
+                } else {
+                    let slot_start = slot.saturating_mul(processed_step_lines);
+                    let slot_end = slot_start
+                        .saturating_add(processed_step_lines)
+                        .min(processed_view.lines.len());
+                    processed_content_text_top_for_slot(
+                        &state,
+                        &processed_view.lines,
+                        &geometry,
+                        slot,
+                        processed_step_lines,
+                        processed_line_height,
+                        processed_step_px,
+                        processed_anchor_offset_px,
+                    ) + processed_zoom_bias_px
+                        + processed_content_height_px(
+                            &state,
+                            &processed_view.lines[slot_start..slot_end],
+                            processed_line_height,
+                        )
+                };
 
                 if panel_y >= page_top && panel_y <= page_bottom {
                     clicked_page = Some((slot, page_index));
@@ -275,9 +305,13 @@ pub(crate) fn handle_mouse_selection(
                 continue;
             };
 
-            let text_top = processed_text_top_for_slot(
+            let text_top = processed_content_text_top_for_slot(
+                &state,
+                &processed_view.lines,
                 &geometry,
                 slot,
+                processed_step_lines,
+                processed_line_height,
                 processed_step_px,
                 processed_anchor_offset_px,
             ) + processed_zoom_bias_px;
@@ -592,13 +626,43 @@ pub(crate) fn hovered_processed_link_at_cursor(
     let mut hovered_page = None;
     for slot in 0..PROCESSED_PAPER_CAPACITY {
         let page_index = first_visible_page.saturating_add(slot);
-        let page_top = processed_page_top_for_slot(
+        let page_start = page_index.saturating_mul(processed_step_lines);
+        if page_start >= processed_all_lines.len() {
+            break;
+        }
+        let page_top = processed_content_page_top_for_slot(
+            state,
+            &processed_view.lines,
             &geometry,
             slot,
+            processed_step_lines,
+            processed_line_height,
             processed_step_px,
             processed_anchor_offset_px,
         ) + processed_zoom_bias_px;
-        let page_bottom = page_top + geometry.paper_height;
+        let page_bottom = if state.processed_paginated {
+            page_top + geometry.paper_height
+        } else {
+            let slot_start = slot.saturating_mul(processed_step_lines);
+            let slot_end = slot_start
+                .saturating_add(processed_step_lines)
+                .min(processed_view.lines.len());
+            processed_content_text_top_for_slot(
+                state,
+                &processed_view.lines,
+                &geometry,
+                slot,
+                processed_step_lines,
+                processed_line_height,
+                processed_step_px,
+                processed_anchor_offset_px,
+            ) + processed_zoom_bias_px
+                + processed_content_height_px(
+                    state,
+                    &processed_view.lines[slot_start..slot_end],
+                    processed_line_height,
+                )
+        };
 
         if panel_y >= page_top && panel_y <= page_bottom {
             hovered_page = Some((slot, page_index));
@@ -607,9 +671,13 @@ pub(crate) fn hovered_processed_link_at_cursor(
     }
 
     let (slot, page_index) = hovered_page?;
-    let text_top = processed_text_top_for_slot(
+    let text_top = processed_content_text_top_for_slot(
+        state,
+        &processed_view.lines,
         &geometry,
         slot,
+        processed_step_lines,
+        processed_line_height,
         processed_step_px,
         processed_anchor_offset_px,
     ) + processed_zoom_bias_px;
@@ -888,9 +956,13 @@ pub(crate) fn render_selection_rects(
             }
 
             let text_left = processed_geometry.text_left - state.processed_horizontal_scroll;
-            let text_top = processed_text_top_for_slot(
+            let text_top = processed_content_text_top_for_slot(
+                state,
+                &processed_view.lines,
                 processed_geometry,
                 slot,
+                processed_page_step_lines,
+                processed_line_height,
                 processed_page_step_pixels,
                 processed_anchor_offset_px,
             ) + processed_zoom_bias_px;

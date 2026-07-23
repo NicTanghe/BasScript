@@ -161,9 +161,13 @@ pub(crate) fn render_panel_carets(
                         (Some(text_block), computed.inverse_scale_factor())
                     });
 
-                let page_text_top = processed_text_top_for_slot(
+                let page_text_top = processed_content_text_top_for_slot(
+                    state,
+                    &processed_view.lines,
                     processed_geometry,
                     slot,
+                    processed_page_step_lines,
+                    processed_line_height,
                     processed_page_step_pixels,
                     processed_anchor_offset_px,
                 ) + processed_zoom_bias_px;

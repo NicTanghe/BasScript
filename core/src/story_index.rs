@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    env,
     error::Error,
     fmt, fs, io,
     path::{Path, PathBuf},
@@ -38,6 +39,10 @@ pub struct StoryIndexOpenReport {
 pub enum StoryIndexOpenStatus {
     Created,
     Ready,
+    LocalCache {
+        workspace_database_path: PathBuf,
+        reason: String,
+    },
     Recreated {
         reason: StoryIndexRecoveryReason,
         previous_database_path: Option<PathBuf>,
@@ -65,6 +70,12 @@ pub enum StoryIndexError {
     RecoveryFailed {
         original_error: String,
         recovery_error: io::Error,
+    },
+    LocalCacheFailed {
+        workspace_database_path: PathBuf,
+        workspace_error: String,
+        local_database_path: PathBuf,
+        local_error: String,
     },
 }
 
@@ -135,6 +146,13 @@ impl StoryIndexDatabase {
     pub fn open_workspace(
         workspace_root: impl AsRef<Path>,
     ) -> Result<StoryIndexOpenReport, StoryIndexError> {
+        Self::open_workspace_with_cache_root(workspace_root, story_index_cache_root())
+    }
+
+    fn open_workspace_with_cache_root(
+        workspace_root: impl AsRef<Path>,
+        cache_root: PathBuf,
+    ) -> Result<StoryIndexOpenReport, StoryIndexError> {
         let workspace_root = normalize_workspace_root(workspace_root.as_ref());
         let database_path = story_index_database_path(&workspace_root);
         let existed_before_open = database_path.exists();
@@ -154,20 +172,33 @@ impl StoryIndexDatabase {
                     status,
                 })
             }
-            Err(error) if existed_before_open => {
+            Err(error) if existed_before_open && should_quarantine_database(&error) => {
                 let reason = recovery_reason_from_error(&error);
                 let previous_database_path = quarantine_database(&database_path, &error)?;
-                initialize_database(&workspace_root, &database_path)?;
-                Ok(StoryIndexOpenReport {
-                    database: Self {
-                        workspace_root,
-                        database_path,
-                    },
-                    status: StoryIndexOpenStatus::Recreated {
-                        reason,
-                        previous_database_path: Some(previous_database_path),
-                    },
-                })
+                match initialize_database(&workspace_root, &database_path) {
+                    Ok(()) => Ok(StoryIndexOpenReport {
+                        database: Self {
+                            workspace_root,
+                            database_path,
+                        },
+                        status: StoryIndexOpenStatus::Recreated {
+                            reason,
+                            previous_database_path: Some(previous_database_path),
+                        },
+                    }),
+                    Err(retry_error) if should_use_local_cache(&retry_error) => {
+                        open_local_cache_database(
+                            workspace_root,
+                            database_path,
+                            retry_error,
+                            cache_root,
+                        )
+                    }
+                    Err(retry_error) => Err(retry_error),
+                }
+            }
+            Err(error) if should_use_local_cache(&error) => {
+                open_local_cache_database(workspace_root, database_path, error, cache_root)
             }
             Err(error) => Err(error),
         }
@@ -325,6 +356,69 @@ pub fn story_index_database_path(workspace_root: impl AsRef<Path>) -> PathBuf {
         .as_ref()
         .join(STORY_INDEX_DIR_NAME)
         .join(STORY_INDEX_DATABASE_NAME)
+}
+
+fn story_index_cache_root() -> PathBuf {
+    env::var_os("XDG_CACHE_HOME")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            env::var_os("LOCALAPPDATA")
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+        })
+        .or_else(|| {
+            env::var_os("HOME")
+                .filter(|path| !path.is_empty())
+                .map(|path| PathBuf::from(path).join(".cache"))
+        })
+        .unwrap_or_else(env::temp_dir)
+        .join("basscript")
+        .join("story-index")
+}
+
+fn story_index_local_database_path(cache_root: &Path, workspace_root: &Path) -> PathBuf {
+    let workspace_key = stable_content_hash(workspace_root.to_string_lossy().as_bytes());
+    cache_root
+        .join(workspace_key)
+        .join(STORY_INDEX_DATABASE_NAME)
+}
+
+fn open_local_cache_database(
+    workspace_root: PathBuf,
+    workspace_database_path: PathBuf,
+    workspace_error: StoryIndexError,
+    cache_root: PathBuf,
+) -> Result<StoryIndexOpenReport, StoryIndexError> {
+    let local_database_path = story_index_local_database_path(&cache_root, &workspace_root);
+    let local_existed_before_open = local_database_path.exists();
+    let initialize_local = || initialize_database(&workspace_root, &local_database_path);
+    let local_result = match initialize_local() {
+        Ok(()) => Ok(()),
+        Err(error) if local_existed_before_open && should_quarantine_database(&error) => {
+            quarantine_database(&local_database_path, &error)?;
+            initialize_local()
+        }
+        Err(error) => Err(error),
+    };
+
+    local_result.map_err(|local_error| StoryIndexError::LocalCacheFailed {
+        workspace_database_path: workspace_database_path.clone(),
+        workspace_error: workspace_error.to_string(),
+        local_database_path: local_database_path.clone(),
+        local_error: local_error.to_string(),
+    })?;
+
+    Ok(StoryIndexOpenReport {
+        database: StoryIndexDatabase {
+            workspace_root,
+            database_path: local_database_path,
+        },
+        status: StoryIndexOpenStatus::LocalCache {
+            workspace_database_path,
+            reason: workspace_error.to_string(),
+        },
+    })
 }
 
 fn normalize_workspace_root(workspace_root: &Path) -> PathBuf {
@@ -970,6 +1064,36 @@ fn sqlite_user_version(connection: &Connection) -> Result<i64, StoryIndexError> 
         .map_err(StoryIndexError::Sqlite)
 }
 
+fn should_quarantine_database(error: &StoryIndexError) -> bool {
+    match error {
+        StoryIndexError::IncompatibleSchemaVersion { .. } => true,
+        StoryIndexError::Sqlite(error) => matches!(
+            error.sqlite_error_code(),
+            Some(rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase)
+        ),
+        _ => false,
+    }
+}
+
+fn should_use_local_cache(error: &StoryIndexError) -> bool {
+    match error {
+        StoryIndexError::Io(_) => true,
+        StoryIndexError::Sqlite(error) => matches!(
+            error.sqlite_error_code(),
+            Some(
+                rusqlite::ErrorCode::PermissionDenied
+                    | rusqlite::ErrorCode::DatabaseBusy
+                    | rusqlite::ErrorCode::DatabaseLocked
+                    | rusqlite::ErrorCode::ReadOnly
+                    | rusqlite::ErrorCode::SystemIoFailure
+                    | rusqlite::ErrorCode::CannotOpen
+                    | rusqlite::ErrorCode::FileLockingProtocolFailed
+            )
+        ),
+        _ => false,
+    }
+}
+
 fn recovery_reason_from_error(error: &StoryIndexError) -> StoryIndexRecoveryReason {
     match error {
         StoryIndexError::IncompatibleSchemaVersion { found, expected } => {
@@ -1018,6 +1142,12 @@ impl fmt::Display for StoryIndexOpenStatus {
         match self {
             Self::Created => write!(f, "created"),
             Self::Ready => write!(f, "ready"),
+            Self::LocalCache { reason, .. } => {
+                write!(
+                    f,
+                    "using local cache because workspace storage is unavailable: {reason}"
+                )
+            }
             Self::Recreated { reason, .. } => write!(f, "recreated after {reason}"),
         }
     }
@@ -1058,6 +1188,17 @@ impl fmt::Display for StoryIndexError {
                 f,
                 "could not quarantine invalid story index ({original_error}): {recovery_error}"
             ),
+            Self::LocalCacheFailed {
+                workspace_database_path,
+                workspace_error,
+                local_database_path,
+                local_error,
+            } => write!(
+                f,
+                "workspace story index {} is unavailable ({workspace_error}) and local cache {} failed ({local_error})",
+                workspace_database_path.display(),
+                local_database_path.display(),
+            ),
         }
     }
 }
@@ -1068,7 +1209,9 @@ impl Error for StoryIndexError {
             Self::Io(error) => Some(error),
             Self::Sqlite(error) => Some(error),
             Self::RecoveryFailed { recovery_error, .. } => Some(recovery_error),
-            Self::PathOutsideWorkspace { .. } | Self::IncompatibleSchemaVersion { .. } => None,
+            Self::PathOutsideWorkspace { .. }
+            | Self::IncompatibleSchemaVersion { .. }
+            | Self::LocalCacheFailed { .. } => None,
         }
     }
 }
@@ -1190,6 +1333,51 @@ mod tests {
         let report = StoryIndexDatabase::open_workspace(root.path()).expect("second open");
 
         assert_eq!(report.status, StoryIndexOpenStatus::Ready);
+    }
+
+    #[test]
+    fn uses_local_cache_when_workspace_cannot_host_sqlite() {
+        let root = TestDir::new();
+        let cache = TestDir::new();
+        root.write(STORY_INDEX_DIR_NAME, "workspace cache path is unavailable");
+
+        let report = StoryIndexDatabase::open_workspace_with_cache_root(
+            root.path(),
+            cache.path().to_path_buf(),
+        )
+        .expect("open local story index cache");
+
+        match &report.status {
+            StoryIndexOpenStatus::LocalCache {
+                workspace_database_path,
+                ..
+            } => {
+                assert_eq!(
+                    workspace_database_path,
+                    &story_index_database_path(root.path())
+                );
+            }
+            other => panic!("unexpected status: {other:?}"),
+        }
+        assert!(report.database.database_path().starts_with(cache.path()));
+        assert!(report.database.database_path().exists());
+        report
+            .database
+            .scan_workspace_files()
+            .expect("scan using local cache");
+        assert!(root.path().join(STORY_INDEX_DIR_NAME).is_file());
+    }
+
+    #[test]
+    fn locked_database_is_storage_failure_not_corruption() {
+        let sqlite_error = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+            Some("database is locked".to_string()),
+        );
+        let error = StoryIndexError::Sqlite(sqlite_error);
+
+        assert!(should_use_local_cache(&error));
+        assert!(!should_quarantine_database(&error));
     }
 
     #[test]
