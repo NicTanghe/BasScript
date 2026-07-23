@@ -4,7 +4,7 @@ version = "0.1.51"
 edition = "2024"
 
 [dependencies]
-bevy = { path = "../../Hamerons_bevy", features = ["bmp", "http", "https", "jpeg", "webp"] }
+bevy = { path = "../../../Hamerons_bevy", features = ["bmp", "http", "https", "jpeg", "webp"] }
 basscript-core = { path = "../core" }
 chrono = { version = "0.4.44", default-features = false, features = ["clock"] }
 lopdf = { version = "0.39", default-features = false }
@@ -15,6 +15,7 @@ rfd = { version = "0.15", default-features = false }
 resvg = "0.45"
 serde = { version = "1", features = ["derive"] }
 ttf-parser = "0.25"
+vector_stroke_render = { path = "../../vector_stroke_render" }
 winit = "0.30"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]

@@ -50,6 +50,7 @@ pub(crate) fn handle_mouse_selection(
             With<ProcessedLinkColorToggle>,
             With<ProcessedPaginationToggle>,
             With<FormattingMarksToggle>,
+            With<DrawingModeToggle>,
         )>,
     >,
     text_layout_query: Query<(&PanelText, &ComputedTextBlock)>,
@@ -64,7 +65,10 @@ pub(crate) fn handle_mouse_selection(
     >,
     mut state: ResMut<EditorState>,
 ) {
-    if state.document_format == DocumentFormat::Canvas {
+    if state.document_format == DocumentFormat::Canvas || state.drawing_mode_enabled {
+        mouse_selection.active = false;
+        mouse_selection.ctrl_link_candidate = None;
+        mouse_selection.ctrl_link_press_position = None;
         return;
     }
 

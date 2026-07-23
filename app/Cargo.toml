@@ -8,6 +8,6 @@ default = []
 dev-dynamic = ["bevy/dynamic_linking"]
 
 [dependencies]
-bevy = { path = "../../Hamerons_bevy", features = ["bmp", "http", "https", "jpeg", "webp"] }
+bevy = { path = "../../../Hamerons_bevy", features = ["bmp", "http", "https", "jpeg", "webp"] }
 basscript-ui = { path = "../ui" }
 basscript-core = { path = "../core" }

@@ -119,6 +119,9 @@ pub(crate) enum UiScreenState {
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EditorState>()
+            .init_resource::<vector_stroke_render::StrokeDocument>()
+            .init_resource::<DrawingSession>()
+            .init_resource::<DrawingPenState>()
             .init_resource::<NativeGlassState>()
             .init_resource::<DialogState>()
             .init_resource::<MiddleAutoscrollState>()
@@ -134,6 +137,10 @@ impl Plugin for UiPlugin {
             .init_resource::<EditorImageCache>()
             .init_state::<UiScreenState>()
             .insert_non_send(DialogMainThreadMarker)
+            .add_plugins((
+                vector_stroke_render::VectorStrokeInputPlugin,
+                vector_stroke_render::VectorStrokeRenderPlugin,
+            ))
             .add_systems(
                 Startup,
                 (
@@ -178,6 +185,7 @@ impl Plugin for UiPlugin {
                     handle_processed_pagination_toggle,
                     handle_formatting_marks_toggle,
                     handle_status_line_toggle,
+                    handle_drawing_mode_toggle.after(sync_drawing_session),
                     handle_workspace_file_buttons,
                     handle_workspace_folder_buttons,
                     handle_markdown_metadata_buttons,
@@ -252,6 +260,47 @@ impl Plugin for UiPlugin {
                 )
                     .run_if(in_state(UiScreenState::Editor)),
             );
+        app.add_systems(
+            PreUpdate,
+            sync_drawing_input
+                .before(vector_stroke_render::StrokeInputSystems::Collect)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            PreUpdate,
+            handle_drawing_pen_input
+                .after(bevy::input::InputSystems)
+                .after(sync_drawing_input)
+                .before(vector_stroke_render::StrokeInputSystems::Collect)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
+            handle_drawing_shortcuts
+                .before(handle_navigation_input)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
+            sync_drawing_session
+                .before(handle_drawing_mode_toggle)
+                .before(render_editor)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
+            sync_drawing_surface
+                .after(render_editor)
+                .after(handle_drawing_mode_toggle)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(OnExit(UiScreenState::Editor), hide_drawing_render_overlay);
+        app.add_systems(
+            Update,
+            save_drawing_sidecar
+                .after(sync_drawing_surface)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
         app.add_systems(
             Update,
             resolve_external_url_open_results
@@ -505,6 +554,12 @@ pub(crate) struct ProcessedPaginationToggle;
 
 #[derive(Component)]
 pub(crate) struct FormattingMarksToggle;
+
+#[derive(Component)]
+pub(crate) struct DrawingModeToggle;
+
+#[derive(Component)]
+pub(crate) struct DrawingModeToggleLabel;
 
 #[derive(Component)]
 pub(crate) struct StatusLineToggle;
@@ -1492,6 +1547,7 @@ pub(crate) struct EditorState {
     pub(crate) processed_link_color_mode: ProcessedLinkColorMode,
     pub(crate) processed_paginated: bool,
     pub(crate) formatting_marks_visible: bool,
+    pub(crate) drawing_mode_enabled: bool,
     pub(crate) processed_glass: bool,
     pub(crate) explorer_glass: bool,
     pub(crate) settings_glass: bool,
@@ -2235,6 +2291,7 @@ impl FromWorld for EditorState {
             processed_link_color_mode: ui_state.processed_link_color_mode,
             processed_paginated: ui_state.processed_paginated,
             formatting_marks_visible: ui_state.formatting_marks_visible,
+            drawing_mode_enabled: false,
             processed_glass: theme_settings.processed_glass,
             explorer_glass: theme_settings.explorer_glass,
             settings_glass: theme_settings.settings_glass,
@@ -2588,6 +2645,7 @@ impl EditorState {
                 self.canvas_text_selection_anchor = None;
                 self.canvas_text_edit_undo_snapshot = None;
                 self.canvas_text_suppress_next_insert_input = false;
+                self.drawing_mode_enabled = false;
                 self.top_line = 0;
                 self.processed_top_line = 0;
                 self.processed_top_visual = 0;

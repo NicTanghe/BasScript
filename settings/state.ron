@@ -4,7 +4,7 @@
 	right_buttons_visible: true,
 	status_line_visible: false,
 	processed_link_color_mode: "colored",
-	processed_paginated: false,
+	processed_paginated: true,
 	formatting_marks_visible: false,
-	application_zoom: 1.800,
+	application_zoom: 1.700,
 )

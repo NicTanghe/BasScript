@@ -7,6 +7,17 @@ pub(crate) fn setup(
 ) {
     ui_scale.0 = state.application_zoom;
     commands.spawn((Camera2d, IsDefaultUiCamera));
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: 1,
+            clear_color: ClearColorConfig::None,
+            is_active: false,
+            ..default()
+        },
+        RenderLayers::layer(DRAWING_RENDER_LAYER),
+        DrawingRenderCamera,
+    ));
 
     let fonts = EditorFonts {
         regular: asset_server.load(FONT_PATH),
@@ -1760,7 +1771,23 @@ pub(crate) fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
                             UiTransform::default(),
                             ZIndex(3),
                             PanelText { kind },
-                        )
+                        ),
+                        (
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: px(0.0),
+                                top: px(0.0),
+                                width: px(0.0),
+                                height: px(0.0),
+                                display: Display::None,
+                                overflow: Overflow::visible(),
+                                ..default()
+                            },
+                            UiTransform::default(),
+                            ZIndex(12),
+                            GlobalZIndex(12),
+                            DrawingOverlayRoot { kind },
+                        ),
                     ],
                 ),
                 processed_overlay_toggle_group_bundle(font.clone(), kind),
@@ -1810,6 +1837,12 @@ pub(crate) fn processed_overlay_toggle_group_bundle(
                 "Marks: hidden",
                 FormattingMarksToggle,
                 FormattingMarksToggleLabel,
+            ),
+            processed_overlay_toggle_button(
+                font.clone(),
+                "Drawing: hidden",
+                DrawingModeToggle,
+                DrawingModeToggleLabel,
             ),
             processed_overlay_toggle_button(
                 font,
@@ -1927,6 +1960,7 @@ pub(crate) fn style_toolbar_buttons(
                 With<ProcessedLinkColorToggle>,
                 With<ProcessedPaginationToggle>,
                 With<FormattingMarksToggle>,
+                With<DrawingModeToggle>,
                 With<StatusLineToggle>,
                 With<WorkspaceLinkFolderOption>,
             )>,
@@ -2084,6 +2118,16 @@ pub(crate) fn sync_processed_overlay_toggle_group(
             Without<ProcessedPaginationToggleLabel>,
         ),
     >,
+    mut drawing_mode_label_query: Query<
+        &mut Text,
+        (
+            With<DrawingModeToggleLabel>,
+            Without<ProcessedLinkColorToggleLabel>,
+            Without<ProcessedPaginationToggleLabel>,
+            Without<FormattingMarksToggleLabel>,
+            Without<StatusLineToggleLabel>,
+        ),
+    >,
     mut status_line_label_query: Query<
         &mut Text,
         (
@@ -2091,6 +2135,7 @@ pub(crate) fn sync_processed_overlay_toggle_group(
             Without<ProcessedLinkColorToggleLabel>,
             Without<ProcessedPaginationToggleLabel>,
             Without<FormattingMarksToggleLabel>,
+            Without<DrawingModeToggleLabel>,
         ),
     >,
 ) {
@@ -2295,6 +2340,19 @@ pub(crate) fn sync_processed_overlay_toggle_group(
     for mut text in formatting_marks_label_query.iter_mut() {
         if text.as_str() != formatting_marks_label {
             **text = formatting_marks_label.to_string();
+        }
+    }
+
+    let drawing_label = if !drawing_file_is_supported(&state.paths.load_path) {
+        "Drawing: unavailable"
+    } else if state.drawing_mode_enabled {
+        "Drawing: visible"
+    } else {
+        "Drawing: hidden"
+    };
+    for mut text in drawing_mode_label_query.iter_mut() {
+        if text.as_str() != drawing_label {
+            **text = drawing_label.to_string();
         }
     }
 

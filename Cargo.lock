@@ -520,6 +520,7 @@ dependencies = [
  "ron",
  "serde",
  "ttf-parser",
+ "vector_stroke_render",
  "window-vibrancy",
  "windows-sys 0.61.2",
  "winit 0.30.12",
@@ -5353,9 +5354,9 @@ dependencies = [
 
 [[package]]
 name = "ron"
-version = "0.12.0"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd490c5b18261893f14449cbd28cb9c0b637aebf161cd77900bfdedaff21ec32"
+checksum = "81116b9531d61eabc41aeb228e4b6b2435bcca3233b98cf3b3077d4e6e9debb3"
 dependencies = [
  "bitflags 2.10.0",
  "once_cell",
@@ -6667,6 +6668,27 @@ name = "vec_map"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
+
+[[package]]
+name = "vector_stroke_render"
+version = "0.1.0"
+dependencies = [
+ "bevy_app",
+ "bevy_asset",
+ "bevy_camera",
+ "bevy_color",
+ "bevy_ecs",
+ "bevy_input",
+ "bevy_math",
+ "bevy_mesh",
+ "bevy_render",
+ "bevy_sprite_render",
+ "bevy_transform",
+ "bevy_window",
+ "ron",
+ "serde",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "version-compare"

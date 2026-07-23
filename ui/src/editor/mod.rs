@@ -15,6 +15,7 @@ use basscript_core::{
 use bevy::{
     app::AppExit,
     asset::{LoadState, RenderAssetUsages},
+    camera::{Viewport, visibility::RenderLayers},
     image::{CompressedImageFormats, ImageSampler, ImageType},
     input::{
         keyboard::{Key, KeyboardInput},
@@ -52,6 +53,8 @@ mod metadata_controls;
 use metadata_controls::*;
 mod caret;
 use caret::*;
+mod drawing;
+use drawing::*;
 mod ui_setup;
 use ui_setup::*;
 mod splitters;

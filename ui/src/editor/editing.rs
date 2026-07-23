@@ -18,6 +18,7 @@ pub(crate) fn handle_text_input(
         || state.markdown_metadata_input_active()
         || state.story_query_sheet.open
         || state.document_format == DocumentFormat::Canvas
+        || state.drawing_mode_enabled
         || (state.vim_enabled && state.vim_mode != VimMode::Insert)
     {
         state.close_link_autocomplete();
@@ -329,6 +330,11 @@ pub(crate) fn handle_navigation_input(
     mut state: ResMut<EditorState>,
 ) {
     if capture.is_captured() || navigation_capture.captured {
+        return;
+    }
+
+    if state.drawing_mode_enabled {
+        state.close_link_autocomplete();
         return;
     }
 
