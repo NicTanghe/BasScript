@@ -189,6 +189,7 @@ pub(crate) fn save_persistent_settings(settings: &PersistentSettings) -> io::Res
          \tpage_margin_bottom: {:.3},\n\
          \tworkspace_root_path: \"{}\",\n\
          \tvim_mode_enabled: {},\n\
+         \tbrush_resize_speed: {:.3},\n\
          )\n",
         settings.dialogue_double_space_newline,
         settings.non_dialogue_double_space_newline,
@@ -200,6 +201,7 @@ pub(crate) fn save_persistent_settings(settings: &PersistentSettings) -> io::Res
         settings.page_margin_bottom,
         workspace_root_path,
         settings.vim_mode_enabled,
+        settings.brush_resize_speed,
     );
 
     fs::write(&path, contents)?;
@@ -526,6 +528,10 @@ pub(crate) fn persistent_settings_from_ron(
         .or_else(|| defaults.workspace_root_path.clone());
     let vim_mode_enabled =
         parse_ron_bool(contents, "vim_mode_enabled").unwrap_or(defaults.vim_mode_enabled);
+    let brush_resize_speed = parse_ron_f32(contents, "brush_resize_speed")
+        .filter(|value| value.is_finite())
+        .unwrap_or(defaults.brush_resize_speed)
+        .clamp(BRUSH_RESIZE_SPEED_MIN, BRUSH_RESIZE_SPEED_MAX);
 
     PersistentSettings {
         dialogue_double_space_newline: dialogue_value,
@@ -538,6 +544,7 @@ pub(crate) fn persistent_settings_from_ron(
         page_margin_bottom,
         workspace_root_path,
         vim_mode_enabled,
+        brush_resize_speed,
     }
 }
 
@@ -719,6 +726,10 @@ pub(crate) fn load_legacy_toml_settings() -> Option<PersistentSettings> {
         workspace_root_path: None,
         vim_mode_enabled: parse_toml_bool(&contents, "vim_mode_enabled")
             .unwrap_or(defaults.vim_mode_enabled),
+        brush_resize_speed: parse_toml_f32(&contents, "brush_resize_speed")
+            .filter(|value| value.is_finite())
+            .unwrap_or(defaults.brush_resize_speed)
+            .clamp(BRUSH_RESIZE_SPEED_MIN, BRUSH_RESIZE_SPEED_MAX),
     })
 }
 
@@ -775,6 +786,9 @@ pub(crate) fn persistent_settings_from_state(state: &EditorState) -> PersistentS
             .as_ref()
             .map(|path| path.to_string_lossy().replace('\\', "/")),
         vim_mode_enabled: state.vim_enabled,
+        brush_resize_speed: state
+            .brush_resize_speed
+            .clamp(BRUSH_RESIZE_SPEED_MIN, BRUSH_RESIZE_SPEED_MAX),
     }
 }
 
@@ -1140,6 +1154,29 @@ pub(crate) fn adjust_page_margin(state: &mut EditorState, edge: MarginEdge, delt
     }
 
     normalize_page_margins(state);
+}
+
+pub(crate) fn adjust_brush_resize_speed(state: &mut EditorState, delta: f32) {
+    let current = if state.brush_resize_speed.is_finite() {
+        state.brush_resize_speed
+    } else {
+        BRUSH_RESIZE_SPEED_DEFAULT
+    };
+    state.brush_resize_speed =
+        (current + delta).clamp(BRUSH_RESIZE_SPEED_MIN, BRUSH_RESIZE_SPEED_MAX);
+    state.status_message = format!(
+        "Brush resize speed: {}.",
+        format_brush_resize_speed_label(state.brush_resize_speed)
+    );
+}
+
+pub(crate) fn format_brush_resize_speed_label(value: f32) -> String {
+    let value = if value.is_finite() {
+        value.clamp(BRUSH_RESIZE_SPEED_MIN, BRUSH_RESIZE_SPEED_MAX)
+    } else {
+        BRUSH_RESIZE_SPEED_DEFAULT
+    };
+    format!("{:.1}×", value / BRUSH_RESIZE_SPEED_DEFAULT)
 }
 
 pub(crate) fn scaled_font_size(state: &EditorState) -> f32 {

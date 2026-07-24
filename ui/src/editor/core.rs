@@ -53,6 +53,10 @@ pub(crate) const PAGE_TEXT_MARGIN_TOP: f32 = 30.0;
 pub(crate) const PAGE_TEXT_MARGIN_BOTTOM: f32 = 30.0;
 pub(crate) const PAGE_GAP: f32 = 24.0;
 pub(crate) const PAGE_MARGIN_STEP: f32 = 8.0;
+pub(crate) const BRUSH_RESIZE_SPEED_DEFAULT: f32 = 0.1;
+pub(crate) const BRUSH_RESIZE_SPEED_MIN: f32 = 0.005;
+pub(crate) const BRUSH_RESIZE_SPEED_MAX: f32 = 0.5;
+pub(crate) const BRUSH_RESIZE_SPEED_STEP: f32 = 0.005;
 pub(crate) const THEME_COLOR_WHEEL_SIZE_PX: u32 = 192;
 pub(crate) const THEME_COLOR_WHEEL_SIZE: f32 = THEME_COLOR_WHEEL_SIZE_PX as f32;
 pub(crate) const THEME_COLOR_SLIDER_WIDTH: f32 = 180.0;
@@ -281,6 +285,7 @@ impl Plugin for UiPlugin {
             handle_drawing_pen_input
                 .after(bevy::input::InputSystems)
                 .after(sync_drawing_input)
+                .before(route_pen_to_ui_pointer)
                 .before(vector_stroke_render::StrokeInputSystems::Collect)
                 .run_if(in_state(UiScreenState::Editor)),
         );
@@ -720,6 +725,8 @@ pub(crate) enum SettingsAction {
     MarginTopIncrease,
     MarginBottomDecrease,
     MarginBottomIncrease,
+    BrushResizeSpeedDecrease,
+    BrushResizeSpeedIncrease,
     LinkHoverHsvValueDecrease,
     LinkHoverHsvValueIncrease,
     OpenTheme,
@@ -1255,6 +1262,9 @@ pub(crate) struct SettingMarginLabel {
     pub(crate) edge: MarginEdge,
 }
 
+#[derive(Component)]
+pub(crate) struct SettingBrushResizeSpeedLabel;
+
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ThemeColorChannel {
     Hue,
@@ -1591,6 +1601,7 @@ pub(crate) struct EditorState {
     pub(crate) processed_paginated: bool,
     pub(crate) formatting_marks_visible: bool,
     pub(crate) drawing_mode_enabled: bool,
+    pub(crate) brush_resize_speed: f32,
     pub(crate) processed_glass: bool,
     pub(crate) explorer_glass: bool,
     pub(crate) settings_glass: bool,
@@ -1831,6 +1842,7 @@ pub(crate) struct PersistentSettings {
     pub(crate) page_margin_bottom: f32,
     pub(crate) workspace_root_path: Option<String>,
     pub(crate) vim_mode_enabled: bool,
+    pub(crate) brush_resize_speed: f32,
 }
 
 impl Default for PersistentSettings {
@@ -1846,6 +1858,7 @@ impl Default for PersistentSettings {
             page_margin_bottom: PAGE_TEXT_MARGIN_BOTTOM,
             workspace_root_path: None,
             vim_mode_enabled: false,
+            brush_resize_speed: BRUSH_RESIZE_SPEED_DEFAULT,
         }
     }
 }
@@ -2355,6 +2368,7 @@ impl FromWorld for EditorState {
             processed_paginated: ui_state.processed_paginated,
             formatting_marks_visible: ui_state.formatting_marks_visible,
             drawing_mode_enabled: false,
+            brush_resize_speed: settings.brush_resize_speed,
             processed_glass: theme_settings.processed_glass,
             explorer_glass: theme_settings.explorer_glass,
             settings_glass: theme_settings.settings_glass,

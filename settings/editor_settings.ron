@@ -9,4 +9,5 @@
 	page_margin_bottom: 64.000,
 	workspace_root_path: "/mnt/server/cgi/TROLLS/scripts/Trools",
 	vim_mode_enabled: true,
+	brush_resize_speed: 0.050,
 )

@@ -6,11 +6,12 @@ use std::{
 use bevy::{
     input::{
         ButtonState,
+        mouse::MouseButtonInput,
         pen::{PenAction, PenButton, PenData, PenId, PenInput, PenPressure, PenToolKind},
     },
     prelude::*,
     ui::UiGlobalTransform,
-    window::PrimaryWindow,
+    window::{CursorMoved, PrimaryWindow},
 };
 use vector_stroke_render::{
     CanvasExtent, CanvasId, DocumentLimits, LayerId, PenTilt, Srgba8, StrokeDocument, StrokeId,
@@ -22,6 +23,8 @@ use super::*;
 
 const DRAWING_FRONT_MATTER_KEY: &str = "drawings";
 const DRAWING_SIDECAR_SUFFIX: &str = ".ink.ron";
+const BRUSH_WIDTH_MIN: f32 = 0.5;
+const BRUSH_WIDTH_MAX: f32 = 200.0;
 pub(crate) const DRAWING_RENDER_LAYER: usize = 7;
 
 #[derive(Component, Clone, Copy, Debug)]
@@ -51,8 +54,8 @@ pub(crate) struct DrawingColorSwatch {
 #[derive(Resource, Default)]
 pub(crate) struct PenUiPointerState {
     contacts: HashSet<PenId>,
-    preserve_mouse_left: bool,
-    position: Option<(PenId, Entity, Vec2)>,
+    suppressed_contacts: HashSet<PenId>,
+    physical_mouse_left: bool,
     original_cursor_positions: HashMap<Entity, Option<Vec2>>,
 }
 
@@ -104,6 +107,11 @@ enum DrawingPenContact {
     },
     Erase {
         canvas: CanvasId,
+    },
+    ResizeBrush {
+        start_viewport_x: f32,
+        initial_width: f32,
+        surface_zoom: f32,
     },
 }
 
@@ -222,32 +230,78 @@ pub(crate) fn sync_drawing_color_palette(
 }
 
 pub(crate) fn route_pen_to_ui_pointer(
-    mut messages: MessageReader<PenInput>,
+    mut pen_messages: MessageReader<PenInput>,
+    mut cursor_messages: MessageReader<CursorMoved>,
+    mut mouse_messages: MessageReader<MouseButtonInput>,
     mut window_query: Query<&mut Window>,
     mut mouse_buttons: ResMut<ButtonInput<MouseButton>>,
     mut pointer_state: ResMut<PenUiPointerState>,
+    drawing_pen_state: Option<Res<DrawingPenState>>,
 ) {
-    for message in messages.read() {
+    let mut mouse_activity = cursor_messages.read().next().is_some();
+    let mut physical_left_pressed_this_frame = false;
+    for message in mouse_messages.read() {
+        mouse_activity = true;
+        if message.button == MouseButton::Left {
+            pointer_state.physical_mouse_left = message.state == ButtonState::Pressed;
+            physical_left_pressed_this_frame = message.state == ButtonState::Pressed;
+        }
+    }
+
+    if mouse_activity
+        && (!pointer_state.contacts.is_empty() || !pointer_state.suppressed_contacts.is_empty())
+    {
+        pointer_state.contacts.clear();
+        pointer_state.suppressed_contacts.clear();
+        if physical_left_pressed_this_frame {
+            // InputSystems saw this physical press while the synthetic pen
+            // button was still down. Recreate the edge so just_pressed is true.
+            mouse_buttons.release(MouseButton::Left);
+            mouse_buttons.press(MouseButton::Left);
+        } else if !pointer_state.physical_mouse_left {
+            mouse_buttons.release(MouseButton::Left);
+        }
+    }
+
+    let mut pen_position = None;
+    for message in pen_messages.read() {
         if !message.pen.primary {
             continue;
         }
 
         if let Some(position) = message.pen.position.filter(|position| position.is_finite()) {
-            pointer_state.position = Some((message.pen.device, message.pen.window, position));
+            pen_position = Some((message.pen.window, position));
         }
 
+        if mouse_activity {
+            continue;
+        }
+
+        let resizing_brush = drawing_pen_state
+            .as_ref()
+            .is_some_and(|state| state.is_resizing_brush(message.pen.device));
         match &message.action {
             PenAction::Button {
                 button: PenButton::Contact,
                 state: ButtonState::Pressed,
                 ..
             } => {
-                if pointer_state.contacts.is_empty() {
-                    pointer_state.preserve_mouse_left = mouse_buttons.pressed(MouseButton::Left);
+                if resizing_brush {
+                    pointer_state.contacts.remove(&message.pen.device);
+                    pointer_state.suppressed_contacts.insert(message.pen.device);
+                    if pointer_state.contacts.is_empty() && !pointer_state.physical_mouse_left {
+                        mouse_buttons.release(MouseButton::Left);
+                    }
+                    continue;
                 }
-                if pointer_state.contacts.insert(message.pen.device) {
-                    mouse_buttons.press(MouseButton::Left);
+                if !pointer_state.physical_mouse_left && mouse_buttons.pressed(MouseButton::Left) {
+                    // A release can be lost while following a link and swapping
+                    // documents. Every new pen press must still be a fresh edge.
+                    mouse_buttons.release(MouseButton::Left);
                 }
+                pointer_state.contacts.clear();
+                pointer_state.contacts.insert(message.pen.device);
+                mouse_buttons.press(MouseButton::Left);
             }
             PenAction::Button {
                 button: PenButton::Contact,
@@ -255,21 +309,21 @@ pub(crate) fn route_pen_to_ui_pointer(
                 ..
             }
             | PenAction::Left => {
-                pointer_state.contacts.remove(&message.pen.device);
-                if matches!(
-                    pointer_state.position,
-                    Some((device, _, _)) if device == message.pen.device
-                ) && matches!(&message.action, PenAction::Left)
+                if pointer_state
+                    .suppressed_contacts
+                    .remove(&message.pen.device)
                 {
-                    pointer_state.position = None;
+                    continue;
                 }
-                if pointer_state.contacts.is_empty() {
-                    if !pointer_state.preserve_mouse_left {
-                        mouse_buttons.release(MouseButton::Left);
-                    }
-                    pointer_state.preserve_mouse_left = false;
+                pointer_state.contacts.remove(&message.pen.device);
+                if pointer_state.contacts.is_empty() && !pointer_state.physical_mouse_left {
+                    mouse_buttons.release(MouseButton::Left);
                 }
             }
+            PenAction::Moved(_)
+                if pointer_state
+                    .suppressed_contacts
+                    .contains(&message.pen.device) => {}
             PenAction::Entered
             | PenAction::Moved(_)
             | PenAction::Button {
@@ -279,7 +333,12 @@ pub(crate) fn route_pen_to_ui_pointer(
         }
     }
 
-    if let Some((_, window_entity, position)) = pointer_state.position
+    if !pointer_state.contacts.is_empty() {
+        mouse_buttons.press(MouseButton::Left);
+    }
+
+    if !mouse_activity
+        && let Some((window_entity, position)) = pen_position
         && let Ok(mut window) = window_query.get_mut(window_entity)
     {
         pointer_state
@@ -666,10 +725,11 @@ pub(crate) fn handle_drawing_pen_input(
     mut messages: MessageReader<PenInput>,
     primary_window_query: Query<Entity, With<PrimaryWindow>>,
     ui_scale: Res<UiScale>,
-    state: Res<EditorState>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<EditorState>,
     session: Res<DrawingSession>,
     blocker: Res<VectorStrokeInputBlocker>,
-    settings: Res<VectorStrokeSettings>,
+    mut settings: ResMut<VectorStrokeSettings>,
     mut pen_state: ResMut<DrawingPenState>,
     mut document: ResMut<StrokeDocument>,
 ) {
@@ -709,6 +769,25 @@ pub(crate) fn handle_drawing_pen_input(
                 if let Some(contact) = pen_state.contacts.remove(&message.pen.device) {
                     finish_drawing_pen_contact(contact, &mut document);
                 }
+                if message.pen.tool != PenToolKind::Eraser
+                    && keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight])
+                    && let Some(start_viewport_x) =
+                        drawing_brush_resize_start(message, ui_scale.0, &session, &blocker)
+                {
+                    pen_state.contacts.insert(
+                        message.pen.device,
+                        DrawingPenContact::ResizeBrush {
+                            start_viewport_x,
+                            initial_width: settings.pen_style.base_width,
+                            surface_zoom: session.surface_zoom,
+                        },
+                    );
+                    state.status_message = format!(
+                        "Brush size: {:.1} pt. Drag left or right to adjust.",
+                        settings.pen_style.base_width
+                    );
+                    continue;
+                }
                 let started = Instant::now();
                 let Some(point) =
                     drawing_point_from_pen(message, data, ui_scale.0, &session, &blocker, started)
@@ -743,6 +822,17 @@ pub(crate) fn handle_drawing_pen_input(
                 let Some(mut contact) = pen_state.contacts.remove(&message.pen.device) else {
                     continue;
                 };
+                if contact.is_resizing_brush() {
+                    update_brush_resize_from_pen(
+                        &contact,
+                        message,
+                        ui_scale.0,
+                        &mut settings,
+                        &mut state,
+                    );
+                    pen_state.contacts.insert(message.pen.device, contact);
+                    continue;
+                }
                 let started = contact.started().unwrap_or_else(Instant::now);
                 let Some(point) =
                     drawing_point_from_pen(message, data, ui_scale.0, &session, &blocker, started)
@@ -766,6 +856,16 @@ pub(crate) fn handle_drawing_pen_input(
                 let Some(mut contact) = pen_state.contacts.remove(&message.pen.device) else {
                     continue;
                 };
+                if contact.is_resizing_brush() {
+                    update_brush_resize_from_pen(
+                        &contact,
+                        message,
+                        ui_scale.0,
+                        &mut settings,
+                        &mut state,
+                    );
+                    continue;
+                }
                 let started = contact.started().unwrap_or_else(Instant::now);
                 if let Some(point) =
                     drawing_point_from_pen(message, data, ui_scale.0, &session, &blocker, started)
@@ -827,8 +927,20 @@ impl DrawingPenContact {
     fn started(&self) -> Option<Instant> {
         match self {
             Self::Draw { started, .. } => Some(*started),
-            Self::Erase { .. } => None,
+            Self::Erase { .. } | Self::ResizeBrush { .. } => None,
         }
+    }
+
+    fn is_resizing_brush(&self) -> bool {
+        matches!(self, Self::ResizeBrush { .. })
+    }
+}
+
+impl DrawingPenState {
+    fn is_resizing_brush(&self, device: PenId) -> bool {
+        self.contacts
+            .get(&device)
+            .is_some_and(DrawingPenContact::is_resizing_brush)
     }
 }
 
@@ -850,6 +962,7 @@ fn update_drawing_pen_contact(
         DrawingPenContact::Erase { canvas } => {
             let _ = document.erase_strokes(*canvas, point.position(), eraser_radius);
         }
+        DrawingPenContact::ResizeBrush { .. } => {}
     }
 }
 
@@ -907,6 +1020,70 @@ fn drawing_point_from_pen(
         twist: data.twist.map(|twist| twist as f32),
         elapsed_ms: Some(elapsed_millis(started.elapsed())),
     })
+}
+
+fn drawing_brush_resize_start(
+    message: &PenInput,
+    ui_scale: f32,
+    session: &DrawingSession,
+    blocker: &VectorStrokeInputBlocker,
+) -> Option<f32> {
+    let viewport = drawing_viewport_to_ui(message.pen.position?, ui_scale)?;
+    if !session.allowed_viewport?.contains(viewport) || blocker.blocks(viewport) {
+        return None;
+    }
+    Some(viewport.x)
+}
+
+fn update_brush_resize_from_pen(
+    contact: &DrawingPenContact,
+    message: &PenInput,
+    ui_scale: f32,
+    settings: &mut VectorStrokeSettings,
+    state: &mut EditorState,
+) {
+    let DrawingPenContact::ResizeBrush {
+        start_viewport_x,
+        initial_width,
+        surface_zoom,
+    } = contact
+    else {
+        return;
+    };
+    let Some(viewport) = message
+        .pen
+        .position
+        .and_then(|position| drawing_viewport_to_ui(position, ui_scale))
+    else {
+        return;
+    };
+    settings.pen_style.base_width = brush_width_from_horizontal_drag(
+        *initial_width,
+        viewport.x - *start_viewport_x,
+        *surface_zoom,
+        state.brush_resize_speed,
+    );
+    state.status_message = format!("Brush size: {:.1} pt.", settings.pen_style.base_width);
+}
+
+fn brush_width_from_horizontal_drag(
+    initial_width: f32,
+    delta_x: f32,
+    surface_zoom: f32,
+    resize_speed: f32,
+) -> f32 {
+    if !initial_width.is_finite()
+        || !delta_x.is_finite()
+        || !surface_zoom.is_finite()
+        || surface_zoom <= f32::EPSILON
+        || !resize_speed.is_finite()
+    {
+        return initial_width.clamp(BRUSH_WIDTH_MIN, BRUSH_WIDTH_MAX);
+    }
+    (initial_width
+        + delta_x / surface_zoom
+            * resize_speed.clamp(BRUSH_RESIZE_SPEED_MIN, BRUSH_RESIZE_SPEED_MAX))
+    .clamp(BRUSH_WIDTH_MIN, BRUSH_WIDTH_MAX)
 }
 
 fn drawing_color_to_srgba8(rgba: Vec4) -> Srgba8 {
@@ -1362,29 +1539,55 @@ mod tests {
     }
 
     #[test]
+    fn horizontal_brush_resize_is_zoom_aware_and_clamped() {
+        assert_eq!(
+            brush_width_from_horizontal_drag(5.0, 50.0, 0.5, BRUSH_RESIZE_SPEED_DEFAULT),
+            10.0
+        );
+        assert_eq!(
+            brush_width_from_horizontal_drag(5.0, -1000.0, 1.0, BRUSH_RESIZE_SPEED_DEFAULT),
+            BRUSH_WIDTH_MIN
+        );
+        assert_eq!(
+            brush_width_from_horizontal_drag(5.0, 10_000.0, 1.0, BRUSH_RESIZE_SPEED_DEFAULT),
+            BRUSH_WIDTH_MAX
+        );
+        assert_eq!(brush_width_from_horizontal_drag(5.0, 50.0, 0.5, 0.1), 15.0);
+    }
+
+    #[test]
     fn pen_contact_drives_the_normal_ui_pointer() {
         #[derive(Resource, Default)]
         struct CapturedCursor {
             position: Option<Vec2>,
             window_changed: bool,
+            left_just_pressed: bool,
         }
 
-        fn capture_cursor(window_query: Query<Ref<Window>>, mut captured: ResMut<CapturedCursor>) {
+        fn capture_cursor(
+            window_query: Query<Ref<Window>>,
+            mouse_buttons: Res<ButtonInput<MouseButton>>,
+            mut captured: ResMut<CapturedCursor>,
+        ) {
             if let Ok(window) = window_query.single() {
                 captured.position = window.cursor_position();
                 captured.window_changed = window.is_changed();
+                captured.left_just_pressed = mouse_buttons.just_pressed(MouseButton::Left);
             }
         }
 
         let mut app = App::new();
         app.add_message::<PenInput>()
+            .add_message::<CursorMoved>()
+            .add_message::<MouseButtonInput>()
             .init_resource::<ButtonInput<MouseButton>>()
             .init_resource::<PenUiPointerState>()
             .init_resource::<CapturedCursor>()
             .add_systems(
                 Update,
                 (
-                    route_pen_to_ui_pointer,
+                    bevy::input::mouse::mouse_button_input_system,
+                    route_pen_to_ui_pointer.after(bevy::input::mouse::mouse_button_input_system),
                     capture_cursor.after(route_pen_to_ui_pointer),
                 ),
             )
@@ -1413,6 +1616,7 @@ mod tests {
             app.world().resource::<CapturedCursor>().position,
             Some(Vec2::new(120.0, 80.0))
         );
+        assert!(app.world().resource::<CapturedCursor>().left_just_pressed);
         assert!(!app.world().resource::<CapturedCursor>().window_changed);
         assert_eq!(
             app.world()
@@ -1442,6 +1646,58 @@ mod tests {
                 .resource::<ButtonInput<MouseButton>>()
                 .pressed(MouseButton::Left)
         );
+
+        app.world_mut().write_message(PenInput {
+            pen,
+            action: PenAction::Button {
+                button: PenButton::Contact,
+                state: ButtonState::Pressed,
+                data: PenData::default(),
+            },
+        });
+        app.update();
+        assert!(app.world().resource::<CapturedCursor>().left_just_pressed);
+
+        // Even if the corresponding release was lost during navigation, the
+        // next contact press must create another link-following edge.
+        app.world_mut().write_message(PenInput {
+            pen,
+            action: PenAction::Button {
+                button: PenButton::Contact,
+                state: ButtonState::Pressed,
+                data: PenData::default(),
+            },
+        });
+        app.update();
+        assert!(app.world().resource::<CapturedCursor>().left_just_pressed);
+
+        app.world_mut()
+            .entity_mut(window)
+            .get_mut::<Window>()
+            .unwrap()
+            .bypass_change_detection()
+            .set_cursor_position(Some(Vec2::new(320.0, 240.0)));
+        app.world_mut().write_message(MouseButtonInput {
+            button: MouseButton::Left,
+            state: ButtonState::Pressed,
+            window,
+        });
+        app.world_mut().write_message(PenInput {
+            pen,
+            action: PenAction::Moved(PenData::default()),
+        });
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<CapturedCursor>().position,
+            Some(Vec2::new(320.0, 240.0))
+        );
+        assert!(app.world().resource::<CapturedCursor>().left_just_pressed);
+        assert!(
+            app.world()
+                .resource::<ButtonInput<MouseButton>>()
+                .pressed(MouseButton::Left)
+        );
     }
 
     #[test]
@@ -1457,12 +1713,118 @@ mod tests {
     }
 
     #[test]
+    fn shift_pen_drag_resizes_the_brush_without_drawing_or_clicking() {
+        let mut app = App::new();
+        app.add_message::<PenInput>()
+            .add_message::<CursorMoved>()
+            .add_message::<MouseButtonInput>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<PenUiPointerState>()
+            .add_systems(
+                Update,
+                (
+                    handle_drawing_pen_input,
+                    route_pen_to_ui_pointer.after(handle_drawing_pen_input),
+                ),
+            );
+
+        let window = app
+            .world_mut()
+            .spawn((Window::default(), PrimaryWindow))
+            .id();
+        let mut editor = EditorState::from_world(app.world_mut());
+        editor.drawing_mode_enabled = true;
+        editor.brush_resize_speed = 0.1;
+        app.insert_resource(editor);
+
+        let mut document = StrokeDocument::new("brush-resize-test");
+        let (canvas, layer) = ensure_drawing_surface(&mut document);
+        app.insert_resource(document)
+            .insert_resource(UiScale(1.0))
+            .insert_resource(VectorStrokeSettings::default())
+            .insert_resource(VectorStrokeInputBlocker::default())
+            .insert_resource(DrawingPenState::default())
+            .insert_resource(DrawingSession {
+                canvas: Some(canvas),
+                layer: Some(layer),
+                allowed_viewport: Some(Rect::from_corners(Vec2::ZERO, Vec2::splat(500.0))),
+                surface_origin_viewport: Some(Vec2::ZERO),
+                surface_zoom: 0.5,
+                surface_extent: CanvasExtent::new(500.0, 500.0),
+                ..default()
+            });
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::ShiftLeft);
+
+        let pen = |position| PenInfo {
+            window,
+            device: PenId::Device(17),
+            primary: true,
+            position: Some(position),
+            tool: PenToolKind::Pen,
+        };
+        app.world_mut().write_message(PenInput {
+            pen: pen(Vec2::new(100.0, 100.0)),
+            action: PenAction::Button {
+                button: PenButton::Contact,
+                state: ButtonState::Pressed,
+                data: PenData::default(),
+            },
+        });
+        app.update();
+        assert!(
+            !app.world()
+                .resource::<ButtonInput<MouseButton>>()
+                .pressed(MouseButton::Left)
+        );
+
+        app.world_mut().write_message(PenInput {
+            pen: pen(Vec2::new(150.0, 100.0)),
+            action: PenAction::Moved(PenData::default()),
+        });
+        app.update();
+        app.world_mut().write_message(PenInput {
+            pen: pen(Vec2::new(150.0, 100.0)),
+            action: PenAction::Button {
+                button: PenButton::Contact,
+                state: ButtonState::Released,
+                data: PenData::default(),
+            },
+        });
+        app.update();
+
+        assert_eq!(
+            app.world()
+                .resource::<VectorStrokeSettings>()
+                .pen_style
+                .base_width,
+            15.0
+        );
+        let document = app.world().resource::<StrokeDocument>();
+        assert!(
+            document.canvas(canvas).expect("drawing canvas").layers[0]
+                .strokes
+                .is_empty()
+        );
+        assert!(!document.has_active_strokes());
+        assert!(
+            !app.world()
+                .resource::<ButtonInput<MouseButton>>()
+                .pressed(MouseButton::Left)
+        );
+    }
+
+    #[test]
     fn scaled_pen_contact_persists_a_pressure_sensitive_stroke_to_ron() {
         let mut app = App::new();
-        app.add_message::<PenInput>().add_systems(
-            Update,
-            (handle_drawing_pen_input, save_drawing_sidecar).chain(),
-        );
+        app.add_message::<PenInput>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_systems(
+                Update,
+                (handle_drawing_pen_input, save_drawing_sidecar).chain(),
+            );
 
         let window = app
             .world_mut()

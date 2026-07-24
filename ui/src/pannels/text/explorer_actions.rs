@@ -2118,6 +2118,22 @@ pub(crate) fn workspace_path_is_under_root(root: &Path, path: &Path) -> bool {
 
 pub(crate) fn workspace_paths_match(left: &Path, right: &Path) -> bool {
     workspace_path_key(left) == workspace_path_key(right)
+        || workspace_file_identity(left)
+            .zip(workspace_file_identity(right))
+            .is_some_and(|(left, right)| left == right)
+}
+
+#[cfg(unix)]
+pub(crate) fn workspace_file_identity(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+
+    let metadata = fs::metadata(path).ok()?;
+    Some((metadata.dev(), metadata.ino()))
+}
+
+#[cfg(not(unix))]
+pub(crate) fn workspace_file_identity(_path: &Path) -> Option<(u64, u64)> {
+    None
 }
 
 pub(crate) fn workspace_path_key(path: &Path) -> String {

@@ -244,7 +244,7 @@ pub(crate) fn setup(
                             settings_screen_heading(
                                 font.clone(),
                                 "Settings",
-                                "Processed page margins and formatting options.",
+                                "Processed page margins, drawing input, and formatting options.",
                             ),
                             settings_toggle_button(
                                 font.clone(),
@@ -295,6 +295,7 @@ pub(crate) fn setup(
                                 SettingsAction::MarginBottomDecrease,
                                 SettingsAction::MarginBottomIncrease,
                             ),
+                            brush_resize_speed_setting_row(font.clone()),
                             settings_action_button(
                                 font.clone(),
                                 "Theme",
@@ -1400,6 +1401,40 @@ pub(crate) fn margin_setting_row(
                 SettingMarginLabel { edge },
             ),
             settings_action_button(font, "+", increase_action),
+        ],
+    )
+}
+
+pub(crate) fn brush_resize_speed_setting_row(font: Handle<Font>) -> impl Bundle {
+    (
+        Node {
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            column_gap: px(8.0),
+            ..default()
+        },
+        children![
+            (
+                Text::new("Brush resize speed"),
+                TextFont {
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(13.0),
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MAIN),
+            ),
+            settings_action_button(font.clone(), "-", SettingsAction::BrushResizeSpeedDecrease,),
+            (
+                Text::new(""),
+                TextFont {
+                    font: font.clone().into(),
+                    font_size: FontSize::Px(13.0),
+                    ..default()
+                },
+                TextColor(COLOR_TEXT_MAIN),
+                SettingBrushResizeSpeedLabel,
+            ),
+            settings_action_button(font, "+", SettingsAction::BrushResizeSpeedIncrease),
         ],
     )
 }
@@ -2680,6 +2715,14 @@ pub(crate) fn handle_settings_buttons(
                 adjust_page_margin(&mut state, MarginEdge::Bottom, PAGE_MARGIN_STEP);
                 settings_changed = true;
             }
+            SettingsAction::BrushResizeSpeedDecrease => {
+                adjust_brush_resize_speed(&mut state, -BRUSH_RESIZE_SPEED_STEP);
+                settings_changed = true;
+            }
+            SettingsAction::BrushResizeSpeedIncrease => {
+                adjust_brush_resize_speed(&mut state, BRUSH_RESIZE_SPEED_STEP);
+                settings_changed = true;
+            }
             SettingsAction::LinkHoverHsvValueDecrease => {
                 state.link_hover_hsv_value_adjustment -= LINK_HOVER_HSV_VALUE_STEP;
                 sync_theme_colors(&mut state);
@@ -3477,6 +3520,18 @@ pub(crate) fn sync_settings_ui(
         (&SettingMarginLabel, &mut Text),
         (
             Without<SettingToggleLabel>,
+            Without<SettingBrushResizeSpeedLabel>,
+            Without<KeybindBindingLabel>,
+            Without<ThemeColorLabel>,
+            Without<ThemeColorValueLabel>,
+        ),
+    >,
+    mut brush_resize_speed_label_query: Query<
+        &mut Text,
+        (
+            With<SettingBrushResizeSpeedLabel>,
+            Without<SettingToggleLabel>,
+            Without<SettingMarginLabel>,
             Without<KeybindBindingLabel>,
             Without<ThemeColorLabel>,
             Without<ThemeColorValueLabel>,
@@ -3487,6 +3542,7 @@ pub(crate) fn sync_settings_ui(
         (
             Without<SettingToggleLabel>,
             Without<SettingMarginLabel>,
+            Without<SettingBrushResizeSpeedLabel>,
             Without<ThemeColorLabel>,
         ),
     >,
@@ -3588,6 +3644,10 @@ pub(crate) fn sync_settings_ui(
             MarginEdge::Bottom => state.page_margin_bottom,
         };
         **text = format!("{value:.1} pt");
+    }
+
+    for mut text in brush_resize_speed_label_query.iter_mut() {
+        **text = format_brush_resize_speed_label(state.brush_resize_speed);
     }
 
     for (label, mut text) in keybind_label_query.iter_mut() {

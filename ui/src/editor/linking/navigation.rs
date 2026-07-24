@@ -392,13 +392,7 @@ impl EditorState {
             }
         }
 
-        let existing = candidates
-            .into_iter()
-            .filter(|path| path.is_file())
-            .map(|path| path.canonicalize().unwrap_or(path))
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
+        let existing = deduplicate_existing_paths(candidates);
 
         match existing.as_slice() {
             [] => {
@@ -531,6 +525,26 @@ impl EditorState {
             raw_end_column: link.span.end,
         })
     }
+}
+
+pub(crate) fn deduplicate_existing_paths(
+    candidates: impl IntoIterator<Item = PathBuf>,
+) -> Vec<PathBuf> {
+    let mut existing: Vec<PathBuf> = Vec::new();
+    for path in candidates {
+        if !path.is_file() {
+            continue;
+        }
+        let path = path.canonicalize().unwrap_or(path);
+        if existing
+            .iter()
+            .any(|candidate| workspace_paths_match(candidate, &path))
+        {
+            continue;
+        }
+        existing.push(path);
+    }
+    existing
 }
 
 pub(crate) fn is_external_browser_url(target: &str) -> bool {
@@ -799,6 +813,103 @@ pub(crate) fn is_markdown_entity_file(path: &Path) -> bool {
 #[cfg(test)]
 mod link_navigation_tests {
     use super::*;
+
+    #[test]
+    fn repeated_navigation_deduplicates_case_variant_paths_to_the_same_file() {
+        let root = std::env::temp_dir().join(format!(
+            "basscript-case-link-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let eoghan = root.join("Eoghan.md");
+        let eoghan_lower = root.join("eoghan.md");
+        let thorin = root.join("Thorin.md");
+        let thorin_lower = root.join("thorin.md");
+        fs::write(
+            &eoghan,
+            "---\nid: eoghan\ntarget: eoghan\ntype: character\nname: Eoghan\n---\n[Thorin](thorin)\n",
+        )
+        .unwrap();
+        fs::write(
+            &thorin,
+            "---\nid: thorin\ntarget: thorin\ntype: character\nname: Thorin\n---\n[Eoghan](eoghan)\n",
+        )
+        .unwrap();
+        if !eoghan_lower.is_file() {
+            fs::hard_link(&eoghan, &eoghan_lower).unwrap();
+        }
+        if !thorin_lower.is_file() {
+            fs::hard_link(&thorin, &thorin_lower).unwrap();
+        }
+
+        let mut app = App::new();
+        let mut state = EditorState::from_world(app.world_mut());
+        state.workspace_root = Some(root.clone());
+        state.workspace_files = vec![
+            WorkspaceFileEntry {
+                path: eoghan.clone(),
+                relative_display: "Eoghan.md".to_string(),
+            },
+            WorkspaceFileEntry {
+                path: eoghan_lower,
+                relative_display: "eoghan.md".to_string(),
+            },
+            WorkspaceFileEntry {
+                path: thorin.clone(),
+                relative_display: "Thorin.md".to_string(),
+            },
+            WorkspaceFileEntry {
+                path: thorin_lower,
+                relative_display: "thorin.md".to_string(),
+            },
+        ];
+        assert!(state.load_from_path(eoghan.clone()));
+
+        let thorin_hit = state
+            .parsed
+            .iter()
+            .enumerate()
+            .flat_map(|(line, parsed)| {
+                parsed.script_links.iter().filter_map(move |link| {
+                    (link.target == "thorin").then_some(Position {
+                        line,
+                        column: *script_link_visible_column_range(link).start(),
+                    })
+                })
+            })
+            .next()
+            .expect("Eoghan should link to Thorin");
+        assert!(state.open_link_at(thorin_hit, None, false));
+        assert!(
+            workspace_paths_match(&state.paths.load_path, &thorin),
+            "path={}, status={}",
+            state.paths.load_path.display(),
+            state.status_message
+        );
+
+        let eoghan_hit = state
+            .parsed
+            .iter()
+            .enumerate()
+            .flat_map(|(line, parsed)| {
+                parsed.script_links.iter().filter_map(move |link| {
+                    (link.target == "eoghan").then_some(Position {
+                        line,
+                        column: *script_link_visible_column_range(link).start(),
+                    })
+                })
+            })
+            .next()
+            .expect("Thorin should link back to Eoghan");
+        assert!(state.open_link_at(eoghan_hit, None, false));
+        assert!(workspace_paths_match(&state.paths.load_path, &eoghan));
+
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn matches_link_target_files_ignoring_case() {

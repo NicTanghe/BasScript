@@ -379,6 +379,34 @@ mod modifier_key_tests {
     }
 
     #[test]
+    fn brush_resize_speed_is_persistent_and_clamped() {
+        let defaults = PersistentSettings::default();
+        let faster = persistent_settings_from_ron("(\nbrush_resize_speed: 0.125,\n)", &defaults);
+        let too_fast = persistent_settings_from_ron("(\nbrush_resize_speed: 99.0,\n)", &defaults);
+        let too_slow = persistent_settings_from_ron("(\nbrush_resize_speed: -1.0,\n)", &defaults);
+
+        assert_eq!(defaults.brush_resize_speed, BRUSH_RESIZE_SPEED_DEFAULT);
+        assert_eq!(faster.brush_resize_speed, 0.125);
+        assert_eq!(too_fast.brush_resize_speed, BRUSH_RESIZE_SPEED_MAX);
+        assert_eq!(too_slow.brush_resize_speed, BRUSH_RESIZE_SPEED_MIN);
+        assert_eq!(
+            format_brush_resize_speed_label(BRUSH_RESIZE_SPEED_DEFAULT),
+            "1.0×"
+        );
+    }
+
+    #[test]
+    fn settings_ui_system_queries_are_disjoint() {
+        let mut app = App::new();
+        let editor = EditorState::from_world(app.world_mut());
+        app.insert_resource(editor)
+            .insert_resource(State::new(UiScreenState::Editor))
+            .add_systems(Update, sync_settings_ui);
+
+        app.update();
+    }
+
+    #[test]
     fn default_view_mode_cycle_reaches_every_available_mode() {
         let mut mode = DisplayMode::Processed;
         let mut visited = BTreeSet::new();
