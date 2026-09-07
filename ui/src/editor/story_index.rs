@@ -1,7 +1,37 @@
 use basscript_core::{
-    StoryIndexDatabase, StoryIndexOpenReport, StoryIndexOpenStatus, StoryIndexScanReport,
-    story_index_database_path,
+    StoryIndexDatabase, StoryIndexError, StoryIndexOpenReport, StoryIndexOpenStatus,
+    StoryIndexScanReport, story_index_database_path,
 };
+use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future::poll_once};
+
+#[derive(Resource, Default)]
+pub(crate) struct StoryIndexTask {
+    pub(crate) in_flight: Option<Task<StoryIndexTaskResult>>,
+}
+
+pub(crate) struct StoryIndexTaskResult {
+    pub(crate) workspace_root: PathBuf,
+    pub(crate) open_result: Result<StoryIndexOpenReport, StoryIndexError>,
+    pub(crate) scan_result: Option<Result<StoryIndexScanReport, StoryIndexError>>,
+}
+
+pub(crate) fn spawn_story_index_refresh(workspace_root: PathBuf, task_state: &mut StoryIndexTask) {
+    let pool = AsyncComputeTaskPool::get();
+    let root = workspace_root.clone();
+    let task = pool.spawn(async move {
+        let open_result = StoryIndexDatabase::open_workspace(&root);
+        let scan_result = match &open_result {
+            Ok(report) => Some(report.database.scan_workspace_files()),
+            Err(_) => None,
+        };
+        StoryIndexTaskResult {
+            workspace_root: root,
+            open_result,
+            scan_result,
+        }
+    });
+    task_state.in_flight = Some(task);
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct EditorStoryIndex {
@@ -62,41 +92,43 @@ impl EditorStoryIndexStatus {
 }
 
 impl EditorState {
-    pub(crate) fn open_story_index_for_workspace(&mut self, workspace_root: &Path) -> String {
-        match StoryIndexDatabase::open_workspace(workspace_root) {
+    pub(crate) fn apply_story_index_result(&mut self, result: StoryIndexTaskResult) -> String {
+        let (message, index) = match result.open_result {
             Ok(report) => {
-                let scan = report.database.scan_workspace_files();
-                let message = story_index_status_message(&report, scan.as_ref().ok());
-                self.story_index = Some(EditorStoryIndex {
-                    database: scan.is_ok().then(|| report.database.clone()),
+                let scan_ok = result
+                    .scan_result
+                    .as_ref()
+                    .and_then(|scan| scan.as_ref().ok());
+                let message = story_index_status_message(&report, scan_ok);
+                let scan_is_ok = scan_ok.is_some();
+                let index = EditorStoryIndex {
+                    database: scan_is_ok.then(|| report.database.clone()),
                     workspace_root: report.database.workspace_root().to_path_buf(),
                     database_path: report.database.database_path().to_path_buf(),
-                    status: if scan.is_ok() {
+                    status: if scan_is_ok {
                         editor_story_index_status(&report.status)
                     } else {
                         EditorStoryIndexStatus::Failed
                     },
-                    file_count: scan.as_ref().map(|scan| scan.file_count).unwrap_or(0),
-                    entity_count: scan.as_ref().map(|scan| scan.entity_count).unwrap_or(0),
-                    entity_error_count: scan
-                        .as_ref()
-                        .map(|scan| scan.entity_error_count)
-                        .unwrap_or(0),
-                    scene_count: scan.as_ref().map(|scan| scan.scene_count).unwrap_or(0),
-                    appearance_count: scan.as_ref().map(|scan| scan.appearance_count).unwrap_or(0),
-                });
-                match scan {
-                    Ok(_) => info!("[story-index] {message}"),
-                    Err(error) => warn!("[story-index] {message} Scan failed: {error}"),
+                    file_count: scan_ok.map(|scan| scan.file_count).unwrap_or(0),
+                    entity_count: scan_ok.map(|scan| scan.entity_count).unwrap_or(0),
+                    entity_error_count: scan_ok.map(|scan| scan.entity_error_count).unwrap_or(0),
+                    scene_count: scan_ok.map(|scan| scan.scene_count).unwrap_or(0),
+                    appearance_count: scan_ok.map(|scan| scan.appearance_count).unwrap_or(0),
+                };
+                match &result.scan_result {
+                    Some(Ok(_)) => info!("[story-index] {message}"),
+                    Some(Err(error)) => warn!("[story-index] {message} Scan failed: {error}"),
+                    None => warn!("[story-index] {message}"),
                 }
-                message
+                (message, index)
             }
             Err(error) => {
-                let database_path = story_index_database_path(workspace_root);
+                let database_path = story_index_database_path(&result.workspace_root);
                 let message = format!("Story index failed at {}: {error}", database_path.display());
-                self.story_index = Some(EditorStoryIndex {
+                let index = EditorStoryIndex {
                     database: None,
-                    workspace_root: workspace_root.to_path_buf(),
+                    workspace_root: result.workspace_root,
                     database_path,
                     status: EditorStoryIndexStatus::Failed,
                     file_count: 0,
@@ -104,11 +136,27 @@ impl EditorState {
                     entity_error_count: 0,
                     scene_count: 0,
                     appearance_count: 0,
-                });
+                };
                 warn!("[story-index] {message}");
-                message
+                (message, index)
             }
-        }
+        };
+
+        self.story_index = Some(index);
+        message
+    }
+
+    pub(crate) fn open_story_index_for_workspace(&mut self, workspace_root: &Path) -> String {
+        let open_result = StoryIndexDatabase::open_workspace(workspace_root);
+        let scan_result = match &open_result {
+            Ok(report) => Some(report.database.scan_workspace_files()),
+            Err(_) => None,
+        };
+        self.apply_story_index_result(StoryIndexTaskResult {
+            workspace_root: workspace_root.to_path_buf(),
+            open_result,
+            scan_result,
+        })
     }
 
     pub(crate) fn refresh_story_index_for_workspace(&mut self) -> Option<String> {
@@ -121,6 +169,30 @@ impl EditorState {
             .as_ref()
             .map(EditorStoryIndex::visible_label)
             .unwrap_or_default()
+    }
+}
+
+pub(crate) fn poll_story_index_task(
+    mut state: ResMut<EditorState>,
+    mut task_state: ResMut<StoryIndexTask>,
+) {
+    let Some(mut task) = task_state.in_flight.take() else {
+        return;
+    };
+
+    if let Some(result) = block_on(poll_once(&mut task)) {
+        if state.workspace_root.as_deref() == Some(&result.workspace_root) {
+            let message = state.apply_story_index_result(result);
+            state.status_message = message;
+            state.workspace_ui_dirty = true;
+        } else {
+            info!(
+                "[story-index] Discarded index result for {} as active workspace changed",
+                result.workspace_root.display()
+            );
+        }
+    } else {
+        task_state.in_flight = Some(task);
     }
 }
 
@@ -185,3 +257,66 @@ pub(crate) fn story_index_scan_summary(scan: &StoryIndexScanReport) -> String {
 }
 #[allow(unused_imports)]
 use super::*;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apply_story_index_result_handles_error() {
+        let mut world = World::new();
+        let mut state = EditorState::from_world(&mut world);
+        let path = PathBuf::from("/nonexistent/test/workspace");
+        let result = StoryIndexTaskResult {
+            workspace_root: path.clone(),
+            open_result: Err(StoryIndexError::Io(std::io::Error::other("test error"))),
+            scan_result: None,
+        };
+
+        let message = state.apply_story_index_result(result);
+        assert!(message.contains("Story index failed"));
+        assert!(state.story_index.is_some());
+        let index = state.story_index.as_ref().unwrap();
+        assert_eq!(index.workspace_root, path);
+        assert!(matches!(index.status, EditorStoryIndexStatus::Failed));
+    }
+
+    #[test]
+    fn poll_story_index_task_applies_completed_result() {
+        let mut app = App::new();
+        app.init_resource::<EditorState>()
+            .init_resource::<StoryIndexTask>()
+            .add_systems(Update, poll_story_index_task);
+
+        let test_root = PathBuf::from("/test/workspace/root");
+        {
+            let mut state = app.world_mut().resource_mut::<EditorState>();
+            state.workspace_root = Some(test_root.clone());
+        }
+
+        let task = bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::default)
+            .spawn(async move {
+                StoryIndexTaskResult {
+                    workspace_root: PathBuf::from("/test/workspace/root"),
+                    open_result: Err(StoryIndexError::Io(std::io::Error::other("test error"))),
+                    scan_result: None,
+                }
+            });
+
+        {
+            let mut task_state = app.world_mut().resource_mut::<StoryIndexTask>();
+            task_state.in_flight = Some(task);
+        }
+
+        app.update();
+
+        let state = app.world().resource::<EditorState>();
+        assert!(state.story_index.is_some());
+        assert_eq!(
+            state.story_index.as_ref().unwrap().workspace_root,
+            test_root
+        );
+        let task_state = app.world().resource::<StoryIndexTask>();
+        assert!(task_state.in_flight.is_none());
+    }
+}

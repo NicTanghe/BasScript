@@ -744,6 +744,7 @@ pub(crate) fn handle_file_shortcuts(
     primary_window_query: Query<&RawHandleWrapper, With<PrimaryWindow>>,
     mut state: ResMut<EditorState>,
     mut dialogs: ResMut<DialogState>,
+    mut task_state: Option<ResMut<StoryIndexTask>>,
 ) {
     if state.command_menu.is_some() {
         return;
@@ -763,7 +764,7 @@ pub(crate) fn handle_file_shortcuts(
 
     if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::Save)) {
         info!("[dialog] Save shortcut detected");
-        state.save_current();
+        state.save_current_with_task(task_state.as_deref_mut());
     }
 
     if shortcut_just_pressed(&keys, state.keybinds.binding(ShortcutAction::SaveAs)) {
@@ -963,6 +964,7 @@ pub(crate) fn open_pdf_export_dialog(
 pub(crate) fn resolve_dialog_results(
     mut state: ResMut<EditorState>,
     mut dialogs: ResMut<DialogState>,
+    mut task_state: Option<ResMut<StoryIndexTask>>,
 ) {
     let Some(pending) = dialogs.pending.as_ref() else {
         return;
@@ -1014,18 +1016,22 @@ pub(crate) fn resolve_dialog_results(
                     "PDF export picker closed before returning a result.".to_string(),
                 ))),
             },
-            Err(error) => Some(DialogResult::ExportPdf(Err(format!(
-                "PDF export picker receiver failed: {error}"
-            )))),
+            Err(error) => {
+                warn!("[dialog] PDF export dialog receiver poisoned: {error}");
+                Some(DialogResult::ExportPdf(Err(format!(
+                    "PDF export picker receiver failed: {error}"
+                ))))
+            }
         },
     };
 
     dialogs.poll_count = dialogs.poll_count.saturating_add(1);
 
     let now = Instant::now();
-    let should_log_watchdog = dialogs
-        .last_watchdog_log_at
-        .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(2));
+    let should_log_watchdog = dialogs.last_watchdog_log_at.map_or(true, |last| {
+        now.duration_since(last) >= Duration::from_secs(2)
+    });
+
     if should_log_watchdog {
         if let Some(opened_at) = dialogs.opened_at {
             let elapsed_ms = opened_at.elapsed().as_millis();
@@ -1053,7 +1059,7 @@ pub(crate) fn resolve_dialog_results(
 
     match result {
         DialogResult::Workspace(path) => finish_workspace_dialog(&mut state, path),
-        DialogResult::Save(path) => finish_save_dialog(&mut state, path),
+        DialogResult::Save(path) => finish_save_dialog(&mut state, path, task_state.as_deref_mut()),
         DialogResult::ExportPdf(path) => finish_pdf_export_dialog(&mut state, path),
     }
 }
@@ -1079,11 +1085,17 @@ pub(crate) fn finish_pdf_export_dialog(state: &mut EditorState, result: DialogPa
             }
             Err(error) => {
                 warn!("[pdf] Export failed: {error}");
-                state.status_message = format!("PDF export failed: {error}");
+                state.status_message = format!("Export failed: {error}");
             }
         },
-        Ok(None) => state.status_message = "PDF export canceled.".to_string(),
-        Err(error) => state.status_message = format!("PDF export dialog failed: {error}"),
+        Ok(None) => {
+            info!("[dialog] PDF export canceled by user");
+            state.status_message = "PDF export canceled.".to_string();
+        }
+        Err(error) => {
+            warn!("[pdf] Export failed: {error}");
+            state.status_message = format!("PDF export failed: {error}");
+        }
     }
 }
 
@@ -1105,7 +1117,7 @@ pub(crate) fn finish_workspace_dialog(state: &mut EditorState, result: DialogPat
     match result {
         Ok(Some(path)) => {
             info!(
-                "[dialog] Opening selected workspace path: {}",
+                "[dialog] Setting workspace root to selected path: {}",
                 path.display()
             );
             state.set_workspace_root(path);
@@ -1121,11 +1133,15 @@ pub(crate) fn finish_workspace_dialog(state: &mut EditorState, result: DialogPat
     }
 }
 
-pub(crate) fn finish_save_dialog(state: &mut EditorState, result: DialogPathResult) {
+pub(crate) fn finish_save_dialog(
+    state: &mut EditorState,
+    result: DialogPathResult,
+    task_state: Option<&mut StoryIndexTask>,
+) {
     match result {
         Ok(Some(path)) => {
             info!("[dialog] Saving to selected path: {}", path.display());
-            state.save_to_path(path);
+            state.save_to_path_with_task(path, task_state);
         }
         Ok(None) => {
             info!("[dialog] Save dialog canceled by user");

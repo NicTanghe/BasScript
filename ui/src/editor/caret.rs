@@ -10,9 +10,31 @@ pub(crate) struct PanelCaret {
     pub(crate) kind: PanelKind,
 }
 
-pub(crate) fn blink_caret(time: Res<Time>, mut state: ResMut<EditorState>) {
-    if state.caret_blink.tick(time.delta()).just_finished() {
-        state.caret_visible = !state.caret_visible;
+#[derive(Resource, Debug, Clone)]
+pub(crate) struct CaretBlinkState {
+    pub(crate) timer: Timer,
+    pub(crate) visible: bool,
+}
+
+impl Default for CaretBlinkState {
+    fn default() -> Self {
+        Self {
+            timer: Timer::from_seconds(0.5, TimerMode::Repeating),
+            visible: true,
+        }
+    }
+}
+
+pub(crate) fn blink_caret(
+    time: Res<Time>,
+    mut blink: ResMut<CaretBlinkState>,
+    state: Res<EditorState>,
+) {
+    if state.is_changed() {
+        blink.timer.reset();
+        blink.visible = true;
+    } else if blink.timer.tick(time.delta()).just_finished() {
+        blink.visible = !blink.visible;
     }
 }
 
@@ -57,6 +79,7 @@ pub(crate) fn render_panel_carets(
         ),
     >,
     state: &EditorState,
+    caret_visible: bool,
     visible_lines: usize,
     plain_lines: &[String],
     plain_layout: Option<&ComputedTextBlock>,
@@ -86,7 +109,7 @@ pub(crate) fn render_panel_carets(
     processed_line_height: f32,
 ) {
     for (panel_caret, mut node, mut visibility, mut transform) in caret_query.iter_mut() {
-        if !state.caret_visible {
+        if !caret_visible {
             *visibility = Visibility::Hidden;
             continue;
         }
@@ -251,3 +274,84 @@ pub(crate) fn render_panel_carets(
 }
 #[allow(unused_imports)]
 use super::*;
+
+#[cfg(test)]
+mod caret_tests {
+    use super::*;
+
+    #[test]
+    fn caret_blink_state_default() {
+        let blink = CaretBlinkState::default();
+        assert!(blink.visible);
+        assert_eq!(blink.timer.duration(), Duration::from_millis(500));
+        assert_eq!(blink.timer.mode(), TimerMode::Repeating);
+    }
+
+    #[test]
+    fn blink_caret_toggles_and_idle_does_not_mutate_editor_state() {
+        let mut app = App::new();
+        app.init_resource::<EditorState>()
+            .init_resource::<CaretBlinkState>()
+            .init_resource::<Time>()
+            .add_systems(Update, blink_caret);
+
+        // Run initial update frame so change detection settles
+        app.update();
+
+        // Advance by 250ms (halfway): should stay visible
+        {
+            let mut time = app.world_mut().resource_mut::<Time>();
+            time.advance_by(Duration::from_millis(250));
+        }
+        app.update();
+        assert!(app.world().resource::<CaretBlinkState>().visible);
+        assert!(!app.world().resource_ref::<EditorState>().is_changed());
+
+        // Advance by another 250ms (reaching 500ms): should toggle to false
+        {
+            let mut time = app.world_mut().resource_mut::<Time>();
+            time.advance_by(Duration::from_millis(250));
+        }
+        app.update();
+        assert!(!app.world().resource::<CaretBlinkState>().visible);
+        assert!(!app.world().resource_ref::<EditorState>().is_changed());
+
+        // Advance by another 500ms: should toggle back to true
+        {
+            let mut time = app.world_mut().resource_mut::<Time>();
+            time.advance_by(Duration::from_millis(500));
+        }
+        app.update();
+        assert!(app.world().resource::<CaretBlinkState>().visible);
+        assert!(!app.world().resource_ref::<EditorState>().is_changed());
+    }
+
+    #[test]
+    fn blink_caret_resets_on_editor_state_change() {
+        let mut app = App::new();
+        app.init_resource::<EditorState>()
+            .init_resource::<CaretBlinkState>()
+            .init_resource::<Time>()
+            .add_systems(Update, blink_caret);
+
+        app.update();
+
+        // Advance by 500ms: toggles visible to false
+        {
+            let mut time = app.world_mut().resource_mut::<Time>();
+            time.advance_by(Duration::from_millis(500));
+        }
+        app.update();
+        assert!(!app.world().resource::<CaretBlinkState>().visible);
+
+        // Mutating EditorState must reset the blink timer and restore visibility
+        {
+            let mut state = app.world_mut().resource_mut::<EditorState>();
+            state.cursor.position.column += 1;
+        }
+        app.update();
+        let blink = app.world().resource::<CaretBlinkState>();
+        assert!(blink.visible);
+        assert_eq!(blink.timer.elapsed(), Duration::ZERO);
+    }
+}

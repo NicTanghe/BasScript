@@ -1259,14 +1259,27 @@ pub(crate) fn processed_display_lines(
         return processed_cache_lines(state, wrap_columns, lines_per_page, spacer_lines);
     }
 
+    let raw_override_line = state
+        .cursor
+        .position
+        .line
+        .min(state.parsed.len().saturating_sub(1));
+
+    if state.processed_cache_dirty_from_line.is_none() {
+        if let Some((cached_raw, cached_wrap, cached_lines_per_page, cached_spacer, lines)) =
+            &state.processed_raw_current_line_cache
+        {
+            if *cached_raw == raw_override_line
+                && *cached_wrap == wrap_columns
+                && *cached_lines_per_page == lines_per_page
+                && *cached_spacer == spacer_lines
+            {
+                return Arc::clone(lines);
+            }
+        }
+    }
+
     state.ensure_current_script_link_targets_cached();
-    let raw_override_line = Some(
-        state
-            .cursor
-            .position
-            .line
-            .min(state.parsed.len().saturating_sub(1)),
-    );
     let mut lines = Vec::<ProcessedVisualLine>::new();
     for (start_line, end_line_exclusive, ends_with_hard_break) in processed_segment_ranges(state) {
         let segment_lines = build_processed_segment_lines(
@@ -1277,11 +1290,23 @@ pub(crate) fn processed_display_lines(
             wrap_columns,
             lines_per_page,
             spacer_lines,
-            raw_override_line,
+            Some(raw_override_line),
         );
         lines.extend(segment_lines);
     }
-    lines.into()
+    let lines: Arc<[ProcessedVisualLine]> = lines.into();
+    state.processed_raw_current_line_cache = Some((
+        raw_override_line,
+        wrap_columns,
+        lines_per_page,
+        spacer_lines,
+        Arc::clone(&lines),
+    ));
+    if state.processed_cache_dirty_from_line.is_some() {
+        state.processed_cache = None;
+        state.processed_cache_dirty_from_line = None;
+    }
+    lines
 }
 
 pub(crate) fn push_processed_fragment(
@@ -2041,6 +2066,67 @@ mod processed_markdown_inline_tests {
         let resized = processed_display_lines(&mut state, 8, 16, 2);
         assert!(!Arc::ptr_eq(&after, &resized));
         assert_eq!(after[0].text, "New Bold text");
+    }
+
+    #[test]
+    fn processed_raw_current_line_caching_and_invalidation() {
+        let mut state = rendered_test_state();
+        state.display_mode = DisplayMode::ProcessedRawCurrentLine;
+        state.cursor.position = Position { line: 0, column: 0 };
+
+        let first = processed_display_lines(&mut state, 80, 16, 2);
+        assert_eq!(first[0].text, "**Bold** text");
+
+        // Calling again with the same parameters returns the cached Arc directly
+        let second = processed_display_lines(&mut state, 80, 16, 2);
+        assert!(Arc::ptr_eq(&first, &second));
+
+        // Moving the cursor to line 1 recomputes and updates cache
+        state.cursor.position = Position { line: 1, column: 0 };
+        let line_one = processed_display_lines(&mut state, 80, 16, 2);
+        assert!(!Arc::ptr_eq(&first, &line_one));
+        assert_eq!(line_one[0].text, "Bold text");
+        assert_eq!(line_one[1].text, "Second line");
+
+        // Calling again with line 1 cursor hits the new cache
+        let line_one_again = processed_display_lines(&mut state, 80, 16, 2);
+        assert!(Arc::ptr_eq(&line_one, &line_one_again));
+
+        // Changing wrap columns rebuilds cache
+        let wrapped = processed_display_lines(&mut state, 40, 16, 2);
+        assert!(!Arc::ptr_eq(&line_one, &wrapped));
+
+        // Marking dirty clears cache
+        state.mark_processed_cache_dirty_from(0);
+        assert!(state.processed_raw_current_line_cache.is_none());
+
+        // Reparse clears cache and sets script_links_dirty
+        state.reparse();
+        assert!(state.processed_raw_current_line_cache.is_none());
+        assert!(state.script_links_dirty);
+    }
+
+    #[test]
+    fn script_link_targets_cache_dirty_flagging() {
+        let mut state = rendered_test_state();
+        assert!(state.script_links_dirty);
+
+        state.ensure_current_script_link_targets_cached();
+        assert!(!state.script_links_dirty);
+
+        // Subsequent call does not re-dirty
+        state.ensure_current_script_link_targets_cached();
+        assert!(!state.script_links_dirty);
+
+        // Reparse sets dirty
+        state.reparse();
+        assert!(state.script_links_dirty);
+        state.ensure_current_script_link_targets_cached();
+        assert!(!state.script_links_dirty);
+
+        // Clear target cache sets dirty
+        state.clear_script_link_target_cache();
+        assert!(state.script_links_dirty);
     }
 
     #[test]

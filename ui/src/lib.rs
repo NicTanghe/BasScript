@@ -1,3 +1,3 @@
 mod editor;
 
-pub use editor::UiPlugin;
+pub use editor::{EditorSystemSet, UiPlugin};

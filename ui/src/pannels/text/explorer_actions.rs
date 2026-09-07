@@ -2194,6 +2194,8 @@ impl EditorState {
         self.processed_zoom_anchor_bias_px = 0.0;
         self.processed_cache = None;
         self.processed_cache_dirty_from_line = Some(0);
+        self.processed_raw_current_line_cache = None;
+        self.script_links_dirty = true;
         self.clear_history();
 
         let fallback = self

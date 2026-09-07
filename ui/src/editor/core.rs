@@ -18,7 +18,7 @@ pub(crate) const STORY_TAXONOMY_SETTINGS_PATH: &str = "settings/story_taxonomy.r
 pub(crate) const LEGACY_EDITOR_SETTINGS_PATH: &str = "scripts/editor_settings.ron";
 pub(crate) const LEGACY_KEYBINDS_SETTINGS_PATH: &str = "scripts/keybinds.ron";
 pub(crate) const LEGACY_SETTINGS_PATH: &str = "scripts/settings.toml";
-pub(crate) const PROCESSED_PAPER_CAPACITY: usize = 16;
+pub(crate) const PROCESSED_PAPER_CAPACITY: usize = 6;
 pub(crate) const SELECTION_RECT_CAPACITY: usize = 512;
 
 pub(crate) const FONT_SIZE: f32 = 12.0;
@@ -104,6 +104,13 @@ pub(crate) const COLOR_IMAGE_PLACEHOLDER: Color = Color::srgb(0.72, 0.74, 0.77);
 
 pub struct UiPlugin;
 
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum EditorSystemSet {
+    Input,
+    Model,
+    Presentation,
+}
+
 #[derive(States, Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub(crate) enum UiScreenState {
     #[default]
@@ -115,7 +122,19 @@ pub(crate) enum UiScreenState {
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
+        app.configure_sets(
+            Update,
+            (
+                EditorSystemSet::Input,
+                EditorSystemSet::Model,
+                EditorSystemSet::Presentation,
+            )
+                .chain(),
+        );
+
         app.init_resource::<EditorState>()
+            .init_resource::<StoryIndexTask>()
+            .init_resource::<CaretBlinkState>()
             .init_resource::<NativeGlassState>()
             .init_resource::<DialogState>()
             .init_resource::<MiddleAutoscrollState>()
@@ -139,229 +158,189 @@ impl Plugin for UiPlugin {
                     setup_processed_papers.after(setup),
                     setup_story_query_sheet_result_spans.after(setup),
                 ),
-            )
-            .add_systems(
-                Update,
-                (
-                    style_toolbar_buttons,
-                    sync_processed_overlay_toggle_group.after(render_editor),
-                    style_workspace_file_entry_text,
-                    sync_workspace_prompt_ui,
-                    handle_window_shortcuts,
-                    sync_window_chrome,
-                    sync_glass_surfaces,
-                    sync_top_menu_visibility,
-                    sync_status_line_visibility.after(handle_status_line_toggle),
-                    sync_rounded_window_surfaces.after(sync_status_line_visibility),
-                    sync_panel_display_mode,
-                    sync_panel_split_layout
-                        .after(handle_window_shortcuts)
-                        .after(handle_panel_splitter_drag),
-                    sync_command_menu_ui,
-                    sync_story_query_sheet_ui,
-                    sync_settings_ui,
-                    reset_settings_menu_scroll_on_open,
-                    sync_theme_picker_ui,
-                    sync_workspace_sidebar,
-                    sync_workspace_selected_row_scroll.after(sync_workspace_sidebar),
-                ),
-            )
-            .add_systems(
-                Update,
-                (
-                    handle_toolbar_buttons,
-                    handle_processed_link_color_toggle,
-                    handle_processed_pagination_toggle,
-                    handle_formatting_marks_toggle,
-                    handle_status_line_toggle,
-                    handle_workspace_file_buttons,
-                    handle_workspace_folder_buttons,
-                    handle_markdown_metadata_buttons,
-                    handle_story_query_sheet_buttons,
-                    handle_story_query_sheet_link_click,
-                    handle_story_query_sheet_keyboard,
-                )
-                    .run_if(in_state(UiScreenState::Editor)),
-            )
-            .add_systems(
-                Update,
-                (
-                    handle_settings_buttons,
-                    handle_settings_screen_navigation.run_if(in_state(UiScreenState::Settings)),
-                )
-                    .run_if(
-                        in_state(UiScreenState::Settings)
-                            .or_else(in_state(UiScreenState::Keybinds))
-                            .or_else(in_state(UiScreenState::Theme)),
-                    ),
-            )
-            .add_systems(
-                Update,
-                handle_settings_menu_mouse_scroll.run_if(
-                    in_state(UiScreenState::Settings).or_else(in_state(UiScreenState::Keybinds)),
-                ),
-            )
-            .add_systems(
-                Update,
-                handle_theme_color_picker_buttons.run_if(in_state(UiScreenState::Theme)),
-            )
-            .add_systems(
-                Update,
-                handle_theme_color_picker_input.run_if(in_state(UiScreenState::Theme)),
-            )
-            .add_systems(
-                Update,
-                (
-                    handle_keybind_buttons,
-                    handle_keybind_screen_navigation.before(capture_keybind_input),
-                    capture_keybind_input,
-                )
-                    .run_if(in_state(UiScreenState::Keybinds)),
-            )
-            .add_systems(
-                Update,
-                (
-                    handle_file_shortcuts,
-                    handle_workspace_prompt_input,
-                    handle_command_menu_input,
-                    handle_command_menu_open_input,
-                    handle_workspace_keyboard_input,
-                    resolve_dialog_results,
-                    handle_vim_input,
-                    handle_text_input,
-                    handle_navigation_input,
-                    handle_mouse_scroll,
-                    handle_canvas_drag_input,
-                    handle_ctrl_left_drag_scroll,
-                    handle_middle_mouse_autoscroll,
-                    handle_panel_splitter_drag.after(handle_middle_mouse_autoscroll),
-                    handle_mouse_selection
-                        .after(handle_middle_mouse_autoscroll)
-                        .after(handle_panel_splitter_drag),
-                    sync_hovered_processed_link
-                        .after(handle_mouse_selection)
-                        .before(render_editor),
-                    sync_middle_autoscroll_indicator.after(handle_middle_mouse_autoscroll),
-                    style_panel_splitters,
-                    blink_caret,
-                    render_editor.after(sync_panel_split_layout),
-                )
-                    .run_if(in_state(UiScreenState::Editor)),
             );
+
+        // --- INPUT SYSTEMS ---
         app.add_systems(
             Update,
-            resolve_external_url_open_results
-                .before(render_editor)
-                .run_if(in_state(UiScreenState::Editor)),
+            handle_window_shortcuts.in_set(EditorSystemSet::Input),
         );
         app.add_systems(
             Update,
-            sync_workspace_link_prompt_folder_options
-                .before(sync_workspace_prompt_ui)
-                .run_if(in_state(UiScreenState::Editor)),
-        );
-        app.add_systems(
-            Update,
-            handle_workspace_link_prompt_buttons
-                .after(sync_workspace_link_prompt_folder_options)
-                .run_if(in_state(UiScreenState::Editor)),
-        );
-        app.add_systems(
-            Update,
-            handle_workspace_link_folder_mouse_scroll.run_if(in_state(UiScreenState::Editor)),
-        );
-        app.add_systems(
-            Update,
-            handle_formatting_page_break_click
-                .after(handle_mouse_selection)
-                .before(render_editor)
-                .run_if(in_state(UiScreenState::Editor)),
-        );
-        app.add_systems(
-            Update,
-            sync_formatting_mark_overlays
-                .after(render_editor)
-                .run_if(in_state(UiScreenState::Editor)),
-        );
-        app.add_systems(
-            Update,
-            handle_document_navigation_history
-                .before(handle_story_query_sheet_keyboard)
-                .before(handle_command_menu_input)
-                .before(handle_markdown_metadata_input)
-                .before(handle_vim_input)
-                .before(handle_navigation_input)
-                .run_if(in_state(UiScreenState::Editor)),
-        );
-        app.add_systems(
-            Update,
-            handle_markdown_metadata_input
-                .before(handle_workspace_prompt_input)
-                .before(handle_command_menu_input)
-                .before(handle_vim_input)
-                .before(handle_text_input)
-                .before(handle_navigation_input)
-                .run_if(in_state(UiScreenState::Editor)),
-        );
-        app.add_systems(
-            Update,
-            sync_markdown_metadata_controls_ui
-                .after(render_editor)
-                .run_if(in_state(UiScreenState::Editor)),
-        );
-        app.add_systems(
-            Update,
-            handle_workspace_mouse_scroll
-                .before(handle_mouse_scroll)
-                .run_if(in_state(UiScreenState::Editor)),
-        );
-        app.add_systems(
-            Update,
-            handle_story_query_sheet_mouse_scroll
-                .before(handle_mouse_scroll)
-                .run_if(in_state(UiScreenState::Editor)),
-        );
-        app.add_systems(
-            Update,
-            handle_link_autocomplete_keyboard_input
-                .before(handle_vim_input)
-                .before(handle_text_input)
-                .before(handle_navigation_input)
-                .before(handle_canvas_text_edit_input)
-                .run_if(in_state(UiScreenState::Editor)),
-        );
-        app.add_systems(
-            Update,
-            handle_canvas_text_edit_input
-                .after(handle_canvas_drag_input)
-                .after(handle_vim_input)
-                .run_if(in_state(UiScreenState::Editor)),
-        );
-        app.add_systems(
-            Update,
-            sync_link_autocomplete_context
-                .after(handle_text_input)
-                .after(handle_navigation_input)
-                .after(handle_vim_input)
-                .after(handle_canvas_text_edit_input)
-                .after(resolve_dialog_results)
-                .run_if(in_state(UiScreenState::Editor)),
-        );
-        app.add_systems(
-            Update,
-            sync_link_autocomplete_ui
-                .after(sync_link_autocomplete_context)
-                .after(render_editor)
+            (
+                handle_toolbar_buttons,
+                handle_processed_link_color_toggle,
+                handle_processed_pagination_toggle,
+                handle_formatting_marks_toggle,
+                handle_status_line_toggle,
+                handle_workspace_file_buttons,
+                handle_workspace_folder_buttons,
+                handle_markdown_metadata_buttons,
+                handle_story_query_sheet_buttons,
+                handle_story_query_sheet_link_click,
+                handle_story_query_sheet_keyboard,
+            )
+                .in_set(EditorSystemSet::Input)
                 .run_if(in_state(UiScreenState::Editor)),
         );
         app.add_systems(
             Update,
             (
+                handle_file_shortcuts,
+                handle_workspace_prompt_input,
+                handle_command_menu_input,
+                handle_command_menu_open_input,
+                handle_workspace_keyboard_input,
+                handle_vim_input,
+                handle_text_input,
+                handle_navigation_input,
+                handle_document_navigation_history
+                    .before(handle_story_query_sheet_keyboard)
+                    .before(handle_command_menu_input)
+                    .before(handle_markdown_metadata_input)
+                    .before(handle_vim_input)
+                    .before(handle_navigation_input),
+                handle_markdown_metadata_input
+                    .before(handle_workspace_prompt_input)
+                    .before(handle_command_menu_input)
+                    .before(handle_vim_input)
+                    .before(handle_text_input)
+                    .before(handle_navigation_input),
+                handle_link_autocomplete_keyboard_input
+                    .before(handle_vim_input)
+                    .before(handle_text_input)
+                    .before(handle_navigation_input)
+                    .before(handle_canvas_text_edit_input),
+                handle_canvas_text_edit_input
+                    .after(handle_canvas_drag_input)
+                    .after(handle_vim_input),
+            )
+                .in_set(EditorSystemSet::Input)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
+            (
+                handle_mouse_scroll,
+                handle_workspace_mouse_scroll.before(handle_mouse_scroll),
+                handle_story_query_sheet_mouse_scroll.before(handle_mouse_scroll),
+                handle_canvas_drag_input,
+                handle_ctrl_left_drag_scroll,
+                handle_middle_mouse_autoscroll,
+                handle_panel_splitter_drag.after(handle_middle_mouse_autoscroll),
+                handle_mouse_selection
+                    .after(handle_middle_mouse_autoscroll)
+                    .after(handle_panel_splitter_drag),
+                handle_workspace_link_prompt_buttons,
+                handle_workspace_link_folder_mouse_scroll,
+                handle_formatting_page_break_click.after(handle_mouse_selection),
+            )
+                .in_set(EditorSystemSet::Input)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
+            (
+                handle_settings_buttons,
+                handle_settings_screen_navigation.run_if(in_state(UiScreenState::Settings)),
+            )
+                .in_set(EditorSystemSet::Input)
+                .run_if(
+                    in_state(UiScreenState::Settings)
+                        .or_else(in_state(UiScreenState::Keybinds))
+                        .or_else(in_state(UiScreenState::Theme)),
+                ),
+        );
+        app.add_systems(
+            Update,
+            handle_settings_menu_mouse_scroll
+                .in_set(EditorSystemSet::Input)
+                .run_if(
+                    in_state(UiScreenState::Settings).or_else(in_state(UiScreenState::Keybinds)),
+                ),
+        );
+        app.add_systems(
+            Update,
+            (
+                handle_theme_color_picker_buttons,
+                handle_theme_color_picker_input,
+            )
+                .in_set(EditorSystemSet::Input)
+                .run_if(in_state(UiScreenState::Theme)),
+        );
+        app.add_systems(
+            Update,
+            (
+                handle_keybind_buttons,
+                handle_keybind_screen_navigation.before(capture_keybind_input),
+                capture_keybind_input,
+            )
+                .in_set(EditorSystemSet::Input)
+                .run_if(in_state(UiScreenState::Keybinds)),
+        );
+
+        // --- MODEL SYSTEMS ---
+        app.add_systems(
+            Update,
+            (
+                resolve_dialog_results,
+                resolve_external_url_open_results,
+                poll_story_index_task,
+                sync_link_autocomplete_context.after(resolve_dialog_results),
+                blink_caret,
+            )
+                .in_set(EditorSystemSet::Model)
+                .run_if(in_state(UiScreenState::Editor)),
+        );
+
+        // --- PRESENTATION SYSTEMS ---
+        app.add_systems(
+            Update,
+            (
+                render_editor.after(sync_panel_split_layout),
+                sync_hovered_processed_link.before(render_editor),
                 render_processed_images.after(render_editor),
                 sync_canvas_board.after(render_editor),
                 sync_canvas_text_overlays.after(sync_canvas_board),
+                sync_formatting_mark_overlays.after(render_editor),
+                sync_markdown_metadata_controls_ui.after(render_editor),
+                sync_link_autocomplete_ui.after(render_editor),
+                sync_processed_overlay_toggle_group.after(render_editor),
+                sync_middle_autoscroll_indicator,
+                style_panel_splitters,
             )
+                .in_set(EditorSystemSet::Presentation)
                 .run_if(in_state(UiScreenState::Editor)),
+        );
+        app.add_systems(
+            Update,
+            (
+                style_toolbar_buttons,
+                style_workspace_file_entry_text,
+                sync_workspace_prompt_ui,
+                sync_workspace_link_prompt_folder_options.before(sync_workspace_prompt_ui),
+                sync_window_chrome,
+                sync_glass_surfaces,
+                sync_top_menu_visibility,
+                sync_status_line_visibility,
+                sync_rounded_window_surfaces.after(sync_status_line_visibility),
+            )
+                .in_set(EditorSystemSet::Presentation),
+        );
+        app.add_systems(
+            Update,
+            (
+                sync_panel_display_mode,
+                sync_panel_split_layout,
+                sync_command_menu_ui,
+                sync_story_query_sheet_ui,
+                sync_settings_ui,
+                reset_settings_menu_scroll_on_open,
+                sync_theme_picker_ui,
+                sync_workspace_sidebar,
+                sync_workspace_selected_row_scroll.after(sync_workspace_sidebar),
+            )
+                .in_set(EditorSystemSet::Presentation),
         );
     }
 }
@@ -1529,6 +1508,8 @@ pub(crate) struct EditorState {
     pub(crate) measured_line_step: f32,
     pub(crate) processed_cache: Option<ProcessedCache>,
     pub(crate) processed_cache_dirty_from_line: Option<usize>,
+    pub(crate) processed_raw_current_line_cache:
+        Option<(usize, usize, usize, usize, Arc<[ProcessedVisualLine]>)>,
     pub(crate) canvas_document: Option<CanvasDocument>,
     pub(crate) canvas_parse_error: Option<String>,
     pub(crate) canvas_version: u64,
@@ -1550,6 +1531,7 @@ pub(crate) struct EditorState {
     pub(crate) workspace_expanded_folders: BTreeSet<String>,
     pub(crate) script_link_target_types: BTreeMap<String, String>,
     pub(crate) missing_script_link_targets: BTreeSet<String>,
+    pub(crate) script_links_dirty: bool,
     pub(crate) hovered_processed_link: Option<HoveredProcessedLink>,
     pub(crate) pending_external_url_opens: Vec<PendingExternalUrlOpen>,
     pub(crate) workspace_ui_dirty: bool,
@@ -2294,6 +2276,7 @@ impl FromWorld for EditorState {
             measured_line_step: LINE_HEIGHT,
             processed_cache: None,
             processed_cache_dirty_from_line: Some(0),
+            processed_raw_current_line_cache: None,
             canvas_document: None,
             canvas_parse_error: None,
             canvas_version: 0,
@@ -2315,6 +2298,7 @@ impl FromWorld for EditorState {
             workspace_expanded_folders: BTreeSet::new(),
             script_link_target_types: BTreeMap::new(),
             missing_script_link_targets: BTreeSet::new(),
+            script_links_dirty: true,
             hovered_processed_link: None,
             pending_external_url_opens: Vec::new(),
             workspace_ui_dirty: true,
@@ -2412,6 +2396,8 @@ impl EditorState {
         self.parsed = parse_document_with_format(&self.document, self.document_format);
         self.sync_canvas_document();
         self.missing_script_link_targets.clear();
+        self.script_links_dirty = true;
+        self.processed_raw_current_line_cache = None;
         self.mark_processed_cache_dirty_from(0);
     }
 
@@ -2419,6 +2405,8 @@ impl EditorState {
         self.parsed = parse_document_with_format(&self.document, self.document_format);
         self.sync_canvas_document();
         self.missing_script_link_targets.clear();
+        self.script_links_dirty = true;
+        self.processed_raw_current_line_cache = None;
         self.mark_processed_cache_dirty_from(dirty_line);
     }
 
@@ -2428,6 +2416,7 @@ impl EditorState {
             self.processed_cache_dirty_from_line
                 .map_or(dirty_line, |current| current.min(dirty_line)),
         );
+        self.processed_raw_current_line_cache = None;
     }
 
     pub(crate) fn reset_blink(&mut self) {
@@ -2541,7 +2530,16 @@ impl EditorState {
         self.reset_blink();
     }
 
+    #[allow(dead_code)]
     pub(crate) fn save_to_path(&mut self, path: PathBuf) -> bool {
+        self.save_to_path_with_task(path, None)
+    }
+
+    pub(crate) fn save_to_path_with_task(
+        &mut self,
+        path: PathBuf,
+        task_state: Option<&mut StoryIndexTask>,
+    ) -> bool {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -2564,7 +2562,7 @@ impl EditorState {
                 self.document_format = detect_document_format(&path, &self.document);
                 self.set_zoom(self.zoom);
                 self.reparse();
-                self.refresh_workspace_after_path_change();
+                self.refresh_workspace_after_path_change(task_state);
                 self.status_message = format!("Saved {}", status_path_label(&path));
                 true
             }
@@ -2576,8 +2574,16 @@ impl EditorState {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn save_current(&mut self) -> bool {
-        self.save_to_path(self.paths.save_path.clone())
+        self.save_current_with_task(None)
+    }
+
+    pub(crate) fn save_current_with_task(
+        &mut self,
+        task_state: Option<&mut StoryIndexTask>,
+    ) -> bool {
+        self.save_to_path_with_task(self.paths.save_path.clone(), task_state)
     }
 
     pub(crate) fn load_from_path(&mut self, path: PathBuf) -> bool {
@@ -2679,6 +2685,8 @@ impl EditorState {
         self.sync_canvas_document();
         self.processed_cache = None;
         self.processed_cache_dirty_from_line = Some(0);
+        self.processed_raw_current_line_cache = None;
+        self.script_links_dirty = true;
 
         self.cursor = snapshot.cursor;
         self.cursor.position = self.document.clamp_position(self.cursor.position);

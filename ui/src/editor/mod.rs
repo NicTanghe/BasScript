@@ -102,4 +102,4 @@ use editing::*;
 mod rendering;
 use rendering::*;
 
-pub use core::UiPlugin;
+pub use core::{EditorSystemSet, UiPlugin};

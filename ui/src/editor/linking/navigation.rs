@@ -154,11 +154,16 @@ impl EditorState {
     }
 
     pub(crate) fn clear_script_link_target_cache(&mut self) {
+        self.script_links_dirty = true;
         self.script_link_target_types.clear();
         self.missing_script_link_targets.clear();
     }
 
     pub(crate) fn ensure_current_script_link_targets_cached(&mut self) {
+        if !self.script_links_dirty {
+            return;
+        }
+
         let links = self
             .parsed
             .iter()
@@ -194,6 +199,8 @@ impl EditorState {
                 self.missing_script_link_targets.insert(target);
             }
         }
+
+        self.script_links_dirty = false;
     }
 
     pub(crate) fn open_link_at(

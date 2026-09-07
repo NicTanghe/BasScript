@@ -3251,3 +3251,75 @@ pub(crate) fn clamp_story_query_dependencies(sheet: &mut StoryQuerySheet) {
 }
 #[allow(unused_imports)]
 use super::*;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dummy_line() -> ProcessedVisualLine {
+        ProcessedVisualLine {
+            source_line: 0,
+            text: String::new(),
+            fragments: Vec::new(),
+            display_to_raw: Vec::new(),
+            raw_start_column: 0,
+            raw_end_column: 0,
+            markdown_checklist_checked: None,
+            image_block: None,
+            render_override: None,
+            is_spacer: false,
+        }
+    }
+
+    #[test]
+    fn story_query_page_label_adapts_to_paper_capacity() {
+        let mut sheet = StoryQuerySheet::default();
+        sheet.result_format = StoryQueryOutputFormat::Fountain;
+
+        // Empty visual lines -> 1 page
+        sheet.visual_lines.clear();
+        assert_eq!(
+            story_query_page_label(&sheet, 0, 10),
+            "Fountain page 1 of 1"
+        );
+
+        // 3 pages total, capacity 6 -> pages 1-3 of 3
+        sheet.visual_lines = (0..30).map(|_| dummy_line()).collect();
+        assert_eq!(
+            story_query_page_label(&sheet, 0, 10),
+            "Fountain pages 1-3 of 3"
+        );
+
+        // Exactly 6 pages total, capacity 6 -> pages 1-6 of 6
+        sheet.visual_lines = (0..60).map(|_| dummy_line()).collect();
+        assert_eq!(
+            story_query_page_label(&sheet, 0, 10),
+            "Fountain pages 1-6 of 6"
+        );
+
+        // 12 pages total, first_visible 0 -> pages 1-6 of 12
+        sheet.visual_lines = (0..120).map(|_| dummy_line()).collect();
+        assert_eq!(
+            story_query_page_label(&sheet, 0, 10),
+            "Fountain pages 1-6 of 12"
+        );
+
+        // 12 pages total, first_visible 3 -> pages 4-9 of 12
+        assert_eq!(
+            story_query_page_label(&sheet, 3, 10),
+            "Fountain pages 4-9 of 12"
+        );
+
+        // 12 pages total, first_visible 8 -> pages 9-12 of 12
+        assert_eq!(
+            story_query_page_label(&sheet, 8, 10),
+            "Fountain pages 9-12 of 12"
+        );
+
+        // 12 pages total, first_visible 11 (last page) -> page 12 of 12
+        assert_eq!(
+            story_query_page_label(&sheet, 11, 10),
+            "Fountain page 12 of 12"
+        );
+    }
+}

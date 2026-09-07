@@ -183,12 +183,9 @@ impl StoryIndexDatabase {
 
     pub fn scan_workspace_files(&self) -> Result<StoryIndexScanReport, StoryIndexError> {
         initialize_database(&self.workspace_root, &self.database_path)?;
-        let files = collect_indexable_workspace_files(&self.workspace_root)?;
-        let entity_index = build_entity_index(&files)?;
-        let scene_index = build_scene_index(&files)?;
-        let appearance_index = build_appearance_index(&files, &scene_index, &entity_index)?;
         let mut connection = Connection::open(&self.database_path)?;
         let previous = load_stored_indexed_files(&connection)?;
+        let files = collect_indexable_workspace_files(&self.workspace_root, &previous)?;
         let now = current_unix_seconds() as i64;
         let mut seen_paths = BTreeSet::<String>::new();
         let mut inserted_count = 0usize;
@@ -230,6 +227,34 @@ impl StoryIndexDatabase {
                 params![previous_path],
             )?;
         }
+
+        if inserted_count == 0 && updated_count == 0 && removed_count == 0 {
+            transaction.execute(
+                "INSERT OR REPLACE INTO story_index_meta (key, value) VALUES ('last_file_scan_at_unix_seconds', ?1);",
+                params![now.to_string()],
+            )?;
+            let existing_counts = load_existing_scan_counts(&transaction)?;
+            transaction.commit()?;
+
+            return Ok(StoryIndexScanReport {
+                database_path: self.database_path.clone(),
+                workspace_root: self.workspace_root.clone(),
+                file_count: files.len(),
+                inserted_count: 0,
+                updated_count: 0,
+                removed_count: 0,
+                entity_count: existing_counts.entity_count,
+                entity_alias_count: existing_counts.entity_alias_count,
+                entity_error_count: existing_counts.entity_error_count,
+                duplicate_entity_target_count: existing_counts.duplicate_entity_target_count,
+                scene_count: existing_counts.scene_count,
+                appearance_count: existing_counts.appearance_count,
+            });
+        }
+
+        let entity_index = build_entity_index(&files)?;
+        let scene_index = build_scene_index(&files)?;
+        let appearance_index = build_appearance_index(&files, &scene_index, &entity_index)?;
 
         replace_entity_index(&transaction, &entity_index, now)?;
         replace_scene_index(&transaction, &scene_index, now)?;
@@ -489,6 +514,7 @@ fn initialize_database(workspace_root: &Path, database_path: &Path) -> Result<()
 
 fn collect_indexable_workspace_files(
     workspace_root: &Path,
+    previous: &BTreeMap<String, StoredIndexedFile>,
 ) -> Result<Vec<IndexedWorkspaceFile>, StoryIndexError> {
     let mut files = Vec::<IndexedWorkspaceFile>::new();
     let mut stack = vec![workspace_root.to_path_buf()];
@@ -514,7 +540,7 @@ fn collect_indexable_workspace_files(
             let Some(kind) = IndexedFileKind::from_path(&path) else {
                 continue;
             };
-            files.push(index_workspace_file(workspace_root, path, kind)?);
+            files.push(index_workspace_file(workspace_root, path, kind, previous)?);
         }
     }
 
@@ -612,9 +638,14 @@ fn index_workspace_file(
     workspace_root: &Path,
     path: PathBuf,
     kind: IndexedFileKind,
+    previous: &BTreeMap<String, StoredIndexedFile>,
 ) -> Result<IndexedWorkspaceFile, StoryIndexError> {
     let metadata = fs::metadata(&path)?;
-    let bytes = fs::read(&path)?;
+    let modified_unix_millis = metadata
+        .modified()
+        .ok()
+        .and_then(system_time_to_unix_millis);
+    let byte_len = metadata.len();
     let relative_path = path
         .strip_prefix(workspace_root)
         .map_err(|_| StoryIndexError::PathOutsideWorkspace {
@@ -624,16 +655,27 @@ fn index_workspace_file(
         .to_string_lossy()
         .replace('\\', "/");
 
+    let path_key = path.to_string_lossy();
+    let content_hash = match previous.get(path_key.as_ref()) {
+        Some(existing)
+            if existing.modified_unix_millis == modified_unix_millis
+                && existing.byte_len == byte_len =>
+        {
+            existing.content_hash.clone()
+        }
+        _ => {
+            let bytes = fs::read(&path)?;
+            stable_content_hash(&bytes)
+        }
+    };
+
     Ok(IndexedWorkspaceFile {
         path,
         relative_path,
         kind,
-        modified_unix_millis: metadata
-            .modified()
-            .ok()
-            .and_then(system_time_to_unix_millis),
-        byte_len: metadata.len(),
-        content_hash: stable_content_hash(&bytes),
+        modified_unix_millis,
+        byte_len,
+        content_hash,
     })
 }
 
@@ -744,6 +786,11 @@ fn replace_entity_index(
         )?;
     }
 
+    connection.execute(
+        "INSERT OR REPLACE INTO story_index_meta (key, value) VALUES ('duplicate_entity_target_count', ?1);",
+        params![entity_index.duplicate_target_count.to_string()],
+    )?;
+
     Ok(())
 }
 
@@ -847,6 +894,59 @@ fn replace_appearance_index(
     }
 
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct StoredScanCounts {
+    entity_count: usize,
+    entity_alias_count: usize,
+    entity_error_count: usize,
+    duplicate_entity_target_count: usize,
+    scene_count: usize,
+    appearance_count: usize,
+}
+
+fn load_existing_scan_counts(connection: &Connection) -> Result<StoredScanCounts, StoryIndexError> {
+    let count_table = |table: &str| -> Result<usize, StoryIndexError> {
+        let sql = format!("SELECT COUNT(*) FROM {table};");
+        let count: i64 = connection
+            .query_row(&sql, [], |row| row.get(0))
+            .map_err(StoryIndexError::Sqlite)?;
+        Ok(count.max(0) as usize)
+    };
+
+    let duplicate_entity_target_count = match connection
+        .query_row(
+            "SELECT value FROM story_index_meta WHERE key = 'duplicate_entity_target_count';",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(StoryIndexError::Sqlite)?
+    {
+        Some(value) => value.parse().unwrap_or(0),
+        None => {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(DISTINCT substr(message, 26, instr(substr(message, 26), '`') - 1))
+                     FROM story_index_entity_errors
+                     WHERE message LIKE 'Duplicate entity target %';",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(StoryIndexError::Sqlite)?;
+            count.max(0) as usize
+        }
+    };
+
+    Ok(StoredScanCounts {
+        entity_count: count_table("story_index_entities")?,
+        entity_alias_count: count_table("story_index_entity_aliases")?,
+        entity_error_count: count_table("story_index_entity_errors")?,
+        duplicate_entity_target_count,
+        scene_count: count_table("story_index_scenes")?,
+        appearance_count: count_table("story_index_appearances")?,
+    })
 }
 
 fn appearance_record_from_row(
@@ -1283,6 +1383,7 @@ mod tests {
         let first = database.scan_workspace_files().expect("first scan");
         assert_eq!(first.inserted_count, 2);
 
+        std::thread::sleep(std::time::Duration::from_millis(15));
         root.write("notes.md", "new");
         root.remove("script.fountain");
         let second = database.scan_workspace_files().expect("second scan");
@@ -1660,6 +1761,181 @@ mod tests {
         );
         assert!(places[0].raw_location.is_none());
         assert_eq!(knife_backlinks.len(), 2);
+    }
+
+    #[test]
+    fn unchanged_second_scan_is_fast_and_preserves_indexes() {
+        let root = TestDir::new();
+        root.write(
+            "script.fountain",
+            "INT. CAFE - DAY\n\nALICE\nHello [[bob]]!\n\nEXT. PARK - NIGHT\n\nBOB\nGoodbye Alice!\n",
+        );
+        root.write(
+            "characters/alice.md",
+            entity_markdown("entity_alice_001", "alice", "character", "Alice", &["Ali"]),
+        );
+        root.write(
+            "characters/bob.md",
+            entity_markdown("entity_bob_001", "bob", "character", "Bob", &[]),
+        );
+        root.write(
+            "board.canvas",
+            "{\"nodes\":[{\"id\":\"node1\",\"type\":\"text\",\"text\":\"Note mentioning [[alice]]\"}]}",
+        );
+
+        let database = StoryIndexDatabase::open_workspace(root.path())
+            .expect("open story index")
+            .database;
+
+        let first = database.scan_workspace_files().expect("first scan");
+        assert_eq!(first.file_count, 4);
+        assert_eq!(first.inserted_count, 4);
+        assert_eq!(first.updated_count, 0);
+        assert_eq!(first.removed_count, 0);
+        assert_eq!(first.entity_count, 2);
+        assert_eq!(first.entity_alias_count, 5);
+        assert_eq!(first.entity_error_count, 0);
+        assert_eq!(first.duplicate_entity_target_count, 0);
+        assert_eq!(first.scene_count, 2);
+        assert!(first.appearance_count > 0);
+
+        let connection = Connection::open(database.database_path()).expect("open database");
+
+        // Record existing database timestamps and appearance IDs
+        let initial_entity_scan: String = connection
+            .query_row(
+                "SELECT value FROM story_index_meta WHERE key = 'last_entity_scan_at_unix_seconds';",
+                [],
+                |row| row.get(0),
+            )
+            .expect("entity scan timestamp");
+        let initial_scene_scan: String = connection
+            .query_row(
+                "SELECT value FROM story_index_meta WHERE key = 'last_scene_scan_at_unix_seconds';",
+                [],
+                |row| row.get(0),
+            )
+            .expect("scene scan timestamp");
+        let initial_appearance_scan: String = connection
+            .query_row(
+                "SELECT value FROM story_index_meta WHERE key = 'last_appearance_scan_at_unix_seconds';",
+                [],
+                |row| row.get(0),
+            )
+            .expect("appearance scan timestamp");
+
+        let initial_appearance_ids: Vec<i64> = {
+            let mut statement = connection
+                .prepare("SELECT id FROM story_index_appearances ORDER BY id;")
+                .expect("prepare appearances query");
+            let rows = statement
+                .query_map([], |row| row.get(0))
+                .expect("query appearances");
+            rows.map(|r| r.unwrap()).collect()
+        };
+
+        // If on Unix, make script.fountain unreadable (mode 0200 = write-only).
+        // If the second scan tries to fs::read the file, it will fail with PermissionDenied.
+        // Reusing the content hash and skipping fs::read allows the second scan to succeed.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let fountain_path = root.path().join("script.fountain");
+            let orig_perm = fs::metadata(&fountain_path).unwrap().permissions();
+            fs::set_permissions(&fountain_path, fs::Permissions::from_mode(0o200)).unwrap();
+
+            let start = std::time::Instant::now();
+            let second = database
+                .scan_workspace_files()
+                .expect("second scan succeeds skipping read");
+            let _elapsed = start.elapsed();
+
+            fs::set_permissions(&fountain_path, orig_perm).unwrap();
+
+            assert_eq!(second.file_count, 4);
+            assert_eq!(second.inserted_count, 0);
+            assert_eq!(second.updated_count, 0);
+            assert_eq!(second.removed_count, 0);
+            assert_eq!(second.entity_count, first.entity_count);
+            assert_eq!(second.entity_alias_count, first.entity_alias_count);
+            assert_eq!(second.entity_error_count, first.entity_error_count);
+            assert_eq!(
+                second.duplicate_entity_target_count,
+                first.duplicate_entity_target_count
+            );
+            assert_eq!(second.scene_count, first.scene_count);
+            assert_eq!(second.appearance_count, first.appearance_count);
+        }
+
+        #[cfg(not(unix))]
+        {
+            let start = std::time::Instant::now();
+            let second = database.scan_workspace_files().expect("second scan");
+            let _elapsed = start.elapsed();
+
+            assert_eq!(second.file_count, 4);
+            assert_eq!(second.inserted_count, 0);
+            assert_eq!(second.updated_count, 0);
+            assert_eq!(second.removed_count, 0);
+            assert_eq!(second.entity_count, first.entity_count);
+            assert_eq!(second.entity_alias_count, first.entity_alias_count);
+            assert_eq!(second.entity_error_count, first.entity_error_count);
+            assert_eq!(
+                second.duplicate_entity_target_count,
+                first.duplicate_entity_target_count
+            );
+            assert_eq!(second.scene_count, first.scene_count);
+            assert_eq!(second.appearance_count, first.appearance_count);
+        }
+
+        // Verify index timestamps in meta were NOT modified
+        let current_entity_scan: String = connection
+            .query_row(
+                "SELECT value FROM story_index_meta WHERE key = 'last_entity_scan_at_unix_seconds';",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current entity scan timestamp");
+        let current_scene_scan: String = connection
+            .query_row(
+                "SELECT value FROM story_index_meta WHERE key = 'last_scene_scan_at_unix_seconds';",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current scene scan timestamp");
+        let current_appearance_scan: String = connection
+            .query_row(
+                "SELECT value FROM story_index_meta WHERE key = 'last_appearance_scan_at_unix_seconds';",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current appearance scan timestamp");
+
+        assert_eq!(initial_entity_scan, current_entity_scan);
+        assert_eq!(initial_scene_scan, current_scene_scan);
+        assert_eq!(initial_appearance_scan, current_appearance_scan);
+
+        // Verify appearance rows were not dropped and re-inserted (IDs remain unchanged)
+        let current_appearance_ids: Vec<i64> = {
+            let mut statement = connection
+                .prepare("SELECT id FROM story_index_appearances ORDER BY id;")
+                .expect("prepare appearances query");
+            let rows = statement
+                .query_map([], |row| row.get(0))
+                .expect("query appearances");
+            rows.map(|r| r.unwrap()).collect()
+        };
+        assert_eq!(initial_appearance_ids, current_appearance_ids);
+
+        // Verify queries still return identical results
+        let scenes = database
+            .scenes_for_file(root.path().join("script.fountain"))
+            .expect("scenes query");
+        assert_eq!(scenes.len(), 2);
+        let characters = database
+            .entities_of_type("character")
+            .expect("entities query");
+        assert_eq!(characters.len(), 2);
     }
 
     fn entity_markdown(

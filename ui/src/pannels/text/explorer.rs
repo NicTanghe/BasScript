@@ -237,6 +237,13 @@ impl EditorState {
     }
 
     pub(crate) fn refresh_workspace(&mut self) {
+        self.refresh_workspace_with_task(None);
+    }
+
+    pub(crate) fn refresh_workspace_with_task(
+        &mut self,
+        mut task_state: Option<&mut StoryIndexTask>,
+    ) {
         let Some(root) = self.workspace_root.clone() else {
             self.workspace_folders.clear();
             self.workspace_files.clear();
@@ -252,11 +259,15 @@ impl EditorState {
                 self.workspace_files = entries.files;
                 self.sync_workspace_active_file();
                 self.normalize_workspace_selected_row();
-                let story_index_status = self.refresh_story_index_for_workspace();
-                self.workspace_ui_dirty = true;
-                if let Some(story_index_status) = story_index_status {
-                    self.status_message = story_index_status;
+                if let Some(task_state) = task_state.as_deref_mut() {
+                    spawn_story_index_refresh(root, task_state);
+                } else {
+                    let story_index_status = self.refresh_story_index_for_workspace();
+                    if let Some(story_index_status) = story_index_status {
+                        self.status_message = story_index_status;
+                    }
                 }
+                self.workspace_ui_dirty = true;
             }
             Err(error) => {
                 self.status_message =
@@ -265,14 +276,17 @@ impl EditorState {
         }
     }
 
-    pub(crate) fn refresh_workspace_after_path_change(&mut self) {
+    pub(crate) fn refresh_workspace_after_path_change(
+        &mut self,
+        task_state: Option<&mut StoryIndexTask>,
+    ) {
         let Some(root) = self.workspace_root.as_ref() else {
             return;
         };
         if workspace_path_is_under_root(root, &self.paths.load_path)
             || workspace_path_is_under_root(root, &self.paths.save_path)
         {
-            self.refresh_workspace();
+            self.refresh_workspace_with_task(task_state);
         } else {
             self.sync_workspace_active_file();
         }

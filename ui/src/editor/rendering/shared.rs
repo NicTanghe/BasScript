@@ -1,6 +1,15 @@
+use bevy::ecs::system::SystemParam;
+
+#[derive(SystemParam)]
+pub(crate) struct EditorRenderResources<'w> {
+    pub(crate) resolved_widths: Res<'w, ResolvedPanelWidths>,
+    pub(crate) fonts: Res<'w, EditorFonts>,
+    pub(crate) checklist_icons: Res<'w, ChecklistIcons>,
+    pub(crate) blink: Res<'w, CaretBlinkState>,
+}
+
 pub(crate) fn render_editor(
     body_query: Query<(&PanelBody, &ComputedNode)>,
-    resolved_widths: Res<ResolvedPanelWidths>,
     mut canvas_query: Query<(&PanelCanvas, &mut UiTransform)>,
     mut text_query: Query<
         (
@@ -105,8 +114,7 @@ pub(crate) fn render_editor(
         ),
     >,
     mut status_query: Query<&mut Text, (With<StatusText>, Without<PanelText>, Without<PanelCaret>)>,
-    fonts: Res<EditorFonts>,
-    checklist_icons: Res<ChecklistIcons>,
+    resources: EditorRenderResources,
     mut state: ResMut<EditorState>,
 ) {
     let plain_font_size = scaled_font_size(&state);
@@ -178,7 +186,7 @@ pub(crate) fn render_editor(
 
     for (panel, computed) in body_query.iter() {
         let inverse_scale = computed.inverse_scale_factor();
-        let logical_size = resolved_widths.panel_size(panel.kind, computed);
+        let logical_size = resources.resolved_widths.panel_size(panel.kind, computed);
         match panel.kind {
             PanelKind::Plain => {
                 plain_inverse_scale = inverse_scale;
@@ -411,9 +419,9 @@ pub(crate) fn render_editor(
         }
 
         image_node.image = if checked {
-            checklist_icons.checked.clone()
+            resources.checklist_icons.checked.clone()
         } else {
-            checklist_icons.unchecked.clone()
+            resources.checklist_icons.unchecked.clone()
         };
         let line_top_units =
             processed_visual_line_top_units(&state, &processed_all_lines, page_start, line_offset);
@@ -435,7 +443,7 @@ pub(crate) fn render_editor(
             PanelKind::Plain => {
                 sync_font_variant_to_text_font(
                     &mut text_font,
-                    &fonts,
+                    &resources.fonts,
                     FontVariant::Regular,
                     state.document_format,
                 );
@@ -487,7 +495,7 @@ pub(crate) fn render_editor(
         first_visible_page,
         processed_page_step_lines,
         processed_lines_per_page,
-        &fonts,
+        &resources.fonts,
         processed_font_size,
         processed_line_height,
     );
@@ -524,6 +532,7 @@ pub(crate) fn render_editor(
     render_panel_carets(
         &mut caret_query,
         &state,
+        resources.blink.visible,
         visible_lines,
         &plain_lines,
         plain_layout,

@@ -115,6 +115,7 @@ pub(crate) fn handle_command_menu_input(
     keys: Res<ButtonInput<KeyCode>>,
     mut app_exit: MessageWriter<AppExit>,
     mut state: ResMut<EditorState>,
+    mut task_state: Option<ResMut<StoryIndexTask>>,
 ) {
     let keybinds = state.keybinds.clone();
     let Some(command_menu) = state.command_menu.as_mut() else {
@@ -172,7 +173,12 @@ pub(crate) fn handle_command_menu_input(
 
     if let Some(CommandMenuAction::Run(input)) = action {
         state.command_menu = None;
-        run_command_menu_command(&mut state, &mut app_exit, input.trim());
+        run_command_menu_command_with_task(
+            &mut state,
+            &mut app_exit,
+            input.trim(),
+            task_state.as_deref_mut(),
+        );
     }
 }
 
@@ -198,21 +204,31 @@ pub(crate) fn parse_command_menu_command(command: &str) -> CommandMenuParsedComm
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn run_command_menu_command(
     state: &mut EditorState,
     app_exit: &mut MessageWriter<AppExit>,
     command: &str,
 ) {
+    run_command_menu_command_with_task(state, app_exit, command, None);
+}
+
+pub(crate) fn run_command_menu_command_with_task(
+    state: &mut EditorState,
+    app_exit: &mut MessageWriter<AppExit>,
+    command: &str,
+    task_state: Option<&mut StoryIndexTask>,
+) {
     match parse_command_menu_command(command) {
         CommandMenuParsedCommand::Write => {
-            state.save_current();
+            state.save_current_with_task(task_state);
         }
         CommandMenuParsedCommand::Quit => {
             state.status_message = "Quitting.".to_string();
             app_exit.write(AppExit::Success);
         }
         CommandMenuParsedCommand::WriteQuit => {
-            if state.save_current() {
+            if state.save_current_with_task(task_state) {
                 state.status_message = "Quitting.".to_string();
                 app_exit.write(AppExit::Success);
             }

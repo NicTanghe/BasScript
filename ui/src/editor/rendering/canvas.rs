@@ -310,6 +310,7 @@ pub(crate) fn sync_canvas_text_overlays(
         ),
     >,
     state: Res<EditorState>,
+    blink: Res<CaretBlinkState>,
 ) {
     if state.document_format != DocumentFormat::Canvas {
         for (_, mut node, _, mut visibility) in text_selection_query.iter_mut() {
@@ -344,6 +345,7 @@ pub(crate) fn sync_canvas_text_overlays(
         canvas,
         &state,
         zoom,
+        blink.visible,
     );
 }
 
@@ -750,10 +752,11 @@ pub(crate) fn render_canvas_text_carets(
     canvas: &CanvasDocument,
     state: &EditorState,
     zoom: f32,
+    caret_visible: bool,
 ) {
     let active_node_index = canvas_active_text_node_index(canvas, state);
     let caret_rect = active_node_index
-        .filter(|_| state.caret_visible)
+        .filter(|_| caret_visible)
         .and_then(|node_index| {
             canvas_text_caret_rect(canvas, node_index, state, text_layout_query, zoom)
         });

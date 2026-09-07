@@ -1857,6 +1857,7 @@ pub(crate) fn handle_toolbar_buttons(
     mut state: ResMut<EditorState>,
     mut dialogs: ResMut<DialogState>,
     mut next_screen_state: ResMut<NextState<UiScreenState>>,
+    mut task_state: Option<ResMut<StoryIndexTask>>,
 ) {
     let parent_handle = primary_window_query.iter().next();
     let processed_panel_size = body_query
@@ -1882,7 +1883,7 @@ pub(crate) fn handle_toolbar_buttons(
                 open_workspace_dialog(&mut state, &mut dialogs, parent_handle)
             }
             ToolbarAction::Save => {
-                state.save_current();
+                state.save_current_with_task(task_state.as_deref_mut());
             }
             ToolbarAction::SaveAs => {
                 state.close_link_autocomplete();
