@@ -1,5 +1,3 @@
-use core::time::Duration;
-
 use basscript_ui::UiPlugin;
 #[cfg(target_os = "windows")]
 use bevy::render::{
@@ -13,7 +11,6 @@ use bevy::{
     log::LogPlugin,
     prelude::*,
     window::{WindowPlugin, WindowResizeConstraints},
-    winit::{UpdateMode, WinitSettings},
 };
 
 const MIN_WINDOW_WIDTH: f32 = 640.0;
@@ -76,10 +73,6 @@ fn main() {
     });
 
     App::new()
-        .insert_resource(WinitSettings {
-            focused_mode: UpdateMode::reactive(Duration::from_millis(33)),
-            unfocused_mode: UpdateMode::reactive_low_power(Duration::from_millis(100)),
-        })
         .insert_resource(ClearColor(if NATIVE_TRANSPARENT_WINDOW {
             Color::NONE
         } else {
