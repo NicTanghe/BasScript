@@ -204,7 +204,7 @@ pub(crate) fn sync_canvas_board(
 
     for (rendered_node, mut node, mut visibility) in node_query.iter_mut() {
         let Some(canvas_node) = canvas.nodes.get(rendered_node.index) else {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         };
         let size = canvas_node_size(canvas_node.width, canvas_node.height);
@@ -212,16 +212,16 @@ pub(crate) fn sync_canvas_board(
         node.top = px((canvas_node.y - state.canvas_pan.y) * zoom);
         node.width = px(size.x * zoom);
         node.height = px(size.y * zoom);
-        *visibility = Visibility::Visible;
+        visibility.set_if_neq(Visibility::Visible);
     }
 
     for (rendered_edge, mut node, mut visibility) in edge_query.iter_mut() {
         let Some(edge) = canvas.edges.get(rendered_edge.index) else {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         };
         let Some((from_center, to_center)) = canvas_edge_centers(canvas, edge) else {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         };
         let Some((left, top, width, height)) = canvas_edge_segment_rect(
@@ -231,7 +231,7 @@ pub(crate) fn sync_canvas_board(
             state.canvas_pan,
             zoom,
         ) else {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         };
 
@@ -239,14 +239,20 @@ pub(crate) fn sync_canvas_board(
         node.top = px(top);
         node.width = px(width);
         node.height = px(height);
-        *visibility = Visibility::Visible;
+        visibility.set_if_neq(Visibility::Visible);
     }
 
     for (style, mut text_font, mut line_height) in text_query.iter_mut() {
-        update_canvas_text_metrics(zoom, style, &mut text_font, &mut line_height);
+        let mut next_font = text_font.clone();
+        let mut next_line_height = *line_height;
+        update_canvas_text_metrics(zoom, style, &mut next_font, &mut next_line_height);
+        text_font.set_if_neq(next_font);
+        line_height.set_if_neq(next_line_height);
     }
     for (_, mut text_node) in text_node_query.iter_mut() {
-        update_canvas_text_padding(zoom, &mut text_node);
+        let mut next_node = text_node.clone();
+        update_canvas_text_padding(zoom, &mut next_node);
+        text_node.set_if_neq(next_node);
     }
 
     for (canvas_image, mut visibility) in image_query.iter_mut() {
@@ -309,14 +315,14 @@ pub(crate) fn sync_canvas_text_overlays(
         for (_, mut node, _, mut visibility) in text_selection_query.iter_mut() {
             node.width = px(0.0);
             node.height = px(0.0);
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
         }
         for (_, mut node, _, mut visibility, mut transform) in text_caret_query.iter_mut() {
             node.width = px(0.0);
             node.height = px(0.0);
             transform.scale = Vec2::ONE;
             transform.translation = Val2::ZERO;
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
         }
         return;
     }
@@ -705,7 +711,7 @@ pub(crate) fn render_canvas_text_selection_rects(
 
     for (selection, mut node, mut color, mut visibility) in selection_query.iter_mut() {
         if Some(selection.node_index) != active_node_index || selection.rect_index >= rects.len() {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         }
 
@@ -715,7 +721,7 @@ pub(crate) fn render_canvas_text_selection_rects(
         node.width = px(width);
         node.height = px(height);
         color.0 = state.selection_bg_color;
-        *visibility = Visibility::Visible;
+        visibility.set_if_neq(Visibility::Visible);
     }
 }
 
@@ -754,7 +760,7 @@ pub(crate) fn render_canvas_text_carets(
 
     for (caret, mut node, mut color, mut visibility, mut transform) in caret_query.iter_mut() {
         if Some(caret.node_index) != active_node_index || caret_rect.is_none() {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         }
 
@@ -766,7 +772,7 @@ pub(crate) fn render_canvas_text_carets(
         color.0 = Color::srgba(0.12, 0.12, 0.13, 0.35);
         transform.scale = Vec2::ONE;
         transform.translation = Val2::ZERO;
-        *visibility = Visibility::Visible;
+        visibility.set_if_neq(Visibility::Visible);
     }
 }
 

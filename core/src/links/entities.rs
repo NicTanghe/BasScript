@@ -151,20 +151,18 @@ impl EntityCatalog {
         }
 
         let lookup = normalize_lookup(&mention);
-        if let Some(targets) = self.alias_index.get(&lookup) {
-            if targets.len() == 1 {
-                if let Some(target) = targets.iter().next() {
-                    if let Some(entity) = self.entity(target) {
-                        return MentionResolution::Resolved(ResolvedEntity {
-                            source: ResolutionSource::Alias,
-                            mention,
-                            target: target.clone(),
-                            path: entity.path.clone(),
-                            entity: entity.metadata.clone(),
-                        });
-                    }
-                }
-            }
+        if let Some(targets) = self.alias_index.get(&lookup)
+            && targets.len() == 1
+            && let Some(target) = targets.iter().next()
+            && let Some(entity) = self.entity(target)
+        {
+            return MentionResolution::Resolved(ResolvedEntity {
+                source: ResolutionSource::Alias,
+                mention,
+                target: target.clone(),
+                path: entity.path.clone(),
+                entity: entity.metadata.clone(),
+            });
         }
 
         let mut suggestions = Vec::<EntitySuggestion>::new();

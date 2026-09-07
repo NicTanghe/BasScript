@@ -19,9 +19,11 @@ pub(super) fn parsed_line_with_image_embeds(
         kind,
         raw: raw.to_owned(),
         script_links: extract_script_links(raw),
-        image_embeds: include_image_embeds
-            .then(|| extract_image_embeds(raw))
-            .unwrap_or_default(),
+        image_embeds: if include_image_embeds {
+            extract_image_embeds(raw)
+        } else {
+            Vec::new()
+        },
         markdown_heading_level,
     }
 }

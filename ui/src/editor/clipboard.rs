@@ -78,13 +78,13 @@ pub(crate) fn current_vim_register(state: &mut EditorState) -> Option<VimRegiste
     Some(register)
 }
 
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 thread_local! {
     static ARBOARD_CLIPBOARD: std::cell::RefCell<Option<arboard::Clipboard>> =
         const { std::cell::RefCell::new(None) };
 }
 
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 pub(crate) fn with_arboard_clipboard<R>(
     mut operation: impl FnMut(&mut arboard::Clipboard) -> Result<R, arboard::Error>,
 ) -> Option<R> {
@@ -108,22 +108,22 @@ pub(crate) fn with_arboard_clipboard<R>(
     })
 }
 
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 pub(crate) fn platform_clipboard_text() -> Option<String> {
     with_arboard_clipboard(|clipboard| clipboard.get_text())
 }
 
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 pub(crate) fn platform_set_clipboard_text(text: &str) -> bool {
     with_arboard_clipboard(|clipboard| clipboard.set_text(text.to_owned())).is_some()
 }
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 pub(crate) fn platform_clipboard_text() -> Option<String> {
     None
 }
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 pub(crate) fn platform_set_clipboard_text(_text: &str) -> bool {
     false
 }

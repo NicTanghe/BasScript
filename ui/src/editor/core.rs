@@ -2044,6 +2044,30 @@ pub(crate) fn text_font_for_variant(
     text_font
 }
 
+pub(crate) fn sync_font_variant_to_text_font(
+    text_font: &mut Mut<'_, TextFont>,
+    fonts: &EditorFonts,
+    variant: FontVariant,
+    format: DocumentFormat,
+) {
+    // Keep Bevy's change tracking through the helper boundary. Coercing Mut to
+    // &mut TextFont would mark every span changed even when its font is identical.
+    let font = font_for_variant_with_format(fonts, variant, format).into();
+    let (weight, style) = text_font_attributes_for_variant(variant);
+    text_font
+        .reborrow()
+        .map_unchanged(|font| &mut font.font)
+        .set_if_neq(font);
+    text_font
+        .reborrow()
+        .map_unchanged(|font| &mut font.weight)
+        .set_if_neq(weight);
+    text_font
+        .reborrow()
+        .map_unchanged(|font| &mut font.style)
+        .set_if_neq(style);
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct InlineTextStyle {
     pub(crate) bold: bool,
@@ -2517,7 +2541,7 @@ impl EditorState {
         self.reset_blink();
     }
 
-    pub(crate) fn save_to_path(&mut self, path: PathBuf) {
+    pub(crate) fn save_to_path(&mut self, path: PathBuf) -> bool {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -2542,16 +2566,18 @@ impl EditorState {
                 self.reparse();
                 self.refresh_workspace_after_path_change();
                 self.status_message = format!("Saved {}", status_path_label(&path));
+                true
             }
             Err(error) => {
                 self.status_message =
                     format!("Save failed for {}: {error}", status_path_label(&path));
+                false
             }
         }
     }
 
-    pub(crate) fn save_current(&mut self) {
-        self.save_to_path(self.paths.save_path.clone());
+    pub(crate) fn save_current(&mut self) -> bool {
+        self.save_to_path(self.paths.save_path.clone())
     }
 
     pub(crate) fn load_from_path(&mut self, path: PathBuf) -> bool {

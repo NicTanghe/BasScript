@@ -67,12 +67,14 @@ pub(crate) fn sync_status_line_visibility(
     state: Res<EditorState>,
     mut root_query: Query<&mut Node, With<StatusLineRoot>>,
 ) {
-    if let Ok(mut node) = root_query.single_mut() {
-        node.display = if state.status_line_visible {
+    if let Ok(node) = root_query.single_mut() {
+        let display = if state.status_line_visible {
             Display::Flex
         } else {
             Display::None
         };
+        node.map_unchanged(|node| &mut node.display)
+            .set_if_neq(display);
     }
 }
 

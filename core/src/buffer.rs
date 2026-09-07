@@ -4,9 +4,15 @@ use std::path::Path;
 
 use crate::model::Position;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Document {
     lines: Vec<String>,
+}
+
+impl Default for Document {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Document {
@@ -136,17 +142,36 @@ impl Document {
     }
 
     pub fn insert_text(&mut self, position: Position, input: &str) -> Position {
-        let mut position = self.clamp_position(position);
+        let position = self.clamp_position(position);
+        if input.is_empty() {
+            return position;
+        }
 
-        for ch in input.chars() {
-            position = if ch == '\n' {
-                self.insert_newline(position)
-            } else {
-                self.insert_char(position, ch)
+        let line = &mut self.lines[position.line];
+        let byte_index = char_to_byte_index(line, position.column);
+        let mut parts = input.split('\n');
+        let first = parts.next().unwrap_or_default();
+        if first.len() == input.len() {
+            line.insert_str(byte_index, input);
+            return Position {
+                line: position.line,
+                column: position.column + char_count(input),
             };
         }
 
-        position
+        // Split the existing line once and move subsequent lines in one splice.
+        // Inserting character by character repeatedly scans UTF-8 and shifts text.
+        let tail = line.split_off(byte_index);
+        line.push_str(first);
+        let mut inserted_lines: Vec<String> = parts.map(str::to_owned).collect();
+        let last = inserted_lines.last_mut().expect("input contains a newline");
+        let column = char_count(last);
+        last.push_str(&tail);
+        let line = position.line + inserted_lines.len();
+        let insert_at = position.line + 1;
+        self.lines.splice(insert_at..insert_at, inserted_lines);
+
+        Position { line, column }
     }
 
     pub fn insert_char(&mut self, position: Position, ch: char) -> Position {
@@ -277,6 +302,55 @@ fn char_to_byte_index(input: &str, column: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_document_has_an_editable_empty_line() {
+        let mut doc = Document::default();
+        assert_eq!(doc, Document::new());
+        assert!(doc.is_empty());
+        assert_eq!(
+            doc.insert_text(Position::default(), "hello"),
+            Position { line: 0, column: 5 }
+        );
+        assert_eq!(doc.line(0), Some("hello"));
+    }
+
+    #[test]
+    fn inserts_multiline_unicode_text_and_preserves_the_suffix() {
+        let mut doc = Document::from_text("pré🙂suffix\nunchanged");
+        let cursor = doc.insert_text(Position { line: 0, column: 4 }, "é\n\n世界\n");
+
+        assert_eq!(cursor, Position { line: 3, column: 0 });
+        assert_eq!(doc.to_text(), "pré🙂é\n\n世界\nsuffix\nunchanged");
+    }
+
+    #[test]
+    fn bulk_insert_matches_character_editing_at_every_position() {
+        for source in ["", "plain text", "é🙂字\nsecond\n", "\n\n"] {
+            let original = Document::from_text(source);
+            for input in ["", "a", "é🙂", "\n", "\n\n", "α\nβ\n", "a\r\nb\rc"] {
+                for line in 0..=original.line_count() {
+                    for column in 0..=original.line_len_chars(line) + 1 {
+                        let position = Position { line, column };
+                        let mut expected = original.clone();
+                        let mut expected_cursor = expected.clamp_position(position);
+                        for ch in input.chars() {
+                            expected_cursor = if ch == '\n' {
+                                expected.insert_newline(expected_cursor)
+                            } else {
+                                expected.insert_char(expected_cursor, ch)
+                            };
+                        }
+
+                        let mut actual = original.clone();
+                        let cursor = actual.insert_text(position, input);
+                        assert_eq!(actual, expected, "{source:?}, {input:?}, {position:?}");
+                        assert_eq!(cursor, expected_cursor);
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn insert_and_backspace_roundtrip() {

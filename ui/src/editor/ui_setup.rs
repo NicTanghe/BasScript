@@ -1881,7 +1881,9 @@ pub(crate) fn handle_toolbar_buttons(
                 state.close_link_autocomplete();
                 open_workspace_dialog(&mut state, &mut dialogs, parent_handle)
             }
-            ToolbarAction::Save => state.save_current(),
+            ToolbarAction::Save => {
+                state.save_current();
+            }
             ToolbarAction::SaveAs => {
                 state.close_link_autocomplete();
                 open_save_dialog(&mut state, &mut dialogs, parent_handle)

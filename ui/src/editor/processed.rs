@@ -1,3 +1,16 @@
+pub(crate) type ProcessedSpanQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static ProcessedPaperLineSpan,
+        &'static mut TextSpan,
+        &'static mut TextFont,
+        &'static mut LineHeight,
+        &'static mut TextColor,
+    ),
+    Without<PanelText>,
+>;
+
 pub(crate) fn processed_page_step_lines() -> usize {
     ((A4_HEIGHT_POINTS + PAGE_GAP) / LINE_HEIGHT)
         .round()
@@ -368,33 +381,29 @@ pub(crate) fn build_processed_view(
 ) -> ProcessedView {
     let max_visible = max_visible.max(1);
     let page_step_lines = page_step_lines.max(1);
-    let mut all_lines = all_lines.to_vec();
     if all_lines.is_empty() {
         return ProcessedView::default();
     }
 
     let anchor_index = anchor_index.min(all_lines.len().saturating_sub(1));
-    let mut start_index = (anchor_index / page_step_lines) * page_step_lines;
+    let start_index = (anchor_index / page_step_lines) * page_step_lines;
+    let end_index = start_index.saturating_add(max_visible).min(all_lines.len());
+    let mut lines = all_lines[start_index..end_index].to_vec();
 
     // Keep page-start anchoring near EOF by padding the view window.
-    let required_len = start_index.saturating_add(max_visible);
-    if all_lines.len() < required_len {
+    if lines.len() < max_visible {
         let pad_source_line = all_lines
             .iter()
             .rfind(|line| !line.is_spacer)
             .map_or(0, |line| line.source_line);
-        let missing = required_len.saturating_sub(all_lines.len());
-        push_page_spacers(&mut all_lines, pad_source_line, missing);
+        let missing = max_visible - lines.len();
+        push_page_spacers(&mut lines, pad_source_line, missing);
     }
-
-    let max_start = all_lines.len().saturating_sub(max_visible);
-    start_index = start_index.min(max_start);
-    let end_index = start_index.saturating_add(max_visible).min(all_lines.len());
 
     ProcessedView {
         start_index,
         anchor_index,
-        lines: all_lines[start_index..end_index].to_vec(),
+        lines,
     }
 }
 
@@ -1122,7 +1131,7 @@ pub(crate) fn build_processed_cache(
         lines_per_page,
         spacer_lines,
         segments,
-        lines,
+        lines: lines.into(),
         source_line_count: state.parsed.len(),
     }
 }
@@ -1151,10 +1160,11 @@ pub(crate) fn rebuild_processed_cache_segment(
         None,
     );
     cache.segments[segment_index].lines = updated_lines;
-    cache.lines.clear();
-    for segment in &cache.segments {
-        cache.lines.extend(segment.lines.iter().cloned());
-    }
+    cache.lines = cache
+        .segments
+        .iter()
+        .flat_map(|segment| segment.lines.iter().cloned())
+        .collect();
     true
 }
 
@@ -1164,7 +1174,7 @@ pub(crate) fn ensure_processed_cache(
     lines_per_page: usize,
     spacer_lines: usize,
 ) {
-    let requires_full_rebuild = state.processed_cache.as_ref().map_or(true, |cache| {
+    let requires_full_rebuild = state.processed_cache.as_ref().is_none_or(|cache| {
         cache.wrap_columns != wrap_columns
             || cache.lines_per_page != lines_per_page
             || cache.spacer_lines != spacer_lines
@@ -1224,18 +1234,19 @@ pub(crate) fn ensure_processed_cache(
     }
 }
 
-pub(crate) fn processed_cache_lines<'a>(
-    state: &'a mut EditorState,
+pub(crate) fn processed_cache_lines(
+    state: &mut EditorState,
     wrap_columns: usize,
     lines_per_page: usize,
     spacer_lines: usize,
-) -> &'a [ProcessedVisualLine] {
+) -> Arc<[ProcessedVisualLine]> {
     state.ensure_current_script_link_targets_cached();
     ensure_processed_cache(state, wrap_columns, lines_per_page, spacer_lines);
     state
         .processed_cache
         .as_ref()
-        .map_or(&[], |cache| cache.lines.as_slice())
+        .map(|cache| Arc::clone(&cache.lines))
+        .unwrap_or_default()
 }
 
 pub(crate) fn processed_display_lines(
@@ -1243,9 +1254,9 @@ pub(crate) fn processed_display_lines(
     wrap_columns: usize,
     lines_per_page: usize,
     spacer_lines: usize,
-) -> Vec<ProcessedVisualLine> {
+) -> Arc<[ProcessedVisualLine]> {
     if state.display_mode != DisplayMode::ProcessedRawCurrentLine {
-        return processed_cache_lines(state, wrap_columns, lines_per_page, spacer_lines).to_vec();
+        return processed_cache_lines(state, wrap_columns, lines_per_page, spacer_lines);
     }
 
     state.ensure_current_script_link_targets_cached();
@@ -1270,7 +1281,7 @@ pub(crate) fn processed_display_lines(
         );
         lines.extend(segment_lines);
     }
-    lines
+    lines.into()
 }
 
 pub(crate) fn push_processed_fragment(
@@ -1863,17 +1874,18 @@ pub(crate) fn nearest_non_spacer_visual_index(
 pub(crate) fn processed_visual_fragment_for_part(
     visual_line: &ProcessedVisualLine,
     part_index: usize,
-) -> Option<ProcessedVisualFragment> {
+) -> Option<std::borrow::Cow<'_, ProcessedVisualFragment>> {
+    use std::borrow::Cow;
     if part_index >= PROCESSED_LINE_SPAN_PARTS {
         return None;
     }
 
     if visual_line.fragments.len() <= PROCESSED_LINE_SPAN_PARTS {
-        return visual_line.fragments.get(part_index).cloned();
+        return visual_line.fragments.get(part_index).map(Cow::Borrowed);
     }
 
     if part_index + 1 < PROCESSED_LINE_SPAN_PARTS {
-        return visual_line.fragments.get(part_index).cloned();
+        return visual_line.fragments.get(part_index).map(Cow::Borrowed);
     }
 
     let start = PROCESSED_LINE_SPAN_PARTS.saturating_sub(1);
@@ -1885,7 +1897,7 @@ pub(crate) fn processed_visual_fragment_for_part(
         .iter()
         .all(|fragment| fragment.inline_style == tail[0].inline_style);
 
-    Some(ProcessedVisualFragment {
+    Some(Cow::Owned(ProcessedVisualFragment {
         text: tail
             .iter()
             .map(|fragment| fragment.text.as_str())
@@ -1901,7 +1913,7 @@ pub(crate) fn processed_visual_fragment_for_part(
         } else {
             InlineTextStyle::default()
         },
-    })
+    }))
 }
 
 pub(crate) fn processed_visual_fragment_raw_range(
@@ -1994,13 +2006,141 @@ pub(crate) fn processed_visual_fragment_count(visual_line: &ProcessedVisualLine)
     visual_line
         .fragments
         .len()
-        .min(PROCESSED_LINE_SPAN_PARTS)
-        .max(1)
+        .clamp(1, PROCESSED_LINE_SPAN_PARTS)
 }
 
 #[cfg(test)]
 mod processed_markdown_inline_tests {
     use super::*;
+
+    fn rendered_test_state() -> EditorState {
+        let mut state = EditorState::from_world(&mut World::new());
+        state.document = Document::from_text("**Bold** text\nSecond line");
+        state.document_format = DocumentFormat::Markdown;
+        state.display_mode = DisplayMode::Processed;
+        state.processed_paginated = true;
+        state.reparse();
+        state
+    }
+
+    #[test]
+    fn processed_layout_is_shared_until_edited_and_retains_previous_snapshots() {
+        let mut state = rendered_test_state();
+        let before = processed_display_lines(&mut state, 80, 16, 2);
+        let same = processed_display_lines(&mut state, 80, 16, 2);
+        assert!(Arc::ptr_eq(&before, &same));
+        assert_eq!(before[0].text, "Bold text");
+
+        state.document.insert_text(Position::default(), "New ");
+        state.reparse();
+        let after = processed_display_lines(&mut state, 80, 16, 2);
+        assert!(!Arc::ptr_eq(&before, &after));
+        assert_eq!(after[0].text, "New Bold text");
+        assert_eq!(before[0].text, "Bold text");
+
+        let resized = processed_display_lines(&mut state, 8, 16, 2);
+        assert!(!Arc::ptr_eq(&after, &resized));
+        assert_eq!(after[0].text, "New Bold text");
+    }
+
+    #[test]
+    fn processed_view_keeps_page_anchoring_and_padding_near_eof() {
+        let mut lines = Vec::new();
+        push_page_spacers(&mut lines, 7, 5);
+        lines[4].is_spacer = false;
+        lines[4].text = "Last line".to_string();
+
+        let view = build_processed_view(&lines, usize::MAX, 3, 4);
+        assert_eq!(view.start_index, 3);
+        assert_eq!(view.anchor_index, 4);
+        assert_eq!(view.lines.len(), 4);
+        assert_eq!(view.lines[1].text, "Last line");
+        assert!(
+            view.lines[2..]
+                .iter()
+                .all(|line| line.is_spacer && line.source_line == 7)
+        );
+        assert_eq!(lines.len(), 5);
+
+        let first_page = build_processed_view(&lines, 0, 3, 2);
+        assert_eq!(first_page.start_index, 0);
+        assert_eq!(first_page.lines.len(), 2);
+        assert!(build_processed_view(&[], 0, 0, 0).lines.is_empty());
+    }
+
+    #[test]
+    fn unchanged_processed_spans_do_not_trigger_bevy_text_layout() {
+        fn style_spans(
+            mut query: ProcessedSpanQuery,
+            mut state: ResMut<EditorState>,
+            fonts: Res<EditorFonts>,
+        ) {
+            let lines = processed_display_lines(&mut state, 80, 16, 2);
+            apply_processed_styles(&mut query, &state, &lines, 0, 18, 16, &fonts, 12.0, 12.0);
+        }
+
+        let mut world = World::new();
+        world.insert_resource(rendered_test_state());
+        world.insert_resource(EditorFonts {
+            regular: Handle::default(),
+            bold: Handle::default(),
+            italic: Handle::default(),
+            bold_italic: Handle::default(),
+            markdown_regular: Handle::default(),
+            markdown_bold: Handle::default(),
+            markdown_italic: Handle::default(),
+            markdown_bold_italic: Handle::default(),
+        });
+        // Exercise visible, unused, out-of-document, and page-gap spans.
+        let entities = [(0, 0), (0, 23), (10, 0), (17, 0)].map(|(line_offset, part_index)| {
+            world
+                .spawn((
+                    ProcessedPaperLineSpan {
+                        slot: 0,
+                        line_offset,
+                        part_index,
+                    },
+                    TextSpan::new("stale"),
+                    TextFont::default(),
+                    LineHeight::Px(1.0),
+                    TextColor(Color::WHITE),
+                ))
+                .id()
+        });
+        let mut schedule = Schedule::default();
+        schedule.add_systems(style_spans);
+        schedule.run(&mut world);
+        assert_eq!(world.get::<TextSpan>(entities[0]).unwrap().as_str(), "Bold");
+        assert_eq!(
+            world.get::<TextFont>(entities[0]).unwrap().weight,
+            FontWeight::BOLD
+        );
+
+        world.clear_trackers();
+        schedule.run(&mut world);
+        for entity in entities {
+            assert!(!world.get_mut::<TextSpan>(entity).unwrap().is_changed());
+            assert!(!world.get_mut::<TextFont>(entity).unwrap().is_changed());
+            assert!(!world.get_mut::<LineHeight>(entity).unwrap().is_changed());
+            assert!(!world.get_mut::<TextColor>(entity).unwrap().is_changed());
+        }
+
+        {
+            let mut state = world.resource_mut::<EditorState>();
+            state.document = Document::from_text("Plain text");
+            state.reparse();
+        }
+        schedule.run(&mut world);
+        assert_eq!(
+            world.get::<TextSpan>(entities[0]).unwrap().as_str(),
+            "Plain text"
+        );
+        assert_eq!(
+            world.get::<TextFont>(entities[0]).unwrap().weight,
+            FontWeight::NORMAL
+        );
+        assert!(world.get_mut::<TextFont>(entities[0]).unwrap().is_changed());
+    }
 
     fn style(bold: bool, italic: bool) -> InlineTextStyle {
         InlineTextStyle { bold, italic }
@@ -2399,16 +2539,7 @@ mod processed_markdown_inline_tests {
 }
 
 pub(crate) fn apply_processed_styles(
-    processed_span_query: &mut Query<
-        (
-            &ProcessedPaperLineSpan,
-            &mut TextSpan,
-            &mut TextFont,
-            &mut LineHeight,
-            &mut TextColor,
-        ),
-        Without<PanelText>,
-    >,
+    processed_span_query: &mut ProcessedSpanQuery,
     state: &EditorState,
     processed_lines: &[ProcessedVisualLine],
     first_visible_page: usize,
@@ -2435,7 +2566,7 @@ pub(crate) fn apply_processed_styles(
             if !text_span.is_empty() {
                 text_span.clear();
             }
-            apply_font_variant_to_text_font(
+            sync_font_variant_to_text_font(
                 &mut text_font,
                 fonts,
                 FontVariant::Regular,
@@ -2459,7 +2590,7 @@ pub(crate) fn apply_processed_styles(
             if !text_span.is_empty() {
                 text_span.clear();
             }
-            apply_font_variant_to_text_font(
+            sync_font_variant_to_text_font(
                 &mut text_font,
                 fonts,
                 FontVariant::Regular,
@@ -2478,7 +2609,7 @@ pub(crate) fn apply_processed_styles(
             if !text_span.is_empty() {
                 text_span.clear();
             }
-            apply_font_variant_to_text_font(
+            sync_font_variant_to_text_font(
                 &mut text_font,
                 fonts,
                 FontVariant::Regular,
@@ -2521,7 +2652,7 @@ pub(crate) fn apply_processed_styles(
             } else {
                 style.color
             };
-        apply_font_variant_to_text_font(
+        sync_font_variant_to_text_font(
             &mut text_font,
             fonts,
             effective_variant,
@@ -2533,9 +2664,9 @@ pub(crate) fn apply_processed_styles(
         if *text_line_height != next_line_height {
             *text_line_height = next_line_height;
         }
-        if text_span.as_str() != fragment.text {
-            **text_span = fragment.text;
-        }
+        text_span
+            .map_unchanged(|span| &mut span.0)
+            .clone_from_if_neq(fragment.text.as_str());
         if text_color.0 != next_color {
             text_color.0 = next_color;
         }

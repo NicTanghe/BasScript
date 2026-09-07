@@ -50,16 +50,7 @@ pub(crate) fn render_editor(
             Without<ProcessedImageBlockNode>,
         ),
     >,
-    mut processed_span_query: Query<
-        (
-            &ProcessedPaperLineSpan,
-            &mut TextSpan,
-            &mut TextFont,
-            &mut LineHeight,
-            &mut TextColor,
-        ),
-        Without<PanelText>,
-    >,
+    mut processed_span_query: ProcessedSpanQuery,
     text_layout_query: Query<(&PanelText, &ComputedTextBlock)>,
     processed_text_layout_query: Query<
         (&ProcessedPaperText, &ComputedTextBlock, &ComputedNode),
@@ -128,7 +119,7 @@ pub(crate) fn render_editor(
     if state.document_format == DocumentFormat::Canvas {
         maybe_center_canvas_view_after_layout(&body_query, &mut state);
         for (_, mut text, _, _, mut node, mut transform) in text_query.iter_mut() {
-            **text = String::new();
+            text.set_if_neq(Text::default());
             node.left = px(0.0);
             node.top = px(0.0);
             node.width = px(0.0);
@@ -148,33 +139,35 @@ pub(crate) fn render_editor(
             image_node.color = Color::WHITE;
             node.width = px(0.0);
             node.height = px(0.0);
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
         }
-        for (_, mut text_span, _, _, mut text_color) in processed_span_query.iter_mut() {
-            **text_span = String::new();
-            text_color.0 = Color::NONE;
+        for (_, text_span, _, _, mut text_color) in processed_span_query.iter_mut() {
+            text_span
+                .map_unchanged(|span| &mut span.0)
+                .clone_from_if_neq("");
+            text_color.set_if_neq(TextColor(Color::NONE));
         }
         for (_, mut node, mut visibility, mut transform) in caret_query.iter_mut() {
             node.width = px(0.0);
             node.height = px(0.0);
             transform.scale = Vec2::ONE;
             transform.translation = Val2::ZERO;
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
         }
         for (_, mut node, _, mut visibility) in selection_rect_query.iter_mut() {
             node.width = px(0.0);
             node.height = px(0.0);
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
         }
         for (_, _, mut visibility, _, _) in paper_query.iter_mut() {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
         }
         for (_, mut transform) in canvas_query.iter_mut() {
             transform.scale = Vec2::ONE;
             transform.translation = Val2::ZERO;
         }
         if let Ok(mut status) = status_query.single_mut() {
-            **status = state.visible_status();
+            status.set_if_neq(Text::new(state.visible_status()));
         }
         return;
     }
@@ -251,8 +244,7 @@ pub(crate) fn render_editor(
     let processed_page_step_pixels = processed_page_step_px(&processed_geometry, state.zoom);
     let continuous_visible_page_count = processed_total_pages
         .saturating_sub(first_visible_page)
-        .min(PROCESSED_PAPER_CAPACITY)
-        .max(1);
+        .clamp(1, PROCESSED_PAPER_CAPACITY);
     let continuous_top_padding =
         (processed_geometry.text_top - processed_geometry.paper_top).max(0.0);
     let continuous_bottom_padding = if first_visible_page
@@ -272,13 +264,13 @@ pub(crate) fn render_editor(
     for (panel_paper, mut node, mut visibility, mut color, mut transform) in paper_query.iter_mut()
     {
         if panel_paper.kind != PanelKind::Processed {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         }
 
         let page_index = first_visible_page.saturating_add(panel_paper.slot);
         if page_index >= processed_total_pages {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         }
 
@@ -314,7 +306,7 @@ pub(crate) fn render_editor(
         } else {
             Color::NONE
         };
-        *visibility = Visibility::Visible;
+        visibility.set_if_neq(Visibility::Visible);
     }
 
     for (paper_text, mut node, mut transform) in processed_paper_text_query.iter_mut() {
@@ -389,7 +381,7 @@ pub(crate) fn render_editor(
         processed_checklist_icon_query.iter_mut()
     {
         if icon.slot >= PROCESSED_PAPER_CAPACITY {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         }
 
@@ -398,23 +390,23 @@ pub(crate) fn render_editor(
             .line_offset
             .min(processed_page_step_lines.saturating_sub(1));
         if line_offset >= processed_lines_per_page {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         }
 
         let page_start = page_index.saturating_mul(processed_page_step_lines);
         let global_index = page_start.saturating_add(line_offset);
         let Some(visual_line) = processed_all_lines.get(global_index) else {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         };
 
         let Some(checked) = visual_line.markdown_checklist_checked else {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         };
         if visual_line.is_spacer {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         }
 
@@ -431,7 +423,7 @@ pub(crate) fn render_editor(
             + ((processed_line_height - checklist_icon_size) * 0.5).max(0.0));
         node.width = px(checklist_icon_size);
         node.height = px(checklist_icon_size);
-        *visibility = Visibility::Visible;
+        visibility.set_if_neq(Visibility::Visible);
     }
 
     let plain_view = plain_lines.join("\n");
@@ -439,36 +431,53 @@ pub(crate) fn render_editor(
     for (panel_text, mut text, mut text_font, mut line_height_comp, mut node, mut transform) in
         text_query.iter_mut()
     {
-        match panel_text.kind {
+        let next_node = match panel_text.kind {
             PanelKind::Plain => {
-                apply_font_variant_to_text_font(
+                sync_font_variant_to_text_font(
                     &mut text_font,
                     &fonts,
                     FontVariant::Regular,
                     state.document_format,
                 );
-                text_font.font_size = FontSize::Px(plain_font_size);
-                *line_height_comp = LineHeight::Px(plain_line_height);
-                **text = plain_view.clone();
-                node.left = px(plain_origin_x);
-                node.top = px(plain_origin_y);
-                node.width = Val::Auto;
-                node.height = Val::Auto;
-                transform.scale = Vec2::ONE;
-                transform.translation = Val2::ZERO;
+                text_font
+                    .reborrow()
+                    .map_unchanged(|font| &mut font.font_size)
+                    .set_if_neq(FontSize::Px(plain_font_size));
+                line_height_comp.set_if_neq(LineHeight::Px(plain_line_height));
+                text.map_unchanged(|text| &mut text.0)
+                    .clone_from_if_neq(plain_view.as_str());
+                Node {
+                    left: px(plain_origin_x),
+                    top: px(plain_origin_y),
+                    width: Val::Auto,
+                    height: Val::Auto,
+                    ..node.clone()
+                }
             }
             PanelKind::Processed => {
-                text_font.font_size = FontSize::Px(processed_font_size);
-                *line_height_comp = LineHeight::Px(processed_line_height);
-                **text = String::new();
-                node.left = px(0.0);
-                node.top = px(0.0);
-                node.width = px(0.0);
-                node.height = px(0.0);
-                transform.scale = Vec2::ONE;
-                transform.translation = Val2::ZERO;
+                text_font
+                    .reborrow()
+                    .map_unchanged(|font| &mut font.font_size)
+                    .set_if_neq(FontSize::Px(processed_font_size));
+                line_height_comp.set_if_neq(LineHeight::Px(processed_line_height));
+                text.set_if_neq(Text::default());
+                Node {
+                    left: px(0.0),
+                    top: px(0.0),
+                    width: px(0.0),
+                    height: px(0.0),
+                    ..node.clone()
+                }
             }
-        }
+        };
+        node.set_if_neq(next_node);
+        transform
+            .reborrow()
+            .map_unchanged(|transform| &mut transform.scale)
+            .set_if_neq(Vec2::ONE);
+        transform
+            .map_unchanged(|transform| &mut transform.translation)
+            .set_if_neq(Val2::ZERO);
     }
 
     apply_processed_styles(
@@ -484,7 +493,7 @@ pub(crate) fn render_editor(
     );
 
     if let Ok(mut status) = status_query.single_mut() {
-        **status = state.visible_status();
+        status.set_if_neq(Text::new(state.visible_status()));
     }
 
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
@@ -564,7 +573,7 @@ pub(crate) fn render_processed_images(
 ) {
     if state.document_format == DocumentFormat::Canvas {
         for (_, _, _, mut visibility) in processed_image_query.iter_mut() {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
         }
         return;
     }
@@ -579,7 +588,7 @@ pub(crate) fn render_processed_images(
         .filter(|size| size.x > 1.0 && size.y > 1.0)
     else {
         for (_, _, _, mut visibility) in processed_image_query.iter_mut() {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
         }
         return;
     };
@@ -622,7 +631,7 @@ pub(crate) fn render_processed_images(
         processed_image_query.iter_mut()
     {
         if image_block_node.slot >= PROCESSED_PAPER_CAPACITY {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         }
 
@@ -631,25 +640,25 @@ pub(crate) fn render_processed_images(
             .line_offset
             .min(processed_page_step_lines.saturating_sub(1));
         if line_offset >= processed_lines_per_page {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         }
 
         let page_start = page_index.saturating_mul(processed_page_step_lines);
         let global_index = page_start.saturating_add(line_offset);
         let Some(visual_line) = processed_all_lines.get(global_index) else {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         };
         let Some(image_block) = visual_line.image_block.as_ref() else {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         };
 
         let reserved_height =
             image_block.reserved_lines as f32 * processed_line_height - PROCESSED_IMAGE_BLOCK_GAP;
         if reserved_height <= 1.0 {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         }
 
@@ -691,7 +700,7 @@ pub(crate) fn render_processed_images(
         node.top = px(top);
         node.width = px(display_width);
         node.height = px(display_height);
-        *visibility = Visibility::Visible;
+        visibility.set_if_neq(Visibility::Visible);
     }
 }
 
@@ -801,7 +810,7 @@ pub(crate) struct ProcessedCache {
     pub(crate) lines_per_page: usize,
     pub(crate) spacer_lines: usize,
     pub(crate) segments: Vec<ProcessedSegment>,
-    pub(crate) lines: Vec<ProcessedVisualLine>,
+    pub(crate) lines: Arc<[ProcessedVisualLine]>,
     pub(crate) source_line_count: usize,
 }
 

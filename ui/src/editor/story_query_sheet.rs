@@ -1200,7 +1200,7 @@ pub(crate) fn apply_story_query_rendered_page_styles(
     let page_step_lines = page_step_lines.max(1);
     let lines_per_page = lines_per_page.max(1).min(page_step_lines);
 
-    for (span, mut text_span, mut text_font, mut text_line_height, mut text_color) in
+    for (span, text_span, mut text_font, mut text_line_height, mut text_color) in
         rendered_span_query.iter_mut()
     {
         let page_index = first_visible_page.saturating_add(span.slot);
@@ -1209,34 +1209,45 @@ pub(crate) fn apply_story_query_rendered_page_styles(
         let global_index = page_start.saturating_add(line_offset);
 
         if line_offset >= lines_per_page {
-            **text_span = String::new();
-            apply_font_variant_to_text_font(
+            text_span
+                .map_unchanged(|span| &mut span.0)
+                .clone_from_if_neq("");
+            sync_font_variant_to_text_font(
                 &mut text_font,
                 fonts,
                 FontVariant::Regular,
                 document_format,
             );
-            text_font.font_size = FontSize::Px(font_size);
-            *text_line_height = LineHeight::Px(line_height);
-            text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
+            text_font
+                .reborrow()
+                .map_unchanged(|font| &mut font.font_size)
+                .set_if_neq(FontSize::Px(font_size));
+            text_line_height.set_if_neq(LineHeight::Px(line_height));
+            text_color.set_if_neq(TextColor(Color::NONE));
             continue;
         };
 
         let Some(visual_line) = sheet.visual_lines.get(global_index) else {
-            **text_span = if span.part_index == 0 && line_offset + 1 < lines_per_page {
-                "\n".to_owned()
+            let text = if span.part_index == 0 && line_offset + 1 < lines_per_page {
+                "\n"
             } else {
-                String::new()
+                ""
             };
-            apply_font_variant_to_text_font(
+            text_span
+                .map_unchanged(|span| &mut span.0)
+                .clone_from_if_neq(text);
+            sync_font_variant_to_text_font(
                 &mut text_font,
                 fonts,
                 FontVariant::Regular,
                 document_format,
             );
-            text_font.font_size = FontSize::Px(font_size);
-            *text_line_height = LineHeight::Px(line_height);
-            text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
+            text_font
+                .reborrow()
+                .map_unchanged(|font| &mut font.font_size)
+                .set_if_neq(FontSize::Px(font_size));
+            text_line_height.set_if_neq(LineHeight::Px(line_height));
+            text_color.set_if_neq(TextColor(Color::NONE));
             continue;
         };
 
@@ -1257,31 +1268,39 @@ pub(crate) fn apply_story_query_rendered_page_styles(
         let used_fragment_count = processed_visual_fragment_count(visual_line);
         let Some(mut fragment) = processed_visual_fragment_for_part(visual_line, span.part_index)
         else {
-            **text_span = String::new();
-            apply_font_variant_to_text_font(
+            text_span
+                .map_unchanged(|span| &mut span.0)
+                .clone_from_if_neq("");
+            sync_font_variant_to_text_font(
                 &mut text_font,
                 fonts,
                 FontVariant::Regular,
                 document_format,
             );
-            text_color.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
+            text_color.set_if_neq(TextColor(Color::NONE));
             continue;
         };
 
         if span.part_index + 1 == used_fragment_count && line_offset + 1 < lines_per_page {
-            fragment.text.push('\n');
+            fragment.to_mut().text.push('\n');
         }
 
         let effective_variant = font_variant_for_processed_fragment(style.font_variant, &fragment);
-        apply_font_variant_to_text_font(&mut text_font, fonts, effective_variant, document_format);
-        text_font.font_size = FontSize::Px(font_size * style.font_scale);
-        *text_line_height = LineHeight::Px(line_height * style.line_height_scale);
-        **text_span = fragment.text;
-        text_color.0 = if allow_link_color && fragment.is_link {
+        sync_font_variant_to_text_font(&mut text_font, fonts, effective_variant, document_format);
+        text_font
+            .reborrow()
+            .map_unchanged(|font| &mut font.font_size)
+            .set_if_neq(FontSize::Px(font_size * style.font_scale));
+        text_line_height.set_if_neq(LineHeight::Px(line_height * style.line_height_scale));
+        text_span
+            .map_unchanged(|span| &mut span.0)
+            .clone_from_if_neq(fragment.text.as_str());
+        let color = if allow_link_color && fragment.is_link {
             story_query_link_color_for_target(sheet, state, fragment.link_target.as_deref())
         } else {
             style.color
         };
+        text_color.set_if_neq(TextColor(color));
     }
 }
 

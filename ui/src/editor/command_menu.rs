@@ -63,20 +63,23 @@ pub(crate) fn sync_command_menu_ui(
     )>,
 ) {
     let Some(command_menu) = state.command_menu.as_ref() else {
-        if let Ok(mut root) = root_query.single_mut() {
-            root.display = Display::None;
+        if let Ok(root) = root_query.single_mut() {
+            root.map_unchanged(|node| &mut node.display)
+                .set_if_neq(Display::None);
         }
         return;
     };
 
-    if let Ok(mut root) = root_query.single_mut() {
-        root.display = Display::Flex;
+    if let Ok(root) = root_query.single_mut() {
+        root.map_unchanged(|node| &mut node.display)
+            .set_if_neq(Display::Flex);
     }
     if let Ok(mut input) = text_queries.p0().single_mut() {
-        **input = format!(":{}_", command_menu.input);
+        input.set_if_neq(Text::new(format!(":{}_", command_menu.input)));
     }
-    if let Ok(mut hint) = text_queries.p1().single_mut() {
-        **hint = "Enter runs. Esc cancels. Commands: w, q, wq".to_string();
+    if let Ok(hint) = text_queries.p1().single_mut() {
+        hint.map_unchanged(|text| &mut text.0)
+            .clone_from_if_neq("Enter runs. Esc cancels. Commands: w, q, wq");
     }
 }
 
@@ -201,15 +204,18 @@ pub(crate) fn run_command_menu_command(
     command: &str,
 ) {
     match parse_command_menu_command(command) {
-        CommandMenuParsedCommand::Write => state.save_current(),
+        CommandMenuParsedCommand::Write => {
+            state.save_current();
+        }
         CommandMenuParsedCommand::Quit => {
             state.status_message = "Quitting.".to_string();
             app_exit.write(AppExit::Success);
         }
         CommandMenuParsedCommand::WriteQuit => {
-            state.save_current();
-            state.status_message = "Quitting.".to_string();
-            app_exit.write(AppExit::Success);
+            if state.save_current() {
+                state.status_message = "Quitting.".to_string();
+                app_exit.write(AppExit::Success);
+            }
         }
         CommandMenuParsedCommand::Empty => state.status_message = "No command entered.".to_string(),
         CommandMenuParsedCommand::Unknown(other) => {
@@ -236,6 +242,32 @@ impl EditorState {
 #[cfg(test)]
 mod command_menu_tests {
     use super::*;
+
+    #[test]
+    fn write_quit_keeps_the_editor_open_when_saving_fails() {
+        let mut app = App::new();
+        app.init_resource::<EditorState>()
+            .add_message::<AppExit>()
+            .add_systems(
+                Update,
+                |mut state: ResMut<EditorState>, mut exits: MessageWriter<AppExit>| {
+                    run_command_menu_command(&mut state, &mut exits, "wq");
+                },
+            );
+        let document = Document::from_text("Unsaved screenplay");
+        {
+            let mut state = app.world_mut().resource_mut::<EditorState>();
+            state.document = document.clone();
+            // A directory cannot be overwritten by Document::save on any platform.
+            state.paths.save_path = std::env::temp_dir();
+        }
+        app.update();
+
+        assert!(app.world().resource::<Messages<AppExit>>().is_empty());
+        let state = app.world().resource::<EditorState>();
+        assert!(state.status_message.starts_with("Save failed"));
+        assert_eq!(state.document, document);
+    }
 
     #[test]
     fn parses_quit_aliases() {

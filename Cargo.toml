@@ -3,8 +3,9 @@ members = ["core", "ui", "app"]
 default-members = ["app"]
 resolver = "2"
 
-
-
+[workspace.dependencies]
+# Use Bevy's UI feature collection; this editor does not need 3D or audio.
+bevy = { version = "0.19", default-features = false, features = ["ui", "bmp", "http", "https", "jpeg", "webp"] }
 
 # Enable max optimizations for dependencies, but not for our code:
 [profile.dev.package."*"]
