@@ -87,6 +87,9 @@ rate. Parsing, history snapshots, and rendering still contribute to UI latency.
    `WinitSettings::desktop_app()` alone would delay the app's caret blinking,
    animated controls, held-key navigation, and polled dialog results. A reactive
    policy needs redraw requests or wakeups for these cases and asset loading.
+   Startup, asset/pipeline settling, and caret timing now have a
+   [reactive rendering policy](reactive-rendering.md); retain the documented
+   idle intervals until the remaining timer/input paths have completion wakeups.
 
 BSN and Feathers may simplify future UI construction. Replacing the existing
 `children!` bundles by itself would not establish a runtime performance gain.

@@ -635,7 +635,14 @@ pub(crate) fn browser_launcher_result(
     }
 }
 
-pub(crate) fn resolve_external_url_open_results(mut state: ResMut<EditorState>) {
+pub(crate) fn resolve_external_url_open_results(
+    mut state: ResMut<EditorState>,
+    mut redraw: MessageWriter<bevy::window::RequestRedraw>,
+) {
+    if state.pending_external_url_opens.is_empty() {
+        return;
+    }
+    redraw.write(bevy::window::RequestRedraw);
     let mut completed = Vec::<(String, ExternalUrlOpenResult)>::new();
     state.pending_external_url_opens.retain(|pending| {
         let result = match pending.receiver.lock() {

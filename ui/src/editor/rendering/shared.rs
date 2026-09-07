@@ -117,6 +117,7 @@ pub(crate) fn render_editor(
     resources: EditorRenderResources,
     mut state: ResMut<EditorState>,
 ) {
+    let mut state = state.bypass_change_detection();
     let plain_font_size = scaled_font_size(&state);
     let plain_line_height = state.measured_line_step.max(1.0);
     let plain_char_width = scaled_char_width(&state).max(1.0);
@@ -226,12 +227,15 @@ pub(crate) fn render_editor(
         processed_lines_per_page,
         processed_spacer_lines,
     );
-    if processed_all_lines.is_empty() {
-        state.processed_top_visual = 0;
+    let target_top_visual = if processed_all_lines.is_empty() {
+        0
     } else {
-        state.processed_top_visual = state
+        state
             .processed_top_visual
-            .min(processed_all_lines.len().saturating_sub(1));
+            .min(processed_all_lines.len().saturating_sub(1))
+    };
+    if state.processed_top_visual != target_top_visual {
+        state.processed_top_visual = target_top_visual;
     }
     let processed_view = build_processed_view(
         &processed_all_lines,
@@ -505,7 +509,10 @@ pub(crate) fn render_editor(
     }
 
     let plain_layout = panel_layout_info(&text_layout_query, PanelKind::Plain);
-    state.measured_line_step = scaled_line_height(&state);
+    let new_line_step = scaled_line_height(&state);
+    if (state.measured_line_step - new_line_step).abs() > 0.001 {
+        state.measured_line_step = new_line_step;
+    }
     render_selection_rects(
         &mut selection_rect_query,
         &state,
@@ -580,6 +587,7 @@ pub(crate) fn render_processed_images(
     mut image_cache: ResMut<EditorImageCache>,
     mut state: ResMut<EditorState>,
 ) {
+    let mut state = state.bypass_change_detection();
     if state.document_format == DocumentFormat::Canvas {
         for (_, _, _, mut visibility) in processed_image_query.iter_mut() {
             visibility.set_if_neq(Visibility::Hidden);
@@ -615,12 +623,15 @@ pub(crate) fn render_processed_images(
         processed_lines_per_page,
         processed_spacer_lines,
     );
-    if processed_all_lines.is_empty() {
-        state.processed_top_visual = 0;
+    let target_top_visual = if processed_all_lines.is_empty() {
+        0
     } else {
-        state.processed_top_visual = state
+        state
             .processed_top_visual
-            .min(processed_all_lines.len().saturating_sub(1));
+            .min(processed_all_lines.len().saturating_sub(1))
+    };
+    if state.processed_top_visual != target_top_visual {
+        state.processed_top_visual = target_top_visual;
     }
 
     let processed_view_capacity = processed_page_step_lines

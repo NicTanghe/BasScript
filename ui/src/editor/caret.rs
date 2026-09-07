@@ -26,15 +26,28 @@ impl Default for CaretBlinkState {
 }
 
 pub(crate) fn blink_caret(
-    time: Res<Time>,
+    // Virtual time clamps long idle gaps to 250 ms by default. Caret blinking
+    // must follow wall-clock time when the event loop sleeps between frames.
+    time: Res<Time<Real>>,
     mut blink: ResMut<CaretBlinkState>,
     state: Res<EditorState>,
+    mut redraw: MessageWriter<bevy::window::RequestRedraw>,
+    mut last_tick: Local<Duration>,
 ) {
+    // The render thread's timestamp can be a frame behind after sleeping. Count
+    // the idle gap now, rather than blinking twice when that timestamp catches up.
+    let now = time.elapsed().saturating_add(
+        time.last_update()
+            .map_or(Duration::ZERO, |last_update| last_update.elapsed()),
+    );
+    let delta = now.saturating_sub(*last_tick);
+    *last_tick = now;
     if state.is_changed() {
         blink.timer.reset();
         blink.visible = true;
-    } else if blink.timer.tick(time.delta()).just_finished() {
+    } else if blink.timer.tick(delta).times_finished_this_tick() % 2 == 1 {
         blink.visible = !blink.visible;
+        redraw.write(bevy::window::RequestRedraw);
     }
 }
 
@@ -292,7 +305,8 @@ mod caret_tests {
         let mut app = App::new();
         app.init_resource::<EditorState>()
             .init_resource::<CaretBlinkState>()
-            .init_resource::<Time>()
+            .init_resource::<Time<Real>>()
+            .add_message::<bevy::window::RequestRedraw>()
             .add_systems(Update, blink_caret);
 
         // Run initial update frame so change detection settles
@@ -300,7 +314,7 @@ mod caret_tests {
 
         // Advance by 250ms (halfway): should stay visible
         {
-            let mut time = app.world_mut().resource_mut::<Time>();
+            let mut time = app.world_mut().resource_mut::<Time<Real>>();
             time.advance_by(Duration::from_millis(250));
         }
         app.update();
@@ -309,7 +323,7 @@ mod caret_tests {
 
         // Advance by another 250ms (reaching 500ms): should toggle to false
         {
-            let mut time = app.world_mut().resource_mut::<Time>();
+            let mut time = app.world_mut().resource_mut::<Time<Real>>();
             time.advance_by(Duration::from_millis(250));
         }
         app.update();
@@ -318,7 +332,7 @@ mod caret_tests {
 
         // Advance by another 500ms: should toggle back to true
         {
-            let mut time = app.world_mut().resource_mut::<Time>();
+            let mut time = app.world_mut().resource_mut::<Time<Real>>();
             time.advance_by(Duration::from_millis(500));
         }
         app.update();
@@ -331,14 +345,15 @@ mod caret_tests {
         let mut app = App::new();
         app.init_resource::<EditorState>()
             .init_resource::<CaretBlinkState>()
-            .init_resource::<Time>()
+            .init_resource::<Time<Real>>()
+            .add_message::<bevy::window::RequestRedraw>()
             .add_systems(Update, blink_caret);
 
         app.update();
 
         // Advance by 500ms: toggles visible to false
         {
-            let mut time = app.world_mut().resource_mut::<Time>();
+            let mut time = app.world_mut().resource_mut::<Time<Real>>();
             time.advance_by(Duration::from_millis(500));
         }
         app.update();
@@ -353,5 +368,84 @@ mod caret_tests {
         let blink = app.world().resource::<CaretBlinkState>();
         assert!(blink.visible);
         assert_eq!(blink.timer.elapsed(), Duration::ZERO);
+    }
+
+    #[test]
+    fn blink_uses_real_time_after_a_reactive_idle_wait() {
+        let mut app = App::new();
+        app.add_plugins(bevy::time::TimePlugin)
+            .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+                Duration::from_millis(500),
+            ))
+            .init_resource::<EditorState>()
+            .init_resource::<CaretBlinkState>()
+            .add_message::<bevy::window::RequestRedraw>()
+            .add_systems(Update, blink_caret);
+
+        app.update();
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<Time>().delta(),
+            Duration::from_millis(250)
+        );
+        assert_eq!(
+            app.world().resource::<Time<Real>>().delta(),
+            Duration::from_millis(500)
+        );
+        assert!(!app.world().resource::<CaretBlinkState>().visible);
+    }
+
+    #[test]
+    fn blink_preserves_phase_when_an_idle_wait_spans_multiple_blinks() {
+        let mut app = App::new();
+        app.init_resource::<EditorState>()
+            .init_resource::<CaretBlinkState>()
+            .init_resource::<Time<Real>>()
+            .add_message::<bevy::window::RequestRedraw>()
+            .add_systems(Update, blink_caret);
+        app.update();
+
+        app.world_mut()
+            .resource_mut::<Time<Real>>()
+            .advance_by(Duration::from_secs(1));
+        app.update();
+        assert!(app.world().resource::<CaretBlinkState>().visible);
+        assert!(
+            app.world()
+                .resource::<Messages<bevy::window::RequestRedraw>>()
+                .is_empty()
+        );
+
+        app.world_mut()
+            .resource_mut::<Time<Real>>()
+            .advance_by(Duration::from_millis(500));
+        app.update();
+        assert!(!app.world().resource::<CaretBlinkState>().visible);
+    }
+
+    #[test]
+    fn catching_up_render_timestamp_does_not_blink_twice() {
+        let mut time = Time::<Real>::default();
+        time.update_with_instant(bevy::platform::time::Instant::now() - Duration::from_millis(500));
+        let mut app = App::new();
+        app.init_resource::<EditorState>()
+            .init_resource::<CaretBlinkState>()
+            .insert_resource(time)
+            .add_message::<bevy::window::RequestRedraw>()
+            .add_systems(Update, blink_caret);
+        app.update();
+
+        app.world_mut()
+            .resource_mut::<Time<Real>>()
+            .advance_by(Duration::from_millis(500));
+        app.update();
+        assert!(!app.world().resource::<CaretBlinkState>().visible);
+
+        app.world_mut()
+            .resource_mut::<Time<Real>>()
+            .update_with_instant(bevy::platform::time::Instant::now());
+        app.update();
+        assert!(!app.world().resource::<CaretBlinkState>().visible);
     }
 }

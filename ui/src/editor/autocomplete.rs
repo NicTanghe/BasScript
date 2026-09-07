@@ -211,11 +211,15 @@ pub(crate) fn sync_link_autocomplete_context(
     dialogs: Res<DialogState>,
 ) {
     if dialogs.pending.is_some() {
-        state.close_link_autocomplete();
+        if state.link_autocomplete.is_some() {
+            state.close_link_autocomplete();
+        }
         return;
     }
 
-    state.validate_link_autocomplete_context();
+    if state.link_autocomplete.is_some() {
+        state.validate_link_autocomplete_context();
+    }
 }
 
 pub(crate) fn spawn_link_autocomplete_menu(

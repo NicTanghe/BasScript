@@ -1,3 +1,5 @@
+mod reactive_rendering;
+
 use basscript_ui::UiPlugin;
 #[cfg(target_os = "windows")]
 use bevy::render::{
@@ -12,6 +14,7 @@ use bevy::{
     prelude::*,
     window::{WindowPlugin, WindowResizeConstraints},
 };
+use reactive_rendering::ReactiveRenderingPlugin;
 
 const MIN_WINDOW_WIDTH: f32 = 640.0;
 const MIN_WINDOW_HEIGHT: f32 = 360.0;
@@ -35,16 +38,16 @@ fn main() {
         }
     }
 
+    configure_asset_root();
+
     let default_plugins = DefaultPlugins
         .set(LogPlugin {
-            filter: format!(
-                "{},bevy_render::view::window=error",
-                bevy::log::DEFAULT_FILTER
-            ),
+            filter: std::env::var("RUST_LOG")
+                .unwrap_or_else(|_| bevy::log::DEFAULT_FILTER.to_string()),
             ..default()
         })
         .set(AssetPlugin {
-            file_path: "..".to_string(),
+            file_path: "".to_string(),
             ..default()
         })
         .set(WindowPlugin {
@@ -79,58 +82,41 @@ fn main() {
             Color::srgb(0.89, 0.90, 0.91)
         }))
         .add_plugins(default_plugins)
-        // Bevy 0.18 used a small local bevy_winit patch to avoid transient
-        // below-minimum resize events desynchronizing UI layout from the window.
-        // Keep that behavior in app code so 0.19 can use upstream winit/wgpu.
-        .add_systems(First, clamp_window_resolution_to_constraints)
-        .add_plugins(UiPlugin)
+        .add_plugins((UiPlugin, ReactiveRenderingPlugin))
         .run();
 }
 
-fn clamp_window_resolution_to_constraints(mut windows: Query<&mut Window, Changed<Window>>) {
-    for mut window in &mut windows {
-        let size = constrained_window_physical_size(&window);
-
-        if size.x != window.resolution.physical_width()
-            || size.y != window.resolution.physical_height()
-        {
-            window.resolution.set_physical_resolution(size.x, size.y);
-        }
+fn configure_asset_root() {
+    if std::env::var_os("BEVY_ASSET_ROOT").is_some() {
+        return;
     }
-}
-
-fn constrained_window_physical_size(window: &Window) -> UVec2 {
-    let constraints = window.resize_constraints.check_constraints();
-    let scale_factor = window.resolution.scale_factor().max(f32::EPSILON);
-    let min_width = (constraints.min_width * scale_factor).ceil().max(1.0) as u32;
-    let min_height = (constraints.min_height * scale_factor).ceil().max(1.0) as u32;
-
-    UVec2::new(
-        window.resolution.physical_width().max(min_width),
-        window.resolution.physical_height().max(min_height),
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn clamps_a_resize_to_the_configured_minimum() {
-        let mut window = Window {
-            resize_constraints: WindowResizeConstraints {
-                min_width: MIN_WINDOW_WIDTH,
-                min_height: MIN_WINDOW_HEIGHT,
-                ..default()
-            },
-            ..default()
-        };
-        window.resolution.set_scale_factor(1.5);
-        window.resolution.set_physical_resolution(800, 400);
-
-        assert_eq!(
-            constrained_window_physical_size(&window),
-            UVec2::new(960, 540)
-        );
+    if std::path::Path::new("fonts").exists()
+        && let Ok(cwd) = std::env::current_dir()
+    {
+        unsafe {
+            std::env::set_var("BEVY_ASSET_ROOT", cwd);
+        }
+        return;
+    }
+    if std::path::Path::new("../fonts").exists()
+        && let Ok(cwd) = std::env::current_dir()
+        && let Some(parent) = cwd.parent()
+    {
+        unsafe {
+            std::env::set_var("BEVY_ASSET_ROOT", parent);
+        }
+        return;
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let mut cur = exe.parent();
+        while let Some(dir) = cur {
+            if dir.join("fonts").exists() {
+                unsafe {
+                    std::env::set_var("BEVY_ASSET_ROOT", dir);
+                }
+                return;
+            }
+            cur = dir.parent();
+        }
     }
 }

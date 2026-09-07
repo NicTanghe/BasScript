@@ -175,6 +175,7 @@ impl EditorState {
 pub(crate) fn poll_story_index_task(
     mut state: ResMut<EditorState>,
     mut task_state: ResMut<StoryIndexTask>,
+    mut redraw: MessageWriter<bevy::window::RequestRedraw>,
 ) {
     let Some(mut task) = task_state.in_flight.take() else {
         return;
@@ -185,6 +186,7 @@ pub(crate) fn poll_story_index_task(
             let message = state.apply_story_index_result(result);
             state.status_message = message;
             state.workspace_ui_dirty = true;
+            redraw.write(bevy::window::RequestRedraw);
         } else {
             info!(
                 "[story-index] Discarded index result for {} as active workspace changed",
@@ -193,6 +195,7 @@ pub(crate) fn poll_story_index_task(
         }
     } else {
         task_state.in_flight = Some(task);
+        redraw.write(bevy::window::RequestRedraw);
     }
 }
 
@@ -286,6 +289,7 @@ mod tests {
         let mut app = App::new();
         app.init_resource::<EditorState>()
             .init_resource::<StoryIndexTask>()
+            .add_message::<bevy::window::RequestRedraw>()
             .add_systems(Update, poll_story_index_task);
 
         let test_root = PathBuf::from("/test/workspace/root");

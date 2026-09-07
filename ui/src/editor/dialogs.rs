@@ -965,10 +965,12 @@ pub(crate) fn resolve_dialog_results(
     mut state: ResMut<EditorState>,
     mut dialogs: ResMut<DialogState>,
     mut task_state: Option<ResMut<StoryIndexTask>>,
+    mut redraw: MessageWriter<bevy::window::RequestRedraw>,
 ) {
     let Some(pending) = dialogs.pending.as_ref() else {
         return;
     };
+    redraw.write(bevy::window::RequestRedraw);
     let pending_kind = pending.kind_name();
 
     enum DialogResult {

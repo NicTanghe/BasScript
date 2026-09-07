@@ -2451,12 +2451,18 @@ impl EditorState {
 
     pub(crate) fn clamp_scroll(&mut self, visible_lines: usize) {
         let max_top = self.max_top_line(visible_lines);
-        self.top_line = self.top_line.min(max_top);
+        let clamped = self.top_line.min(max_top);
+        if self.top_line != clamped {
+            self.top_line = clamped;
+        }
     }
 
     pub(crate) fn clamp_processed_top_line(&mut self) {
         let max_top = self.document.line_count().saturating_sub(1);
-        self.processed_top_line = self.processed_top_line.min(max_top);
+        let clamped = self.processed_top_line.min(max_top);
+        if self.processed_top_line != clamped {
+            self.processed_top_line = clamped;
+        }
     }
 
     pub(crate) fn clamp_horizontal_scrolls(
@@ -2465,13 +2471,19 @@ impl EditorState {
         processed_panel_size: Option<Vec2>,
     ) {
         let plain_max = plain_horizontal_scroll_max(self, plain_panel_size);
-        self.plain_horizontal_scroll = self.plain_horizontal_scroll.clamp(0.0, plain_max);
+        let plain_clamped = self.plain_horizontal_scroll.clamp(0.0, plain_max);
+        if (self.plain_horizontal_scroll - plain_clamped).abs() > 0.001 {
+            self.plain_horizontal_scroll = plain_clamped;
+        }
 
         let (processed_min, processed_max) =
             processed_horizontal_scroll_bounds(self, processed_panel_size);
-        self.processed_horizontal_scroll = self
+        let proc_clamped = self
             .processed_horizontal_scroll
             .clamp(processed_min, processed_max);
+        if (self.processed_horizontal_scroll - proc_clamped).abs() > 0.001 {
+            self.processed_horizontal_scroll = proc_clamped;
+        }
     }
 
     pub(crate) fn scroll_by(&mut self, line_delta: isize, visible_lines: usize) {
