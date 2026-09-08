@@ -167,7 +167,7 @@ pub(crate) fn setup(
                                         PanelPaneSlot {
                                             kind: PanelKind::Plain,
                                         },
-                                        children![panel_bundle(font.clone(), PanelKind::Plain)],
+                                        children![panel_bundle(font.clone(), hue_sat_wheel.clone(), PanelKind::Plain)],
                                     ),
                                     panel_splitter_bundle(PanelSplitter::Panels),
                                     (
@@ -178,7 +178,7 @@ pub(crate) fn setup(
                                         PanelPaneSlot {
                                             kind: PanelKind::Processed,
                                         },
-                                        children![panel_bundle(font.clone(), PanelKind::Processed)],
+                                        children![panel_bundle(font.clone(), hue_sat_wheel.clone(), PanelKind::Processed)],
                                     ),
                                 ],
                             ),
@@ -442,161 +442,6 @@ pub(crate) fn setup(
                         ],
                     )],
                 )],
-            ));
-
-            root.spawn((
-                Node {
-                    width: percent(100.0),
-                    height: percent(100.0),
-                    display: Display::None,
-                    flex_direction: FlexDirection::Column,
-                    row_gap: px(10.0),
-                    padding: UiRect::axes(px(18.0), px(16.0)),
-                    ..default()
-                },
-                BackgroundColor(state.app_bg_color),
-                ThemeScreenRoot,
-                children![
-                    (
-                        Text::new(""),
-                        TextFont {
-                            font: font.clone().into(),
-                            font_size: FontSize::Px(22.0),
-                            ..default()
-                        },
-                        TextColor(COLOR_TEXT_MAIN),
-                        ThemeScreenTitleLabel,
-                    ),
-                    (
-                        Text::new(""),
-                        TextFont {
-                            font: font.clone().into(),
-                            font_size: FontSize::Px(13.0),
-                            ..default()
-                        },
-                        TextColor(COLOR_TEXT_MUTED),
-                        ThemeScreenDescriptionLabel,
-                    ),
-                    (
-                        Node {
-                            flex_direction: FlexDirection::Row,
-                            align_items: AlignItems::Start,
-                            column_gap: px(12.0),
-                            ..default()
-                        },
-                        children![
-                            (
-                                Node {
-                                    flex_direction: FlexDirection::Column,
-                                    row_gap: px(8.0),
-                                    ..default()
-                                },
-                                children![
-                                    theme_color_row(font.clone(), ThemeColorTarget::AppBackground),
-                                    theme_color_row(
-                                        font.clone(),
-                                        ThemeColorTarget::TopMenuBackground
-                                    ),
-                                    theme_color_row(
-                                        font.clone(),
-                                        ThemeColorTarget::ExplorerBackground
-                                    ),
-                                    theme_color_row(
-                                        font.clone(),
-                                        ThemeColorTarget::ProcessedBackground
-                                    ),
-                                    theme_color_row(
-                                        font.clone(),
-                                        ThemeColorTarget::SelectionBackground
-                                    ),
-                                    theme_only_setting_button(
-                                        font.clone(),
-                                        SettingsAction::ToggleProcessedGlass,
-                                    ),
-                                    theme_only_setting_button(
-                                        font.clone(),
-                                        SettingsAction::ToggleExplorerGlass,
-                                    ),
-                                    theme_only_setting_button(
-                                        font.clone(),
-                                        SettingsAction::ToggleSettingsGlass,
-                                    ),
-                                    theme_color_row(font.clone(), ThemeColorTarget::LinkFallback),
-                                    theme_color_row(font.clone(), ThemeColorTarget::LinkCharacter),
-                                    theme_color_row(font.clone(), ThemeColorTarget::LinkPlace),
-                                    theme_color_row(font.clone(), ThemeColorTarget::LinkProp),
-                                    theme_color_row(font.clone(), ThemeColorTarget::LinkFaction),
-                                    theme_color_row(font.clone(), ThemeColorTarget::LinkConcept),
-                                    theme_link_hover_setting_row(font.clone())
-                                ],
-                            ),
-                            (
-                                Node {
-                                    display: Display::None,
-                                    flex_direction: FlexDirection::Column,
-                                    row_gap: px(8.0),
-                                    padding: UiRect::all(px(10.0)),
-                                    ..default()
-                                },
-                                BackgroundColor(Color::srgb(0.82, 0.84, 0.86)),
-                                ThemeColorPickerPanel,
-                                children![
-                                    theme_visual_picker(font.clone(), hue_sat_wheel.clone()),
-                                    (
-                                        Text::new(""),
-                                        TextFont {
-                                            font: font.clone().into(),
-                                            font_size: FontSize::Px(12.0),
-                                            ..default()
-                                        },
-                                        TextColor(COLOR_TEXT_MAIN),
-                                        ThemeSelectionRgbLabel,
-                                    ),
-                                    (
-                                        Text::new(""),
-                                        TextFont {
-                                            font: font.clone().into(),
-                                            font_size: FontSize::Px(12.0),
-                                            ..default()
-                                        },
-                                        TextColor(COLOR_TEXT_MAIN),
-                                        ThemeSelectionHsvLabel,
-                                    ),
-                                    (
-                                        Text::new(""),
-                                        TextFont {
-                                            font: font.clone().into(),
-                                            font_size: FontSize::Px(12.0),
-                                            ..default()
-                                        },
-                                        TextColor(COLOR_TEXT_MAIN),
-                                        ThemeSelectionHexLabel,
-                                    ),
-                                ],
-                            ),
-                        ],
-                    ),
-                    (
-                        Node {
-                            flex_direction: FlexDirection::Row,
-                            column_gap: px(8.0),
-                            margin: UiRect::top(px(8.0)),
-                            ..default()
-                        },
-                        children![
-                            settings_action_button(
-                                font.clone(),
-                                "Back to settings",
-                                SettingsAction::BackToSettings,
-                            ),
-                            settings_action_button(
-                                font.clone(),
-                                "Back to editor",
-                                SettingsAction::BackToEditor,
-                            ),
-                        ],
-                    ),
-                ],
             ));
 
             root.spawn((
@@ -1135,12 +980,6 @@ pub(crate) fn settings_toggle_button(font: Handle<Font>, action: SettingsAction)
     )
 }
 
-pub(crate) fn theme_only_setting_button(font: Handle<Font>, action: SettingsAction) -> impl Bundle {
-    (
-        settings_toggle_button(font, action),
-        ThemeOnlySettingControl,
-    )
-}
 
 pub(crate) fn settings_action_button(
     font: Handle<Font>,
@@ -1386,73 +1225,116 @@ pub(crate) fn margin_setting_row(
     )
 }
 
+pub(crate) fn theme_overlay_tab_button(
+    font: Handle<Font>,
+    label: &str,
+    category: ThemeCategory,
+) -> impl Bundle {
+    (
+        Button,
+        ThemeOverlayTabButton(category),
+        Node {
+            flex_grow: 1.0,
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            padding: UiRect::axes(px(6.0), px(4.0)),
+            border_radius: BorderRadius::all(px(3.0)),
+            ..default()
+        },
+        BackgroundColor(BUTTON_NORMAL),
+        children![(
+            Text::new(label),
+            TextFont {
+                font: font.into(),
+                font_size: FontSize::Px(11.0),
+                ..default()
+            },
+            TextColor(COLOR_TEXT_MAIN),
+        )],
+    )
+}
+
 pub(crate) fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> impl Bundle {
     (
         Node {
+            width: percent(100.0),
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
-            column_gap: px(10.0),
+            justify_content: JustifyContent::SpaceBetween,
+            padding: UiRect::axes(px(4.0), px(2.0)),
             ..default()
         },
         ThemeColorRow { target },
         children![
             (
-                Text::new(""),
-                TextFont {
-                    font: font.clone().into(),
-                    font_size: FontSize::Px(13.0),
-                    ..default()
-                },
-                TextColor(COLOR_TEXT_MAIN),
-                ThemeColorNameLabel { target },
-                Node {
-                    width: px(170.0),
-                    ..default()
-                },
-            ),
-            (
-                Text::new(""),
-                TextFont {
-                    font: font.clone().into(),
-                    font_size: FontSize::Px(13.0),
-                    ..default()
-                },
-                TextColor(COLOR_TEXT_MAIN),
-                ThemeColorValueLabel { target },
-                Node {
-                    width: px(220.0),
-                    ..default()
-                },
-            ),
-            (
-                Button,
-                ThemeColorPickerButton { target },
                 Node {
                     flex_direction: FlexDirection::Row,
                     align_items: AlignItems::Center,
                     column_gap: px(8.0),
-                    padding: UiRect::axes(px(10.0), px(6.0)),
+                    flex_grow: 1.0,
                     ..default()
                 },
-                BackgroundColor(BUTTON_NORMAL),
                 children![
                     (
                         Node {
                             width: px(14.0),
                             height: px(14.0),
+                            border: UiRect::all(px(1.0)),
+                            border_radius: BorderRadius::all(px(2.0)),
                             ..default()
                         },
+                        BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.25)),
                         BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
                         ThemeColorPreviewSwatch { target },
                     ),
                     (
-                        Text::new("Pick"),
+                        Text::new(""),
                         TextFont {
-                            font: font.into(),
-                            font_size: FontSize::Px(13.0),
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(12.0),
                             ..default()
                         },
                         TextColor(COLOR_TEXT_MAIN),
+                        ThemeColorNameLabel { target },
+                    ),
+                ],
+            ),
+            (
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    column_gap: px(6.0),
+                    ..default()
+                },
+                children![
+                    (
+                        Text::new(""),
+                        TextFont {
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(11.0),
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MUTED),
+                        ThemeColorValueLabel { target },
+                    ),
+                    (
+                        Button,
+                        ThemeColorPickerButton { target },
+                        Node {
+                            padding: UiRect::axes(px(8.0), px(3.0)),
+                            border_radius: BorderRadius::all(px(3.0)),
+                            ..default()
+                        },
+                        BackgroundColor(BUTTON_NORMAL),
+                        children![(
+                            Text::new("Pick"),
+                            TextFont {
+                                font: font.into(),
+                                font_size: FontSize::Px(11.0),
+                                ..default()
+                            },
+                            TextColor(COLOR_TEXT_MAIN),
+                        )],
                     ),
                 ],
             ),
@@ -1463,42 +1345,82 @@ pub(crate) fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> i
 pub(crate) fn theme_link_hover_setting_row(font: Handle<Font>) -> impl Bundle {
     (
         Node {
+            width: percent(100.0),
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
-            column_gap: px(10.0),
+            justify_content: JustifyContent::SpaceBetween,
+            padding: UiRect::axes(px(4.0), px(2.0)),
             ..default()
         },
         ThemeLinkHoverSettingRow,
         children![
             (
-                Text::new("Link hover HSV value"),
+                Text::new("Hover HSV adjustment"),
                 TextFont {
                     font: font.clone().into(),
-                    font_size: FontSize::Px(13.0),
+                    font_size: FontSize::Px(12.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
-                Node {
-                    width: px(170.0),
-                    ..default()
-                },
             ),
-            settings_action_button(font.clone(), "-", SettingsAction::LinkHoverHsvValueDecrease,),
             (
-                Text::new(""),
-                TextFont {
-                    font: font.clone().into(),
-                    font_size: FontSize::Px(13.0),
-                    ..default()
-                },
-                TextColor(COLOR_TEXT_MAIN),
-                ThemeLinkHoverValueLabel,
                 Node {
-                    width: px(220.0),
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    column_gap: px(6.0),
                     ..default()
                 },
+                children![
+                    (
+                        Button,
+                        SettingsAction::LinkHoverHsvValueDecrease,
+                        Node {
+                            padding: UiRect::axes(px(7.0), px(2.0)),
+                            border_radius: BorderRadius::all(px(3.0)),
+                            ..default()
+                        },
+                        BackgroundColor(BUTTON_NORMAL),
+                        children![(
+                            Text::new("-"),
+                            TextFont {
+                                font: font.clone().into(),
+                                font_size: FontSize::Px(12.0),
+                                ..default()
+                            },
+                            TextColor(COLOR_TEXT_MAIN),
+                        )],
+                    ),
+                    (
+                        Text::new(""),
+                        TextFont {
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(11.0),
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MAIN),
+                        ThemeLinkHoverValueLabel,
+                    ),
+                    (
+                        Button,
+                        SettingsAction::LinkHoverHsvValueIncrease,
+                        Node {
+                            padding: UiRect::axes(px(7.0), px(2.0)),
+                            border_radius: BorderRadius::all(px(3.0)),
+                            ..default()
+                        },
+                        BackgroundColor(BUTTON_NORMAL),
+                        children![(
+                            Text::new("+"),
+                            TextFont {
+                                font: font.into(),
+                                font_size: FontSize::Px(12.0),
+                                ..default()
+                            },
+                            TextColor(COLOR_TEXT_MAIN),
+                        )],
+                    ),
+                ],
             ),
-            settings_action_button(font, "+", SettingsAction::LinkHoverHsvValueIncrease),
         ],
     )
 }
@@ -1507,19 +1429,44 @@ pub(crate) fn format_hsv_value_adjustment_label(value: f32) -> String {
     format!("{:+.1}%", value * 100.0)
 }
 
+pub(crate) fn theme_glass_toggle_button(font: Handle<Font>, action: SettingsAction) -> impl Bundle {
+    (
+        Button,
+        action,
+        Node {
+            width: percent(100.0),
+            justify_content: JustifyContent::Center,
+            padding: UiRect::axes(px(8.0), px(5.0)),
+            border_radius: BorderRadius::all(px(3.0)),
+            ..default()
+        },
+        BackgroundColor(BUTTON_NORMAL),
+        children![(
+            Text::new(""),
+            TextFont {
+                font: font.into(),
+                font_size: FontSize::Px(12.0),
+                ..default()
+            },
+            TextColor(COLOR_TEXT_MAIN),
+            SettingToggleLabel { action },
+        )],
+    )
+}
+
 pub(crate) fn theme_visual_picker(font: Handle<Font>, hue_sat_wheel: Handle<Image>) -> impl Bundle {
     (
         Node {
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Start,
-            column_gap: px(12.0),
+            column_gap: px(8.0),
             ..default()
         },
         children![
             (
                 Node {
-                    width: px(THEME_COLOR_WHEEL_SIZE),
-                    height: px(THEME_COLOR_WHEEL_SIZE),
+                    width: px(THEME_OVERLAY_WHEEL_SIZE),
+                    height: px(THEME_OVERLAY_WHEEL_SIZE),
                     position_type: PositionType::Relative,
                     flex_shrink: 0.0,
                     ..default()
@@ -1534,8 +1481,8 @@ pub(crate) fn theme_visual_picker(font: Handle<Font>, hue_sat_wheel: Handle<Imag
                         height: px(10.0),
                         border: UiRect::all(px(1.0)),
                         border_radius: BorderRadius::MAX,
-                        left: px((THEME_COLOR_WHEEL_SIZE - 10.0) * 0.5),
-                        top: px((THEME_COLOR_WHEEL_SIZE - 10.0) * 0.5),
+                        left: px((THEME_OVERLAY_WHEEL_SIZE - 10.0) * 0.5),
+                        top: px((THEME_OVERLAY_WHEEL_SIZE - 10.0) * 0.5),
                         ..default()
                     },
                     BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
@@ -1546,18 +1493,18 @@ pub(crate) fn theme_visual_picker(font: Handle<Font>, hue_sat_wheel: Handle<Imag
             (
                 Node {
                     flex_direction: FlexDirection::Column,
-                    row_gap: px(6.0),
+                    row_gap: px(3.0),
                     flex_shrink: 0.0,
                     ..default()
                 },
                 children![
                     theme_color_slider_row(font.clone(), "Hue", ThemeSliderChannel::Hue),
                     theme_color_slider_row(font.clone(), "Sat", ThemeSliderChannel::Saturation,),
-                    theme_color_slider_row(font.clone(), "Value", ThemeSliderChannel::Value),
+                    theme_color_slider_row(font.clone(), "Val", ThemeSliderChannel::Value),
                     theme_color_slider_row(font.clone(), "Red", ThemeSliderChannel::Red),
-                    theme_color_slider_row(font.clone(), "Green", ThemeSliderChannel::Green),
-                    theme_color_slider_row(font.clone(), "Blue", ThemeSliderChannel::Blue),
-                    theme_color_slider_row(font.clone(), "Alpha", ThemeSliderChannel::Alpha),
+                    theme_color_slider_row(font.clone(), "Grn", ThemeSliderChannel::Green),
+                    theme_color_slider_row(font.clone(), "Blu", ThemeSliderChannel::Blue),
+                    theme_color_slider_row(font.clone(), "Alf", ThemeSliderChannel::Alpha),
                 ],
             )
         ],
@@ -1573,7 +1520,7 @@ pub(crate) fn theme_color_slider_row(
         Node {
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
-            column_gap: px(8.0),
+            column_gap: px(6.0),
             ..default()
         },
         children![
@@ -1581,18 +1528,18 @@ pub(crate) fn theme_color_slider_row(
                 Text::new(label),
                 TextFont {
                     font: font.clone().into(),
-                    font_size: FontSize::Px(12.0),
+                    font_size: FontSize::Px(11.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
                 Node {
-                    width: px(40.0),
+                    width: px(26.0),
                     ..default()
                 },
             ),
             (
                 Node {
-                    width: px(THEME_COLOR_SLIDER_WIDTH),
+                    width: px(THEME_OVERLAY_SLIDER_WIDTH),
                     height: px(THEME_COLOR_SLIDER_HEIGHT),
                     position_type: PositionType::Relative,
                     flex_shrink: 0.0,
@@ -1618,7 +1565,7 @@ pub(crate) fn theme_color_slider_row(
                 Text::new(""),
                 TextFont {
                     font: font.into(),
-                    font_size: FontSize::Px(12.0),
+                    font_size: FontSize::Px(11.0),
                     ..default()
                 },
                 TextColor(COLOR_TEXT_MAIN),
@@ -1634,12 +1581,273 @@ pub(crate) fn theme_color_slider_row(
                     },
                 },
                 Node {
-                    width: px(44.0),
+                    width: px(34.0),
                     ..default()
                 },
             ),
         ],
     )
+}
+
+pub(crate) fn theme_overlay_container_bundle(
+    font: Handle<Font>,
+    hue_sat_wheel: Handle<Image>,
+) -> impl Bundle {
+    (
+        Node {
+            width: px(380.0),
+            display: Display::None,
+            flex_direction: FlexDirection::Column,
+            row_gap: px(8.0),
+            padding: UiRect::all(px(10.0)),
+            border_radius: BorderRadius::all(px(6.0)),
+            border: UiRect::all(px(1.0)),
+            ..default()
+        },
+        BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.2)),
+        BackgroundColor(Color::srgb(0.92, 0.93, 0.95)),
+        RelativeCursorPosition::default(),
+        ThemeOverlayContainer,
+        children![
+            (
+                Node {
+                    width: percent(100.0),
+                    flex_direction: FlexDirection::Row,
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                children![
+                    (
+                        Text::new("Theme Options"),
+                        TextFont {
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(13.0),
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MAIN),
+                    ),
+                    (
+                        Button,
+                        ThemeOverlayOkButton,
+                        Node {
+                            padding: UiRect::axes(px(12.0), px(4.0)),
+                            border_radius: BorderRadius::all(px(4.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.24, 0.52, 0.92)),
+                        children![(
+                            Text::new("OK"),
+                            TextFont {
+                                font: font.clone().into(),
+                                font_size: FontSize::Px(12.0),
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        )],
+                    ),
+                ],
+            ),
+            (
+                Node {
+                    width: percent(100.0),
+                    flex_direction: FlexDirection::Row,
+                    column_gap: px(4.0),
+                    ..default()
+                },
+                children![
+                    theme_overlay_tab_button(font.clone(), "Colors", ThemeCategory::Theme),
+                    theme_overlay_tab_button(font.clone(), "Links", ThemeCategory::Links),
+                    theme_overlay_tab_button(font.clone(), "Glass", ThemeCategory::Glass),
+                ],
+            ),
+            (
+                Node {
+                    width: percent(100.0),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(4.0),
+                    ..default()
+                },
+                ThemeCategorySection(ThemeCategory::Theme),
+                children![
+                    theme_color_row(font.clone(), ThemeColorTarget::AppBackground),
+                    theme_color_row(font.clone(), ThemeColorTarget::TopMenuBackground),
+                    theme_color_row(font.clone(), ThemeColorTarget::ExplorerBackground),
+                    theme_color_row(font.clone(), ThemeColorTarget::ProcessedBackground),
+                    theme_color_row(font.clone(), ThemeColorTarget::SelectionBackground),
+                ],
+            ),
+            (
+                Node {
+                    width: percent(100.0),
+                    display: Display::None,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(4.0),
+                    ..default()
+                },
+                ThemeCategorySection(ThemeCategory::Links),
+                children![
+                    theme_color_row(font.clone(), ThemeColorTarget::LinkFallback),
+                    theme_color_row(font.clone(), ThemeColorTarget::LinkCharacter),
+                    theme_color_row(font.clone(), ThemeColorTarget::LinkPlace),
+                    theme_color_row(font.clone(), ThemeColorTarget::LinkProp),
+                    theme_color_row(font.clone(), ThemeColorTarget::LinkFaction),
+                    theme_color_row(font.clone(), ThemeColorTarget::LinkConcept),
+                    theme_link_hover_setting_row(font.clone()),
+                ],
+            ),
+            (
+                Node {
+                    width: percent(100.0),
+                    display: Display::None,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(4.0),
+                    ..default()
+                },
+                ThemeCategorySection(ThemeCategory::Glass),
+                children![
+                    theme_glass_toggle_button(font.clone(), SettingsAction::ToggleProcessedGlass),
+                    theme_glass_toggle_button(font.clone(), SettingsAction::ToggleExplorerGlass),
+                    theme_glass_toggle_button(font.clone(), SettingsAction::ToggleSettingsGlass),
+                ],
+            ),
+            (
+                Node {
+                    width: percent(100.0),
+                    display: Display::None,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(6.0),
+                    padding: UiRect::all(px(8.0)),
+                    border_radius: BorderRadius::all(px(4.0)),
+                    border: UiRect::all(px(1.0)),
+                    ..default()
+                },
+                BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.12)),
+                BackgroundColor(Color::srgb(0.86, 0.88, 0.90)),
+                ThemeColorPickerPanel,
+                children![
+                    (
+                        Text::new(""),
+                        TextFont {
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(12.0),
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MAIN),
+                        ThemeScreenTitleLabel,
+                    ),
+                    theme_visual_picker(font.clone(), hue_sat_wheel),
+                    (
+                        Node {
+                            width: percent(100.0),
+                            flex_direction: FlexDirection::Row,
+                            justify_content: JustifyContent::SpaceBetween,
+                            ..default()
+                        },
+                        children![
+                            (
+                                Text::new(""),
+                                TextFont {
+                                    font: font.clone().into(),
+                                    font_size: FontSize::Px(11.0),
+                                    ..default()
+                                },
+                                TextColor(COLOR_TEXT_MUTED),
+                                ThemeSelectionRgbLabel,
+                            ),
+                            (
+                                Text::new(""),
+                                TextFont {
+                                    font: font.clone().into(),
+                                    font_size: FontSize::Px(11.0),
+                                    ..default()
+                                },
+                                TextColor(COLOR_TEXT_MUTED),
+                                ThemeSelectionHsvLabel,
+                            ),
+                            (
+                                Text::new(""),
+                                TextFont {
+                                    font: font.clone().into(),
+                                    font_size: FontSize::Px(11.0),
+                                    ..default()
+                                },
+                                TextColor(COLOR_TEXT_MAIN),
+                                ThemeSelectionHexLabel,
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+}
+
+pub(crate) fn style_theme_overlay_ok_button(
+    mut query: Query<
+        (&Interaction, &mut BackgroundColor),
+        (Changed<Interaction>, With<ThemeOverlayOkButton>),
+    >,
+) {
+    for (interaction, mut color) in query.iter_mut() {
+        color.0 = match *interaction {
+            Interaction::Pressed => Color::srgb(0.18, 0.42, 0.78),
+            Interaction::Hovered => Color::srgb(0.32, 0.60, 0.98),
+            Interaction::None => Color::srgb(0.24, 0.52, 0.92),
+        };
+    }
+}
+
+pub(crate) fn handle_theme_overlay_buttons(
+    keys: Res<ButtonInput<KeyCode>>,
+    ok_query: Query<&Interaction, (Changed<Interaction>, With<ThemeOverlayOkButton>)>,
+    tab_query: Query<(&Interaction, &ThemeOverlayTabButton), (Changed<Interaction>, With<Button>)>,
+    mut state: ResMut<EditorState>,
+) {
+    if keys.just_pressed(KeyCode::Escape) && state.theme_overlay_open {
+        state.theme_overlay_open = false;
+        state.theme_color_picker_open = false;
+        let theme = theme_settings_from_state(&state);
+        let _ = save_theme_settings(&theme);
+        state.status_message = "Theme closed.".to_string();
+        return;
+    }
+
+    for interaction in ok_query.iter() {
+        if *interaction == Interaction::Pressed {
+            state.theme_overlay_open = false;
+            state.theme_color_picker_open = false;
+            let theme = theme_settings_from_state(&state);
+            if let Err(error) = save_theme_settings(&theme) {
+                state.status_message = format!("Theme save failed: {error}");
+            } else {
+                state.status_message = "Theme saved.".to_string();
+            }
+        }
+    }
+
+    for (interaction, tab) in tab_query.iter() {
+        if *interaction == Interaction::Pressed {
+            state.theme_category = tab.0;
+            match tab.0 {
+                ThemeCategory::Theme => {
+                    if state.theme_color_target.is_link_color() {
+                        state.theme_color_target = ThemeColorTarget::AppBackground;
+                    }
+                }
+                ThemeCategory::Links => {
+                    if !state.theme_color_target.is_link_color() {
+                        state.theme_color_target = ThemeColorTarget::LinkFallback;
+                    }
+                }
+                ThemeCategory::Glass => {
+                    state.theme_color_picker_open = false;
+                }
+            }
+        }
+    }
 }
 
 pub(crate) fn panel_splitter_bundle(kind: PanelSplitter) -> impl Bundle {
@@ -1655,7 +1863,11 @@ pub(crate) fn panel_splitter_bundle(kind: PanelSplitter) -> impl Bundle {
     )
 }
 
-pub(crate) fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
+pub(crate) fn panel_bundle(
+    font: Handle<Font>,
+    hue_sat_wheel: Handle<Image>,
+    kind: PanelKind,
+) -> impl Bundle {
     let body_color = match kind {
         PanelKind::Plain => COLOR_PANEL_BODY_PLAIN,
         PanelKind::Processed => COLOR_PANEL_BODY_PROCESSED,
@@ -1761,7 +1973,7 @@ pub(crate) fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
                         )
                     ],
                 ),
-                processed_overlay_toggle_group_bundle(font.clone(), kind),
+                processed_overlay_toggle_group_bundle(font.clone(), hue_sat_wheel, kind),
             ],
         )],
     )
@@ -1769,6 +1981,7 @@ pub(crate) fn panel_bundle(font: Handle<Font>, kind: PanelKind) -> impl Bundle {
 
 pub(crate) fn processed_overlay_toggle_group_bundle(
     font: Handle<Font>,
+    hue_sat_wheel: Handle<Image>,
     kind: PanelKind,
 ) -> impl Bundle {
     (
@@ -1791,6 +2004,7 @@ pub(crate) fn processed_overlay_toggle_group_bundle(
         },
         ZIndex(20),
         children![
+            theme_overlay_container_bundle(font.clone(), hue_sat_wheel),
             processed_overlay_toggle_button(
                 font.clone(),
                 "Links: colored",
@@ -2104,7 +2318,7 @@ pub(crate) fn sync_processed_overlay_toggle_group(
     for (toggle, computed, mut spring, mut node, mut z_index) in toggle_query.iter_mut() {
         let Some(panel_size) = processed_panel_size.filter(|_| {
             toggle.kind == PanelKind::Processed
-                && state.document_format != DocumentFormat::Canvas
+                && (state.theme_overlay_open || state.document_format != DocumentFormat::Canvas)
                 && state.right_buttons_visible
         }) else {
             node.display = Display::None;
@@ -2116,7 +2330,8 @@ pub(crate) fn sync_processed_overlay_toggle_group(
         let geometry = processed_page_geometry(panel_size, &state);
         let page_right =
             geometry.paper_left + geometry.paper_width - state.processed_horizontal_scroll;
-        let toggle_width = (computed.size().x * computed.inverse_scale_factor()).max(116.0);
+        let toggle_width = (computed.size().x * computed.inverse_scale_factor())
+            .max(if state.theme_overlay_open { 380.0 } else { 116.0 });
         let toggle_height = (computed.size().y * computed.inverse_scale_factor()).max(30.0);
         let base_x = (panel_size.x - toggle_width - 10.0).max(0.0);
         let page_border_offset = page_right - base_x;
@@ -2129,6 +2344,20 @@ pub(crate) fn sync_processed_overlay_toggle_group(
         };
 
         node.display = Display::Flex;
+        if state.theme_overlay_open {
+            spring.phase = ProcessedOverlayTogglePhase::Idle;
+            spring.offset_x = 0.0;
+            spring.velocity_x = 0.0;
+            spring.velocity_y = 0.0;
+            spring.touching_page = false;
+            spring.initialized = true;
+            spring.previous_page_right = page_right;
+            node.left = px(base_x);
+            node.top = px(10.0);
+            *z_index = ZIndex(25);
+            continue;
+        }
+
         if !spring.initialized {
             spring.phase = if touching_page {
                 ProcessedOverlayTogglePhase::ReturningUnderPage
@@ -2590,15 +2819,27 @@ pub(crate) fn handle_settings_buttons(
                 state.close_link_autocomplete();
                 state.theme_color_target = ThemeColorTarget::AppBackground;
                 state.theme_color_picker_open = false;
-                next_screen_state.set(UiScreenState::Theme);
-                state.status_message = "Opened theme.".to_string();
+                state.theme_overlay_open = true;
+                state.theme_category = ThemeCategory::Theme;
+                state.right_buttons_visible = true;
+                if state.display_mode == DisplayMode::Plain {
+                    state.display_mode = DisplayMode::Split;
+                }
+                next_screen_state.set(UiScreenState::Editor);
+                state.status_message = "Opened theme options.".to_string();
             }
             SettingsAction::OpenLinkColors => {
                 state.close_link_autocomplete();
                 state.theme_color_target = ThemeColorTarget::LinkFallback;
                 state.theme_color_picker_open = false;
-                next_screen_state.set(UiScreenState::Theme);
-                state.status_message = "Opened link colors.".to_string();
+                state.theme_overlay_open = true;
+                state.theme_category = ThemeCategory::Links;
+                state.right_buttons_visible = true;
+                if state.display_mode == DisplayMode::Plain {
+                    state.display_mode = DisplayMode::Split;
+                }
+                next_screen_state.set(UiScreenState::Editor);
+                state.status_message = "Opened link color options.".to_string();
             }
             SettingsAction::OpenKeybinds => {
                 state.close_link_autocomplete();
@@ -3508,7 +3749,6 @@ pub(crate) fn sync_theme_picker_ui(
         Query<(&ThemeColorRow, &mut Node)>,
         Query<&mut Node, With<ThemeColorPickerPanel>>,
         Query<&mut Node, With<ThemeLinkHoverSettingRow>>,
-        Query<&mut Node, With<ThemeOnlySettingControl>>,
         Query<
             (
                 &mut Node,
@@ -3517,10 +3757,13 @@ pub(crate) fn sync_theme_picker_ui(
             ),
             Or<(With<ThemeColorSliderKnob>, With<ThemeHueSatCursor>)>,
         >,
+        Query<&mut Node, With<ThemeOverlayContainer>>,
+        Query<(&ThemeCategorySection, &mut Node)>,
     )>,
     mut color_queries: ParamSet<(
         Query<(&ThemeColorPreviewSwatch, &mut BackgroundColor)>,
         Query<(&ThemeColorSlider, &mut BackgroundColor)>,
+        Query<(&ThemeOverlayTabButton, &mut BackgroundColor)>,
     )>,
     mut text_query: Query<
         (
@@ -3549,44 +3792,55 @@ pub(crate) fn sync_theme_picker_ui(
     >,
     wheel_size_query: Query<&ComputedNode, With<ThemeHueSatWheel>>,
 ) {
-    if let Ok(mut picker_panel) = node_queries.p1().single_mut() {
-        picker_panel.display =
-            if state.theme_color_picker_open && *screen_state.get() == UiScreenState::Theme {
+    for mut container in node_queries.p4().iter_mut() {
+        container.display =
+            if state.theme_overlay_open && *screen_state.get() == UiScreenState::Editor {
                 Display::Flex
             } else {
                 Display::None
             };
     }
 
-    let active_target = state.theme_color_target;
-    let active_rgba = active_theme_rgba(&state);
-    let link_colors_page = active_target.is_link_color();
-
-    for (row, mut node) in node_queries.p0().iter_mut() {
-        node.display = if row.target.is_link_color() == link_colors_page {
+    for mut picker_panel in node_queries.p1().iter_mut() {
+        picker_panel.display = if state.theme_color_picker_open
+            && state.theme_category != ThemeCategory::Glass
+            && (state.theme_overlay_open || *screen_state.get() == UiScreenState::Theme)
+        {
             Display::Flex
         } else {
             Display::None
         };
+    }
+
+    for (section, mut node) in node_queries.p5().iter_mut() {
+        node.display = if state.theme_category == section.0 {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
+    for (tab, mut bg) in color_queries.p2().iter_mut() {
+        bg.0 = if tab.0 == state.theme_category {
+            Color::srgb(0.72, 0.76, 0.84)
+        } else {
+            BUTTON_NORMAL
+        };
+    }
+
+    for (_row, mut node) in node_queries.p0().iter_mut() {
+        node.display = Display::Flex;
     }
     for mut node in node_queries.p2().iter_mut() {
-        node.display = if link_colors_page {
-            Display::Flex
-        } else {
-            Display::None
-        };
-    }
-    for mut node in node_queries.p3().iter_mut() {
-        node.display = if link_colors_page {
-            Display::None
-        } else {
-            Display::Flex
-        };
+        node.display = Display::Flex;
     }
 
     for (swatch, mut color) in color_queries.p0().iter_mut() {
         color.0 = theme_color_for_target(&state, swatch.target);
     }
+
+    let active_target = state.theme_color_target;
+    let active_rgba = active_theme_rgba(&state);
 
     let rgb = Vec3::new(active_rgba.x, active_rgba.y, active_rgba.z);
     let (hue, saturation, value) = rgb_to_hsv(rgb);
@@ -3627,10 +3881,10 @@ pub(crate) fn sync_theme_picker_ui(
 
         if let Some(value_label) = value_label {
             let rgba = theme_rgba_for_target(&state, value_label.target);
-            **text = format!(
-                "({:.3}, {:.3}, {:.3}, {:.3})",
-                rgba.x, rgba.y, rgba.z, rgba.w
-            );
+            let r = (rgba.x * 255.0).round().clamp(0.0, 255.0) as u8;
+            let g = (rgba.y * 255.0).round().clamp(0.0, 255.0) as u8;
+            let b = (rgba.z * 255.0).round().clamp(0.0, 255.0) as u8;
+            **text = format!("#{r:02X}{g:02X}{b:02X}");
             continue;
         }
 
@@ -3703,13 +3957,13 @@ pub(crate) fn sync_theme_picker_ui(
                 computed.size().y * computed.inverse_scale_factor(),
             )
         })
-        .unwrap_or(Vec2::splat(THEME_COLOR_WHEEL_SIZE));
+        .unwrap_or(Vec2::splat(THEME_OVERLAY_WHEEL_SIZE));
     let wheel_radius = wheel_size.x.min(wheel_size.y) * 0.5;
     let cursor_half = 5.0;
     let angle = hue * std::f32::consts::TAU;
     let cursor_x = angle.cos() * saturation;
     let cursor_y = angle.sin() * saturation;
-    for (mut node, slider_knob, wheel_cursor) in node_queries.p4().iter_mut() {
+    for (mut node, slider_knob, wheel_cursor) in node_queries.p3().iter_mut() {
         if let Some(knob) = slider_knob {
             let t = match knob.channel {
                 ThemeSliderChannel::Hue => hue,
@@ -3721,7 +3975,7 @@ pub(crate) fn sync_theme_picker_ui(
                 ThemeSliderChannel::Value => value,
             }
             .clamp(0.0, 1.0);
-            node.left = px((THEME_COLOR_SLIDER_WIDTH - THEME_COLOR_SLIDER_KNOB_WIDTH) * t);
+            node.left = px((THEME_OVERLAY_SLIDER_WIDTH - THEME_COLOR_SLIDER_KNOB_WIDTH) * t);
             node.top = px(0.0);
             continue;
         }

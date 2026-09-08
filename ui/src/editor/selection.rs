@@ -50,8 +50,12 @@ pub(crate) fn handle_mouse_selection(
             With<ProcessedLinkColorToggle>,
             With<ProcessedPaginationToggle>,
             With<FormattingMarksToggle>,
+            With<StatusLineToggle>,
+            With<ThemeOverlayOkButton>,
+            With<ThemeColorPickerButton>,
         )>,
     >,
+    theme_overlay_query: Query<&RelativeCursorPosition, With<ThemeOverlayContainer>>,
     text_layout_query: Query<(&PanelText, &ComputedTextBlock)>,
     processed_text_layout_query: Query<
         (&ProcessedPaperText, &ComputedTextBlock, &ComputedNode),
@@ -75,6 +79,10 @@ pub(crate) fn handle_mouse_selection(
         return;
     }
     if markdown_metadata_hovered(&metadata_query) {
+        mouse_selection.active = false;
+        return;
+    }
+    if theme_overlay_query.iter().any(|rel| rel.cursor_over()) {
         mouse_selection.active = false;
         return;
     }

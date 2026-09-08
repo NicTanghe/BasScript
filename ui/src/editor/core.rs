@@ -50,10 +50,10 @@ pub(crate) const PAGE_TEXT_MARGIN_BOTTOM: f32 = 30.0;
 pub(crate) const PAGE_GAP: f32 = 24.0;
 pub(crate) const PAGE_MARGIN_STEP: f32 = 8.0;
 pub(crate) const THEME_COLOR_WHEEL_SIZE_PX: u32 = 192;
-pub(crate) const THEME_COLOR_WHEEL_SIZE: f32 = THEME_COLOR_WHEEL_SIZE_PX as f32;
-pub(crate) const THEME_COLOR_SLIDER_WIDTH: f32 = 180.0;
 pub(crate) const THEME_COLOR_SLIDER_HEIGHT: f32 = 14.0;
 pub(crate) const THEME_COLOR_SLIDER_KNOB_WIDTH: f32 = 8.0;
+pub(crate) const THEME_OVERLAY_WHEEL_SIZE: f32 = 136.0;
+pub(crate) const THEME_OVERLAY_SLIDER_WIDTH: f32 = 110.0;
 pub(crate) const LINK_HOVER_HSV_VALUE_STEP: f32 = 0.02;
 pub(crate) const LINK_HOVER_HSV_VALUE_MAX: f32 = 0.50;
 pub(crate) const PROCESSED_LINE_SPAN_PARTS: usize = 24;
@@ -248,7 +248,8 @@ impl Plugin for UiPlugin {
                 .run_if(
                     in_state(UiScreenState::Settings)
                         .or_else(in_state(UiScreenState::Keybinds))
-                        .or_else(in_state(UiScreenState::Theme)),
+                        .or_else(in_state(UiScreenState::Theme))
+                        .or_else(|state: Res<EditorState>| state.theme_overlay_open),
                 ),
         );
         app.add_systems(
@@ -264,9 +265,13 @@ impl Plugin for UiPlugin {
             (
                 handle_theme_color_picker_buttons,
                 handle_theme_color_picker_input,
+                handle_theme_overlay_buttons,
             )
                 .in_set(EditorSystemSet::Input)
-                .run_if(in_state(UiScreenState::Theme)),
+                .run_if(
+                    in_state(UiScreenState::Theme)
+                        .or_else(|state: Res<EditorState>| state.theme_overlay_open),
+                ),
         );
         app.add_systems(
             Update,
@@ -316,6 +321,7 @@ impl Plugin for UiPlugin {
             Update,
             (
                 style_toolbar_buttons,
+                style_theme_overlay_ok_button,
                 style_workspace_file_entry_text,
                 sync_workspace_prompt_ui,
                 sync_workspace_link_prompt_folder_options.before(sync_workspace_prompt_ui),
@@ -516,6 +522,26 @@ pub(crate) struct ProcessedPaginationToggleLabel;
 
 #[derive(Component)]
 pub(crate) struct FormattingMarksToggleLabel;
+
+#[derive(Component)]
+pub(crate) struct ThemeOverlayContainer;
+
+#[derive(Component)]
+pub(crate) struct ThemeOverlayOkButton;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub(crate) enum ThemeCategory {
+    #[default]
+    Theme,
+    Links,
+    Glass,
+}
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ThemeOverlayTabButton(pub(crate) ThemeCategory);
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ThemeCategorySection(pub(crate) ThemeCategory);
 
 #[derive(Resource, Default)]
 pub(crate) struct DocumentNavigationInputCapture {
@@ -1099,9 +1125,6 @@ pub(crate) struct ThemeScreenRoot;
 #[derive(Component)]
 pub(crate) struct TopMenuSection;
 
-#[derive(Component)]
-pub(crate) struct ThemeOnlySettingControl;
-
 pub(crate) fn window_surface_border_radius(show_system_titlebar: bool) -> BorderRadius {
     let radius = if show_system_titlebar {
         0.0
@@ -1495,6 +1518,8 @@ pub(crate) struct EditorState {
     pub(crate) link_hover_hsv_value_adjustment: f32,
     pub(crate) theme_color_target: ThemeColorTarget,
     pub(crate) theme_color_picker_open: bool,
+    pub(crate) theme_overlay_open: bool,
+    pub(crate) theme_category: ThemeCategory,
     pub(crate) show_system_titlebar: bool,
     pub(crate) caret_blink: Timer,
     pub(crate) caret_visible: bool,
@@ -2265,6 +2290,8 @@ impl FromWorld for EditorState {
                 .link_hover_hsv_value_adjustment_clamped(),
             theme_color_target: ThemeColorTarget::AppBackground,
             theme_color_picker_open: false,
+            theme_overlay_open: false,
+            theme_category: ThemeCategory::Theme,
             show_system_titlebar: settings.show_system_titlebar,
             caret_blink: Timer::from_seconds(0.5, TimerMode::Repeating),
             caret_visible: true,

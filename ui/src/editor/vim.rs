@@ -32,6 +32,7 @@ pub(crate) fn handle_vim_input(
         || state.command_menu.is_some()
         || state.markdown_metadata_input_active()
         || state.story_query_sheet.open
+        || state.theme_overlay_open
         || state.workspace_focused
     {
         reset_vim_repeat(&mut repeat);

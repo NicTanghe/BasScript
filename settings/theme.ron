@@ -1,6 +1,6 @@
 (
-	app_background: (0.885, 0.901, 0.898, 1.000),
-	top_menu_background: (0.891, 0.907, 0.904, 1.000),
+	app_background: (0.796, 0.891, 0.901, 1.000),
+	top_menu_background: (0.851, 0.878, 0.869, 1.000),
 	explorer_background: (0.860, 0.870, 0.890, 1.000),
 	processed_background: (0.536, 0.545, 0.570, 1.000),
 	selection_background: (0.517, 0.680, 1.000, 0.558),

@@ -17,6 +17,7 @@ pub(crate) fn handle_text_input(
         || state.command_menu.is_some()
         || state.markdown_metadata_input_active()
         || state.story_query_sheet.open
+        || state.theme_overlay_open
         || state.document_format == DocumentFormat::Canvas
         || (state.vim_enabled && state.vim_mode != VimMode::Insert)
     {

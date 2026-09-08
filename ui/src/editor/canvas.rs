@@ -1019,6 +1019,7 @@ pub(crate) fn handle_canvas_text_edit_input(
     if state.workspace_prompt.is_some()
         || state.command_menu.is_some()
         || state.story_query_sheet.open
+        || state.theme_overlay_open
     {
         state.close_link_autocomplete();
         return;

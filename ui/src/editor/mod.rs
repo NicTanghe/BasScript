@@ -93,6 +93,8 @@ mod dialogs;
 use dialogs::*;
 #[cfg(test)]
 mod glass_tests;
+#[cfg(test)]
+mod theme_overlay_tests;
 #[cfg(target_os = "linux")]
 mod linux_glass;
 mod pdf_export;

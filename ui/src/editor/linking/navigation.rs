@@ -750,6 +750,7 @@ pub(crate) fn handle_document_navigation_history(
         || state.command_menu.is_some()
         || state.markdown_metadata_input_active()
         || state.story_query_sheet.open
+        || state.theme_overlay_open
         || state.workspace_focused
         || middle_autoscroll.is_active()
         || (state.vim_enabled && state.vim_mode != VimMode::Normal)
