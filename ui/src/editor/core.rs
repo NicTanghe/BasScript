@@ -320,7 +320,7 @@ impl Plugin for UiPlugin {
                 sync_workspace_prompt_ui,
                 sync_workspace_link_prompt_folder_options.before(sync_workspace_prompt_ui),
                 sync_window_chrome,
-                sync_glass_surfaces,
+                sync_glass_surfaces.after(sync_window_chrome),
                 sync_top_menu_visibility,
                 sync_status_line_visibility,
                 sync_rounded_window_surfaces.after(sync_status_line_visibility),
@@ -1605,6 +1605,8 @@ pub(crate) struct DialogState {
 
 #[derive(Resource, Default)]
 pub(crate) struct NativeGlassState {
+    // Allows translucent UI surfaces. On Linux the compositor decides whether
+    // a blur request is honored; transparency alone is still usable.
     pub(crate) active: bool,
     pub(crate) initialized: bool,
 }
@@ -2323,7 +2325,6 @@ impl FromWorld for EditorState {
 }
 
 impl EditorState {
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
     pub(crate) fn any_glass_enabled(&self) -> bool {
         self.processed_glass || self.explorer_glass || self.settings_glass
     }

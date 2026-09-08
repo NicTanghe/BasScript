@@ -3061,12 +3061,17 @@ pub(crate) fn sync_glass_surfaces(
     let settings_glass_active = state.settings_glass && native_glass_state.active;
 
     if let Ok(mut color) = color_queries.p0().single_mut() {
-        color.0 = state.app_bg_color;
+        // Every ancestor must let alpha through or the desktop remains hidden.
+        color.0 = if state.any_glass_enabled() && native_glass_state.active {
+            Color::NONE
+        } else {
+            state.app_bg_color
+        };
     }
 
     if let Ok(mut color) = color_queries.p1().single_mut() {
         color.0 = if settings_glass_active {
-            Color::NONE
+            glass_surface_tint(state.top_menu_bg_color)
         } else {
             state.top_menu_bg_color
         };
@@ -3074,7 +3079,7 @@ pub(crate) fn sync_glass_surfaces(
 
     if let Ok(mut color) = color_queries.p2().single_mut() {
         color.0 = if state.explorer_glass && native_glass_state.active {
-            Color::NONE
+            glass_surface_tint(state.explorer_bg_color)
         } else {
             state.explorer_bg_color
         };
@@ -3086,7 +3091,7 @@ pub(crate) fn sync_glass_surfaces(
 
     for mut color in color_queries.p7().iter_mut() {
         color.0 = if settings_glass_active {
-            Color::NONE
+            glass_surface_tint(state.app_bg_color)
         } else {
             state.app_bg_color
         };
@@ -3105,7 +3110,9 @@ pub(crate) fn sync_glass_surfaces(
             PanelKind::Processed if state.document_format == DocumentFormat::Canvas => {
                 COLOR_CANVAS_BG
             }
-            PanelKind::Processed if processed_glass_active => Color::NONE,
+            PanelKind::Processed if processed_glass_active => {
+                glass_surface_tint(state.processed_bg_color)
+            }
             PanelKind::Processed => state.processed_bg_color,
         };
     }
@@ -3116,6 +3123,19 @@ pub(crate) fn sync_glass_surfaces(
             PanelKind::Processed => COLOR_PAPER,
             PanelKind::Plain => COLOR_PAPER,
         };
+    }
+}
+
+fn glass_surface_tint(_theme_color: Color) -> Color {
+    // Windows acrylic and macOS vibrancy supply their own material. Linux
+    // compositors supply blur only, so retain the surface's theme tint here.
+    #[cfg(target_os = "linux")]
+    {
+        _theme_color.with_alpha(_theme_color.alpha().min(0.72))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Color::NONE
     }
 }
 

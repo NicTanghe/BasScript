@@ -91,6 +91,10 @@ use scrolling_middle_autoscroll::*;
 
 mod dialogs;
 use dialogs::*;
+#[cfg(test)]
+mod glass_tests;
+#[cfg(target_os = "linux")]
+mod linux_glass;
 mod pdf_export;
 use pdf_export::*;
 mod clipboard;

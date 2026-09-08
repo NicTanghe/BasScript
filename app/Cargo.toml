@@ -11,3 +11,6 @@ dev-dynamic = ["bevy/dynamic_linking"]
 bevy.workspace = true
 basscript-ui = { path = "../ui" }
 basscript-core = { path = "../core" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+wgpu = { version = "29", default-features = false, features = ["gles"] }

@@ -136,6 +136,10 @@ application-owned code, and the obsolete vendor sources were removed.
 creation, glass surfaces, resize constraints, Canvas selection, and rendering
 without a crates.io override.
 
+Linux glass now uses an application-owned EGL initialization plugin; see
+[Desktop window glass](window-glass.md) for the implementation, compositor
+requirements and verified setup.
+
 ## Explicitly retain custom implementation
 
 The main raw/processed editor remains custom. It combines Fountain/Markdown

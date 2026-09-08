@@ -1,3 +1,5 @@
+#[cfg(target_os = "linux")]
+mod linux_renderer;
 mod reactive_rendering;
 
 use basscript_ui::UiPlugin;
@@ -6,7 +8,7 @@ use bevy::render::{
     RenderPlugin,
     settings::{Backends, WgpuSettings},
 };
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 use bevy::window::CompositeAlphaMode;
 use bevy::{
     asset::AssetPlugin,
@@ -18,7 +20,11 @@ use reactive_rendering::ReactiveRenderingPlugin;
 
 const MIN_WINDOW_WIDTH: f32 = 640.0;
 const MIN_WINDOW_HEIGHT: f32 = 360.0;
-const NATIVE_TRANSPARENT_WINDOW: bool = cfg!(any(target_os = "windows", target_os = "macos"));
+const NATIVE_TRANSPARENT_WINDOW: bool = cfg!(any(
+    target_os = "windows",
+    target_os = "macos",
+    target_os = "linux"
+));
 #[cfg(target_os = "linux")]
 const LINUX_MIN_THREAD_STACK_BYTES: &str = "8388608";
 
@@ -52,7 +58,9 @@ fn main() {
         })
         .set(WindowPlugin {
             primary_window: Some(Window {
+                name: Some("BasScript".into()),
                 decorations: false,
+                // X11 needs an ARGB visual at creation, even if glass starts disabled.
                 transparent: NATIVE_TRANSPARENT_WINDOW,
                 resize_constraints: WindowResizeConstraints {
                     min_width: MIN_WINDOW_WIDTH,
@@ -61,6 +69,12 @@ fn main() {
                 },
                 #[cfg(target_os = "windows")]
                 composite_alpha_mode: CompositeAlphaMode::PreMultiplied,
+                #[cfg(target_os = "linux")]
+                // Wgpu's EGL backend exposes Auto/Opaque, while its framebuffer
+                // blit preserves per-pixel alpha in the native ARGB window.
+                composite_alpha_mode: CompositeAlphaMode::Auto,
+                #[cfg(target_os = "macos")]
+                composite_alpha_mode: CompositeAlphaMode::PostMultiplied,
                 ..default()
             }),
             ..default()
@@ -74,6 +88,11 @@ fn main() {
         .into(),
         ..default()
     });
+
+    #[cfg(target_os = "linux")]
+    let default_plugins = default_plugins
+        .add_before::<bevy::render::RenderPlugin>(linux_renderer::LinuxRendererPlugin)
+        .disable::<bevy::render::RenderPlugin>();
 
     App::new()
         .insert_resource(ClearColor(if NATIVE_TRANSPARENT_WINDOW {

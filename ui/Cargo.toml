@@ -27,3 +27,4 @@ windows-sys = { version = "=0.61.2", features = ["Win32_Graphics_Gdi"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }
 rfd = { version = "0.15", default-features = false, features = ["gtk3"] }
+x11rb = "0.13.2"

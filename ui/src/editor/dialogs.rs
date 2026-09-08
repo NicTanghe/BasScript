@@ -557,38 +557,57 @@ pub(crate) fn handle_window_shortcuts(
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) struct NativeWindowPreferences {
+    window_entity: Entity,
+    show_system_titlebar: bool,
+    glass_enabled: bool,
+    physical_size: UVec2,
+    scale_factor: f32,
+}
+
 pub(crate) fn sync_window_chrome(
+    // WINIT_WINDOWS is thread-local and populated only on the main thread.
+    _main_thread: NonSend<DialogMainThreadMarker>,
     state: Res<EditorState>,
     mut native_glass_state: ResMut<NativeGlassState>,
     mut primary_window_query: Query<(Entity, &mut Window), With<PrimaryWindow>>,
     mut window_surface_root_query: Query<&mut Node, With<WindowSurfaceRoot>>,
+    mut applied_preferences: Local<Option<NativeWindowPreferences>>,
 ) {
-    let Ok((_window_entity, mut primary_window)) = primary_window_query.single_mut() else {
+    let Ok((window_entity, mut primary_window)) = primary_window_query.single_mut() else {
         return;
     };
 
     let state_changed = state.is_changed();
     let show_system_titlebar = state.show_system_titlebar;
-    let window_changed = primary_window.is_changed();
     let decorations_changed = primary_window.decorations != show_system_titlebar;
     if decorations_changed {
         primary_window.decorations = show_system_titlebar;
     }
 
-    let should_sync_native = decorations_changed
-        || state_changed
-        || (!show_system_titlebar && window_changed)
-        || !native_glass_state.initialized;
+    let preferences = NativeWindowPreferences {
+        window_entity,
+        show_system_titlebar,
+        glass_enabled: state.any_glass_enabled(),
+        physical_size: primary_window.physical_size(),
+        scale_factor: primary_window.scale_factor(),
+    };
+    // Typing, cursor motion and theme edits also change EditorState. Native
+    // effects should only be reapplied when their actual inputs change.
+    let should_sync_native =
+        *applied_preferences != Some(preferences) || !native_glass_state.initialized;
 
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     if should_sync_native {
         if let Some(native_glass_active) = apply_native_window_preferences(
-            _window_entity,
+            window_entity,
             show_system_titlebar,
-            state.any_glass_enabled(),
-            primary_window.physical_size(),
-            primary_window.scale_factor(),
+            preferences.glass_enabled,
+            preferences.physical_size,
+            preferences.scale_factor,
         ) {
+            *applied_preferences = Some(preferences);
             native_glass_state.initialized = true;
             if native_glass_state.active != native_glass_active {
                 native_glass_state.active = native_glass_active;
@@ -596,8 +615,9 @@ pub(crate) fn sync_window_chrome(
         }
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     if should_sync_native {
+        *applied_preferences = Some(preferences);
         native_glass_state.initialized = true;
         if native_glass_state.active {
             native_glass_state.active = false;
@@ -612,7 +632,7 @@ pub(crate) fn sync_window_chrome(
     }
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 pub(crate) fn apply_native_window_preferences(
     window_entity: Entity,
     show_system_titlebar: bool,
@@ -626,6 +646,20 @@ pub(crate) fn apply_native_window_preferences(
         let Some(window) = winit_windows.get_window(window_entity) else {
             return None;
         };
+
+        #[cfg(not(target_os = "windows"))]
+        let _ = (show_system_titlebar, physical_size, scale_factor);
+
+        #[cfg(target_os = "linux")]
+        {
+            return Some(match super::linux_glass::apply(window, glass_enabled) {
+                Ok(active) => active,
+                Err(error) => {
+                    warn!("[window] Linux glass unavailable; using theme backgrounds: {error}");
+                    false
+                }
+            });
+        }
 
         #[cfg(target_os = "macos")]
         {
