@@ -19,6 +19,7 @@ pub(crate) fn render_editor(
             &mut LineHeight,
             &mut Node,
             &mut UiTransform,
+            &mut TextColor,
         ),
         (
             Without<StatusText>,
@@ -127,7 +128,7 @@ pub(crate) fn render_editor(
 
     if state.document_format == DocumentFormat::Canvas {
         maybe_center_canvas_view_after_layout(&body_query, &mut state);
-        for (_, mut text, _, _, mut node, mut transform) in text_query.iter_mut() {
+        for (_, mut text, _, _, mut node, mut transform, _) in text_query.iter_mut() {
             text.set_if_neq(Text::default());
             node.left = px(0.0);
             node.top = px(0.0);
@@ -440,11 +441,12 @@ pub(crate) fn render_editor(
 
     let plain_view = plain_lines.join("\n");
 
-    for (panel_text, mut text, mut text_font, mut line_height_comp, mut node, mut transform) in
+    for (panel_text, mut text, mut text_font, mut line_height_comp, mut node, mut transform, mut text_color) in
         text_query.iter_mut()
     {
         let next_node = match panel_text.kind {
             PanelKind::Plain => {
+                text_color.set_if_neq(TextColor(state.text_action_color));
                 sync_font_variant_to_text_font(
                     &mut text_font,
                     &resources.fonts,
@@ -884,6 +886,11 @@ pub(crate) fn default_line_render_style() -> LineRenderStyle {
     LineRenderStyle::new(FontVariant::Regular, COLOR_ACTION, 1.0, 1.0)
 }
 
+pub(crate) fn default_line_render_style_for_state(state: &EditorState) -> LineRenderStyle {
+    LineRenderStyle::new(FontVariant::Regular, state.text_action_color, 1.0, 1.0)
+}
+
+#[allow(dead_code)]
 pub(crate) fn processed_line_style(parsed_line: &ParsedLine) -> LineRenderStyle {
     processed_line_style_for_kind(&parsed_line.kind, parsed_line.markdown_heading_level)
 }
@@ -897,6 +904,16 @@ pub(crate) fn processed_line_style_for_kind(
         .unwrap_or_else(default_line_render_style)
 }
 
+pub(crate) fn processed_line_style_for_state(
+    state: &EditorState,
+    kind: &LineKind,
+    markdown_heading_level: Option<u8>,
+) -> LineRenderStyle {
+    fountain_line_style_for_state(state, kind)
+        .or_else(|| markdown_line_style_for_state(state, kind, markdown_heading_level))
+        .unwrap_or_else(|| default_line_render_style_for_state(state))
+}
+
 pub(crate) fn processed_visual_line_style_for_state(
     state: &EditorState,
     visual_line: &ProcessedVisualLine,
@@ -908,18 +925,26 @@ pub(crate) fn processed_visual_line_style_for_state(
         (transparent_line_render_style(), false)
     } else if let Some(render_override) = visual_line.render_override.as_ref() {
         (
-            processed_line_style_for_kind(
+            processed_line_style_for_state(
+                state,
                 &render_override.kind,
                 render_override.markdown_heading_level,
             ),
             true,
         )
     } else if raw_current_line_mode_active {
-        (default_line_render_style(), false)
+        (default_line_render_style_for_state(state), false)
     } else if let Some(parsed_line) = state.parsed.get(visual_line.source_line) {
-        (processed_line_style(parsed_line), true)
+        (
+            processed_line_style_for_state(
+                state,
+                &parsed_line.kind,
+                parsed_line.markdown_heading_level,
+            ),
+            true,
+        )
     } else {
-        (default_line_render_style(), false)
+        (default_line_render_style_for_state(state), false)
     }
 }
 

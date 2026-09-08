@@ -1254,6 +1254,30 @@ pub(crate) fn theme_overlay_tab_button(
     )
 }
 
+pub(crate) fn theme_preset_button(font: Handle<Font>, name: &str) -> impl Bundle {
+    (
+        Button,
+        ThemePresetButton(name.to_string()),
+        Node {
+            padding: UiRect::axes(px(8.0), px(4.0)),
+            border_radius: BorderRadius::all(px(3.0)),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        BackgroundColor(BUTTON_NORMAL),
+        children![(
+            Text::new(name),
+            TextFont {
+                font: font.into(),
+                font_size: FontSize::Px(11.0),
+                ..default()
+            },
+            TextColor(COLOR_TEXT_MAIN),
+        )],
+    )
+}
+
 pub(crate) fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> impl Bundle {
     (
         Node {
@@ -1654,13 +1678,104 @@ pub(crate) fn theme_overlay_container_bundle(
                 Node {
                     width: percent(100.0),
                     flex_direction: FlexDirection::Row,
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::axes(px(6.0), px(4.0)),
+                    border_radius: BorderRadius::all(px(4.0)),
+                    border: UiRect::all(px(1.0)),
+                    ..default()
+                },
+                BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.15)),
+                BackgroundColor(Color::srgb(0.84, 0.86, 0.89)),
+                children![
+                    (
+                        Button,
+                        ThemeSwitchPrevButton,
+                        Node {
+                            padding: UiRect::axes(px(8.0), px(3.0)),
+                            border_radius: BorderRadius::all(px(3.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(BUTTON_NORMAL),
+                        children![(
+                            Text::new("< Prev"),
+                            TextFont {
+                                font: font.clone().into(),
+                                font_size: FontSize::Px(11.0),
+                                ..default()
+                            },
+                            TextColor(COLOR_TEXT_MAIN),
+                        )],
+                    ),
+                    (
+                        Text::new("Theme: Default"),
+                        TextFont {
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(11.0),
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MAIN),
+                        ThemeCurrentNameLabel,
+                    ),
+                    (
+                        Button,
+                        ThemeSwitchNextButton,
+                        Node {
+                            padding: UiRect::axes(px(8.0), px(3.0)),
+                            border_radius: BorderRadius::all(px(3.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(BUTTON_NORMAL),
+                        children![(
+                            Text::new("Next >"),
+                            TextFont {
+                                font: font.clone().into(),
+                                font_size: FontSize::Px(11.0),
+                                ..default()
+                            },
+                            TextColor(COLOR_TEXT_MAIN),
+                        )],
+                    ),
+                    (
+                        Button,
+                        ThemeSaveButton,
+                        Node {
+                            padding: UiRect::axes(px(10.0), px(3.0)),
+                            border_radius: BorderRadius::all(px(3.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.24, 0.52, 0.92)),
+                        children![(
+                            Text::new("Save"),
+                            TextFont {
+                                font: font.clone().into(),
+                                font_size: FontSize::Px(11.0),
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        )],
+                    ),
+                ],
+            ),
+            (
+                Node {
+                    width: percent(100.0),
+                    flex_direction: FlexDirection::Row,
                     column_gap: px(4.0),
                     ..default()
                 },
                 children![
                     theme_overlay_tab_button(font.clone(), "Colors", ThemeCategory::Theme),
+                    theme_overlay_tab_button(font.clone(), "Text", ThemeCategory::Text),
                     theme_overlay_tab_button(font.clone(), "Links", ThemeCategory::Links),
                     theme_overlay_tab_button(font.clone(), "Glass", ThemeCategory::Glass),
+                    theme_overlay_tab_button(font.clone(), "Themes", ThemeCategory::Themes),
                 ],
             ),
             (
@@ -1676,7 +1791,32 @@ pub(crate) fn theme_overlay_container_bundle(
                     theme_color_row(font.clone(), ThemeColorTarget::TopMenuBackground),
                     theme_color_row(font.clone(), ThemeColorTarget::ExplorerBackground),
                     theme_color_row(font.clone(), ThemeColorTarget::ProcessedBackground),
+                    theme_color_row(font.clone(), ThemeColorTarget::PaperBackground),
                     theme_color_row(font.clone(), ThemeColorTarget::SelectionBackground),
+                ],
+            ),
+            (
+                Node {
+                    width: percent(100.0),
+                    display: Display::None,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(4.0),
+                    ..default()
+                },
+                ThemeCategorySection(ThemeCategory::Text),
+                children![
+                    theme_color_row(font.clone(), ThemeColorTarget::TextMain),
+                    theme_color_row(font.clone(), ThemeColorTarget::TextMuted),
+                    theme_color_row(font.clone(), ThemeColorTarget::TextSceneHeading),
+                    theme_color_row(font.clone(), ThemeColorTarget::TextAction),
+                    theme_color_row(font.clone(), ThemeColorTarget::TextCharacter),
+                    theme_color_row(font.clone(), ThemeColorTarget::TextDialogue),
+                    theme_color_row(font.clone(), ThemeColorTarget::TextParenthetical),
+                    theme_color_row(font.clone(), ThemeColorTarget::TextTransition),
+                    theme_color_row(font.clone(), ThemeColorTarget::TextMarkdownHeading),
+                    theme_color_row(font.clone(), ThemeColorTarget::TextMarkdownQuote),
+                    theme_color_row(font.clone(), ThemeColorTarget::TextMarkdownCode),
+                    theme_color_row(font.clone(), ThemeColorTarget::TextMarkdownRule),
                 ],
             ),
             (
@@ -1711,6 +1851,112 @@ pub(crate) fn theme_overlay_container_bundle(
                     theme_glass_toggle_button(font.clone(), SettingsAction::ToggleProcessedGlass),
                     theme_glass_toggle_button(font.clone(), SettingsAction::ToggleExplorerGlass),
                     theme_glass_toggle_button(font.clone(), SettingsAction::ToggleSettingsGlass),
+                ],
+            ),
+            (
+                Node {
+                    width: percent(100.0),
+                    display: Display::None,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(8.0),
+                    padding: UiRect::all(px(4.0)),
+                    ..default()
+                },
+                ThemeCategorySection(ThemeCategory::Themes),
+                children![
+                    (
+                        Text::new("Preset Themes:"),
+                        TextFont {
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(12.0),
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MAIN),
+                    ),
+                    (
+                        Node {
+                            width: percent(100.0),
+                            flex_direction: FlexDirection::Row,
+                            column_gap: px(6.0),
+                            ..default()
+                        },
+                        children![
+                            theme_preset_button(font.clone(), "Default"),
+                            theme_preset_button(font.clone(), "Classic"),
+                            theme_preset_button(font.clone(), "Dark"),
+                        ],
+                    ),
+                    (
+                        Text::new("Save Current Theme As:"),
+                        TextFont {
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(12.0),
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MAIN),
+                    ),
+                    (
+                        Node {
+                            width: percent(100.0),
+                            flex_direction: FlexDirection::Row,
+                            column_gap: px(6.0),
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        children![
+                            (
+                                Node {
+                                    flex_grow: 1.0,
+                                    padding: UiRect::axes(px(8.0), px(5.0)),
+                                    border_radius: BorderRadius::all(px(3.0)),
+                                    border: UiRect::all(px(1.0)),
+                                    ..default()
+                                },
+                                BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.2)),
+                                BackgroundColor(Color::WHITE),
+                                children![(
+                                    Text::new(""),
+                                    TextFont {
+                                        font: font.clone().into(),
+                                        font_size: FontSize::Px(11.0),
+                                        ..default()
+                                    },
+                                    TextColor(COLOR_TEXT_MAIN),
+                                    ThemeNameInputText,
+                                )],
+                            ),
+                            (
+                                Button,
+                                ThemeSaveNewButton,
+                                Node {
+                                    padding: UiRect::axes(px(10.0), px(5.0)),
+                                    border_radius: BorderRadius::all(px(3.0)),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(0.24, 0.52, 0.92)),
+                                children![(
+                                    Text::new("Save As New"),
+                                    TextFont {
+                                        font: font.clone().into(),
+                                        font_size: FontSize::Px(11.0),
+                                        ..default()
+                                    },
+                                    TextColor(Color::WHITE),
+                                )],
+                            ),
+                        ],
+                    ),
+                    (
+                        Text::new("Tip: Type a name and click Save As New. Themes are stored in settings/themes/."),
+                        TextFont {
+                            font: font.clone().into(),
+                            font_size: FontSize::Px(10.0),
+                            ..default()
+                        },
+                        TextColor(COLOR_TEXT_MUTED),
+                    ),
                 ],
             ),
             (
@@ -1802,8 +2048,14 @@ pub(crate) fn style_theme_overlay_ok_button(
 
 pub(crate) fn handle_theme_overlay_buttons(
     keys: Res<ButtonInput<KeyCode>>,
+    mut keyboard_inputs: MessageReader<KeyboardInput>,
     ok_query: Query<&Interaction, (Changed<Interaction>, With<ThemeOverlayOkButton>)>,
     tab_query: Query<(&Interaction, &ThemeOverlayTabButton), (Changed<Interaction>, With<Button>)>,
+    prev_query: Query<&Interaction, (Changed<Interaction>, With<ThemeSwitchPrevButton>)>,
+    next_query: Query<&Interaction, (Changed<Interaction>, With<ThemeSwitchNextButton>)>,
+    save_query: Query<&Interaction, (Changed<Interaction>, With<ThemeSaveButton>)>,
+    save_new_query: Query<&Interaction, (Changed<Interaction>, With<ThemeSaveNewButton>)>,
+    preset_query: Query<(&Interaction, &ThemePresetButton), (Changed<Interaction>, With<Button>)>,
     mut state: ResMut<EditorState>,
 ) {
     if keys.just_pressed(KeyCode::Escape) && state.theme_overlay_open {
@@ -1833,8 +2085,15 @@ pub(crate) fn handle_theme_overlay_buttons(
             state.theme_category = tab.0;
             match tab.0 {
                 ThemeCategory::Theme => {
-                    if state.theme_color_target.is_link_color() {
+                    if state.theme_color_target.is_link_color()
+                        || state.theme_color_target.is_text_color()
+                    {
                         state.theme_color_target = ThemeColorTarget::AppBackground;
+                    }
+                }
+                ThemeCategory::Text => {
+                    if !state.theme_color_target.is_text_color() {
+                        state.theme_color_target = ThemeColorTarget::TextMain;
                     }
                 }
                 ThemeCategory::Links => {
@@ -1844,6 +2103,135 @@ pub(crate) fn handle_theme_overlay_buttons(
                 }
                 ThemeCategory::Glass => {
                     state.theme_color_picker_open = false;
+                }
+                ThemeCategory::Themes => {
+                    state.theme_color_picker_open = false;
+                    state.available_themes = list_available_themes();
+                }
+            }
+        }
+    }
+
+    for interaction in prev_query.iter() {
+        if *interaction == Interaction::Pressed {
+            state.available_themes = list_available_themes();
+            if !state.available_themes.is_empty() {
+                let current_idx = state
+                    .available_themes
+                    .iter()
+                    .position(|t| t.eq_ignore_ascii_case(&state.current_theme_name))
+                    .unwrap_or(0);
+                let prev_idx = if current_idx == 0 {
+                    state.available_themes.len() - 1
+                } else {
+                    current_idx - 1
+                };
+                let theme_name = state.available_themes[prev_idx].clone();
+                if let Some(loaded) = load_named_theme(&theme_name) {
+                    apply_theme_to_state(&mut state, &loaded);
+                    let _ = save_theme_settings(&theme_settings_from_state(&state));
+                    state.status_message =
+                        format!("Theme switched to: {}", state.current_theme_name);
+                }
+            }
+        }
+    }
+
+    for interaction in next_query.iter() {
+        if *interaction == Interaction::Pressed {
+            state.available_themes = list_available_themes();
+            if !state.available_themes.is_empty() {
+                let current_idx = state
+                    .available_themes
+                    .iter()
+                    .position(|t| t.eq_ignore_ascii_case(&state.current_theme_name))
+                    .unwrap_or(0);
+                let next_idx = (current_idx + 1) % state.available_themes.len();
+                let theme_name = state.available_themes[next_idx].clone();
+                if let Some(loaded) = load_named_theme(&theme_name) {
+                    apply_theme_to_state(&mut state, &loaded);
+                    let _ = save_theme_settings(&theme_settings_from_state(&state));
+                    state.status_message =
+                        format!("Theme switched to: {}", state.current_theme_name);
+                }
+            }
+        }
+    }
+
+    for (interaction, preset) in preset_query.iter() {
+        if *interaction == Interaction::Pressed {
+            if let Some(loaded) = load_named_theme(&preset.0) {
+                apply_theme_to_state(&mut state, &loaded);
+                let _ = save_theme_settings(&theme_settings_from_state(&state));
+                state.status_message = format!("Theme switched to: {}", state.current_theme_name);
+            }
+        }
+    }
+
+    for interaction in save_query.iter() {
+        if *interaction == Interaction::Pressed {
+            let theme = theme_settings_from_state(&state);
+            let _ = save_theme_settings(&theme);
+            if !state.current_theme_name.is_empty()
+                && !state.current_theme_name.eq_ignore_ascii_case("Default")
+                && !state.current_theme_name.eq_ignore_ascii_case("Classic")
+                && !state.current_theme_name.eq_ignore_ascii_case("Dark")
+            {
+                let _ = save_named_theme(&state.current_theme_name, &theme);
+            }
+            state.status_message = format!("Saved theme: {}", state.current_theme_name);
+        }
+    }
+
+    for interaction in save_new_query.iter() {
+        if *interaction == Interaction::Pressed {
+            let trimmed = state.theme_name_input.trim().to_string();
+            if trimmed.is_empty() {
+                state.status_message = "Please enter a theme name first.".to_string();
+            } else {
+                let mut theme = theme_settings_from_state(&state);
+                theme.name = trimmed.clone();
+                if let Err(error) = save_named_theme(&trimmed, &theme) {
+                    state.status_message = format!("Failed to save theme: {error}");
+                } else {
+                    apply_theme_to_state(&mut state, &theme);
+                    let _ = save_theme_settings(&theme);
+                    state.theme_name_input.clear();
+                    state.status_message = format!("Saved theme: {trimmed}");
+                }
+            }
+        }
+    }
+
+    if state.theme_overlay_open && state.theme_category == ThemeCategory::Themes {
+        for key_input in keyboard_inputs.read() {
+            if !key_input.state.is_pressed() {
+                continue;
+            }
+            match &key_input.logical_key {
+                Key::Enter => {
+                    let trimmed = state.theme_name_input.trim().to_string();
+                    if !trimmed.is_empty() {
+                        let mut theme = theme_settings_from_state(&state);
+                        theme.name = trimmed.clone();
+                        let _ = save_named_theme(&trimmed, &theme);
+                        apply_theme_to_state(&mut state, &theme);
+                        let _ = save_theme_settings(&theme);
+                        state.theme_name_input.clear();
+                        state.status_message = format!("Saved theme: {trimmed}");
+                    }
+                }
+                Key::Backspace => {
+                    state.theme_name_input.pop();
+                }
+                _ => {
+                    if let Some(inserted_text) = &key_input.text {
+                        for ch in inserted_text.chars() {
+                            if ch.is_alphanumeric() || ch == '_' || ch == '-' || ch == ' ' {
+                                state.theme_name_input.push(ch);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -3361,8 +3749,8 @@ pub(crate) fn sync_glass_surfaces(
     for (panel_paper, mut color) in color_queries.p5().iter_mut() {
         color.0 = match panel_paper.kind {
             PanelKind::Processed if processed_glass_active => Color::NONE,
-            PanelKind::Processed => COLOR_PAPER,
-            PanelKind::Plain => COLOR_PAPER,
+            PanelKind::Processed => state.paper_bg_color,
+            PanelKind::Plain => state.paper_bg_color,
         };
     }
 }
@@ -3777,6 +4165,8 @@ pub(crate) fn sync_theme_picker_ui(
             Option<&ThemeSelectionHsvLabel>,
             Option<&ThemeSelectionHexLabel>,
             Option<&ThemeLinkHoverValueLabel>,
+            Option<&ThemeCurrentNameLabel>,
+            Option<&ThemeNameInputText>,
         ),
         Or<(
             With<ThemeScreenTitleLabel>,
@@ -3788,6 +4178,8 @@ pub(crate) fn sync_theme_picker_ui(
             With<ThemeSelectionHsvLabel>,
             With<ThemeSelectionHexLabel>,
             With<ThemeLinkHoverValueLabel>,
+            With<ThemeCurrentNameLabel>,
+            With<ThemeNameInputText>,
         )>,
     >,
     wheel_size_query: Query<&ComputedNode, With<ThemeHueSatWheel>>,
@@ -3804,6 +4196,7 @@ pub(crate) fn sync_theme_picker_ui(
     for mut picker_panel in node_queries.p1().iter_mut() {
         picker_panel.display = if state.theme_color_picker_open
             && state.theme_category != ThemeCategory::Glass
+            && state.theme_category != ThemeCategory::Themes
             && (state.theme_overlay_open || *screen_state.get() == UiScreenState::Theme)
         {
             Display::Flex
@@ -3862,6 +4255,8 @@ pub(crate) fn sync_theme_picker_ui(
         hsv_label,
         hex_label,
         hover_value_label,
+        current_name_label,
+        name_input_text,
     ) in text_query.iter_mut()
     {
         if title_label.is_some() {
@@ -3930,6 +4325,21 @@ pub(crate) fn sync_theme_picker_ui(
 
         if hover_value_label.is_some() {
             **text = format_hsv_value_adjustment_label(state.link_hover_hsv_value_adjustment);
+            continue;
+        }
+
+        if current_name_label.is_some() {
+            **text = format!("Theme: {}", state.current_theme_name);
+            continue;
+        }
+
+        if name_input_text.is_some() {
+            **text = if state.theme_name_input.is_empty() {
+                "Type new name...".to_string()
+            } else {
+                state.theme_name_input.clone()
+            };
+            continue;
         }
     }
 

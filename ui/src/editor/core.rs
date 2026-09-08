@@ -14,6 +14,7 @@ pub(crate) const EDITOR_SETTINGS_PATH: &str = "settings/editor_settings.ron";
 pub(crate) const KEYBINDS_SETTINGS_PATH: &str = "settings/keybinds.ron";
 pub(crate) const UI_STATE_PATH: &str = "settings/state.ron";
 pub(crate) const THEME_SETTINGS_PATH: &str = "settings/theme.ron";
+pub(crate) const THEMES_DIR: &str = "settings/themes";
 pub(crate) const STORY_TAXONOMY_SETTINGS_PATH: &str = "settings/story_taxonomy.ron";
 pub(crate) const LEGACY_EDITOR_SETTINGS_PATH: &str = "scripts/editor_settings.ron";
 pub(crate) const LEGACY_KEYBINDS_SETTINGS_PATH: &str = "scripts/keybinds.ron";
@@ -533,8 +534,10 @@ pub(crate) struct ThemeOverlayOkButton;
 pub(crate) enum ThemeCategory {
     #[default]
     Theme,
+    Text,
     Links,
     Glass,
+    Themes,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
@@ -542,6 +545,27 @@ pub(crate) struct ThemeOverlayTabButton(pub(crate) ThemeCategory);
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ThemeCategorySection(pub(crate) ThemeCategory);
+
+#[derive(Component)]
+pub(crate) struct ThemeSwitchPrevButton;
+
+#[derive(Component)]
+pub(crate) struct ThemeSwitchNextButton;
+
+#[derive(Component)]
+pub(crate) struct ThemeCurrentNameLabel;
+
+#[derive(Component)]
+pub(crate) struct ThemeSaveButton;
+
+#[derive(Component)]
+pub(crate) struct ThemeSaveNewButton;
+
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ThemePresetButton(pub(crate) String);
+
+#[derive(Component)]
+pub(crate) struct ThemeNameInputText;
 
 #[derive(Resource, Default)]
 pub(crate) struct DocumentNavigationInputCapture {
@@ -1260,7 +1284,20 @@ pub(crate) enum ThemeColorTarget {
     TopMenuBackground,
     ExplorerBackground,
     ProcessedBackground,
+    PaperBackground,
     SelectionBackground,
+    TextMain,
+    TextMuted,
+    TextSceneHeading,
+    TextAction,
+    TextCharacter,
+    TextDialogue,
+    TextParenthetical,
+    TextTransition,
+    TextMarkdownHeading,
+    TextMarkdownQuote,
+    TextMarkdownCode,
+    TextMarkdownRule,
     LinkFallback,
     LinkProp,
     LinkPlace,
@@ -1273,6 +1310,8 @@ impl ThemeColorTarget {
     pub(crate) fn screen_title(self) -> &'static str {
         if self.is_link_color() {
             "Link Colors"
+        } else if self.is_text_color() {
+            "Text Colors"
         } else {
             "Theme"
         }
@@ -1281,8 +1320,10 @@ impl ThemeColorTarget {
     pub(crate) fn screen_description(self) -> &'static str {
         if self.is_link_color() {
             "Adjust processed-view link colors by YAML `type`. Unmapped types use Fallback, and hover uses the HSV value offset."
+        } else if self.is_text_color() {
+            "Adjust screenplay and markdown typography colors across plain and processed editor views."
         } else {
-            "Adjust editor shell colors, selection colors, and glass surfaces."
+            "Adjust editor shell colors, paper background, selection colors, and glass surfaces."
         }
     }
 
@@ -1292,7 +1333,20 @@ impl ThemeColorTarget {
             Self::TopMenuBackground => "Top menu",
             Self::ExplorerBackground => "Explorer",
             Self::ProcessedBackground => "Processed pane",
+            Self::PaperBackground => "Paper background",
             Self::SelectionBackground => "Selection background",
+            Self::TextMain => "Plain / Main text",
+            Self::TextMuted => "Muted text",
+            Self::TextSceneHeading => "Scene heading",
+            Self::TextAction => "Action / Body",
+            Self::TextCharacter => "Character cue",
+            Self::TextDialogue => "Dialogue",
+            Self::TextParenthetical => "Parenthetical",
+            Self::TextTransition => "Transition",
+            Self::TextMarkdownHeading => "Markdown heading",
+            Self::TextMarkdownQuote => "Markdown quote",
+            Self::TextMarkdownCode => "Markdown code",
+            Self::TextMarkdownRule => "Markdown rule",
             Self::LinkFallback => "Fallback",
             Self::LinkProp => "Prop",
             Self::LinkPlace => "Place",
@@ -1308,7 +1362,20 @@ impl ThemeColorTarget {
             Self::TopMenuBackground => "top menu background",
             Self::ExplorerBackground => "explorer background",
             Self::ProcessedBackground => "processed pane background",
+            Self::PaperBackground => "paper background",
             Self::SelectionBackground => "selection background",
+            Self::TextMain => "plain / main text color",
+            Self::TextMuted => "muted text color",
+            Self::TextSceneHeading => "scene heading color",
+            Self::TextAction => "action text color",
+            Self::TextCharacter => "character cue color",
+            Self::TextDialogue => "dialogue color",
+            Self::TextParenthetical => "parenthetical color",
+            Self::TextTransition => "transition color",
+            Self::TextMarkdownHeading => "markdown heading color",
+            Self::TextMarkdownQuote => "markdown quote color",
+            Self::TextMarkdownCode => "markdown code color",
+            Self::TextMarkdownRule => "markdown rule color",
             Self::LinkFallback => "fallback link color",
             Self::LinkProp => "prop link color",
             Self::LinkPlace => "place link color",
@@ -1327,6 +1394,24 @@ impl ThemeColorTarget {
                 | Self::LinkCharacter
                 | Self::LinkFaction
                 | Self::LinkConcept
+        )
+    }
+
+    pub(crate) fn is_text_color(self) -> bool {
+        matches!(
+            self,
+            Self::TextMain
+                | Self::TextMuted
+                | Self::TextSceneHeading
+                | Self::TextAction
+                | Self::TextCharacter
+                | Self::TextDialogue
+                | Self::TextParenthetical
+                | Self::TextTransition
+                | Self::TextMarkdownHeading
+                | Self::TextMarkdownQuote
+                | Self::TextMarkdownCode
+                | Self::TextMarkdownRule
         )
     }
 }
@@ -1503,6 +1588,32 @@ pub(crate) struct EditorState {
     pub(crate) processed_bg_color: Color,
     pub(crate) selection_bg_rgba: Vec4,
     pub(crate) selection_bg_color: Color,
+    pub(crate) paper_bg_rgba: Vec4,
+    pub(crate) paper_bg_color: Color,
+    pub(crate) text_main_rgba: Vec4,
+    pub(crate) text_main_color: Color,
+    pub(crate) text_muted_rgba: Vec4,
+    pub(crate) text_muted_color: Color,
+    pub(crate) text_scene_heading_rgba: Vec4,
+    pub(crate) text_scene_heading_color: Color,
+    pub(crate) text_action_rgba: Vec4,
+    pub(crate) text_action_color: Color,
+    pub(crate) text_character_rgba: Vec4,
+    pub(crate) text_character_color: Color,
+    pub(crate) text_dialogue_rgba: Vec4,
+    pub(crate) text_dialogue_color: Color,
+    pub(crate) text_parenthetical_rgba: Vec4,
+    pub(crate) text_parenthetical_color: Color,
+    pub(crate) text_transition_rgba: Vec4,
+    pub(crate) text_transition_color: Color,
+    pub(crate) text_markdown_heading_rgba: Vec4,
+    pub(crate) text_markdown_heading_color: Color,
+    pub(crate) text_markdown_quote_rgba: Vec4,
+    pub(crate) text_markdown_quote_color: Color,
+    pub(crate) text_markdown_code_rgba: Vec4,
+    pub(crate) text_markdown_code_color: Color,
+    pub(crate) text_markdown_rule_rgba: Vec4,
+    pub(crate) text_markdown_rule_color: Color,
     pub(crate) link_fallback_rgba: Vec4,
     pub(crate) link_fallback_color: Color,
     pub(crate) link_prop_rgba: Vec4,
@@ -1520,6 +1631,9 @@ pub(crate) struct EditorState {
     pub(crate) theme_color_picker_open: bool,
     pub(crate) theme_overlay_open: bool,
     pub(crate) theme_category: ThemeCategory,
+    pub(crate) current_theme_name: String,
+    pub(crate) theme_name_input: String,
+    pub(crate) available_themes: Vec<String>,
     pub(crate) show_system_titlebar: bool,
     pub(crate) caret_blink: Timer,
     pub(crate) caret_visible: bool,
@@ -1779,11 +1893,25 @@ impl Default for PersistentUiState {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ThemeSettings {
+    pub(crate) name: String,
     pub(crate) app_background: Vec4,
     pub(crate) top_menu_background: Vec4,
     pub(crate) explorer_background: Vec4,
     pub(crate) processed_background: Vec4,
     pub(crate) selection_background: Vec4,
+    pub(crate) paper_background: Vec4,
+    pub(crate) text_main: Vec4,
+    pub(crate) text_muted: Vec4,
+    pub(crate) text_scene_heading: Vec4,
+    pub(crate) text_action: Vec4,
+    pub(crate) text_character: Vec4,
+    pub(crate) text_dialogue: Vec4,
+    pub(crate) text_parenthetical: Vec4,
+    pub(crate) text_transition: Vec4,
+    pub(crate) text_markdown_heading: Vec4,
+    pub(crate) text_markdown_quote: Vec4,
+    pub(crate) text_markdown_code: Vec4,
+    pub(crate) text_markdown_rule: Vec4,
     pub(crate) link_fallback: Vec4,
     pub(crate) link_prop: Vec4,
     pub(crate) link_place: Vec4,
@@ -1799,11 +1927,25 @@ pub(crate) struct ThemeSettings {
 impl Default for ThemeSettings {
     fn default() -> Self {
         Self {
+            name: "Default".to_string(),
             app_background: Vec4::new(0.79, 0.80, 0.82, 1.0),
             top_menu_background: Vec4::new(0.79, 0.80, 0.82, 1.0),
             explorer_background: Vec4::new(0.86, 0.87, 0.89, 1.0),
             processed_background: Vec4::new(0.82, 0.83, 0.84, 1.0),
             selection_background: Vec4::new(0.16, 0.43, 0.88, 0.36),
+            paper_background: Vec4::new(1.0, 1.0, 1.0, 1.0),
+            text_main: Vec4::new(0.18, 0.19, 0.20, 1.0),
+            text_muted: Vec4::new(0.34, 0.36, 0.39, 1.0),
+            text_scene_heading: Vec4::new(0.10, 0.10, 0.12, 1.0),
+            text_action: Vec4::new(0.12, 0.13, 0.15, 1.0),
+            text_character: Vec4::new(0.20, 0.16, 0.12, 1.0),
+            text_dialogue: Vec4::new(0.11, 0.12, 0.13, 1.0),
+            text_parenthetical: Vec4::new(0.24, 0.28, 0.32, 1.0),
+            text_transition: Vec4::new(0.15, 0.23, 0.31, 1.0),
+            text_markdown_heading: Vec4::new(0.18, 0.24, 0.40, 1.0),
+            text_markdown_quote: Vec4::new(0.22, 0.29, 0.26, 1.0),
+            text_markdown_code: Vec4::new(0.29, 0.17, 0.18, 1.0),
+            text_markdown_rule: Vec4::new(0.35, 0.35, 0.38, 1.0),
             link_fallback: Vec4::new(0.10, 0.38, 0.72, 1.0),
             link_prop: Vec4::new(0.68, 0.40, 0.10, 1.0),
             link_place: Vec4::new(0.12, 0.50, 0.34, 1.0),
@@ -1819,6 +1961,74 @@ impl Default for ThemeSettings {
 }
 
 impl ThemeSettings {
+    pub(crate) fn classic() -> Self {
+        Self {
+            name: "Classic".to_string(),
+            app_background: Vec4::new(0.885, 0.901, 0.898, 1.0),
+            top_menu_background: Vec4::new(0.891, 0.907, 0.904, 1.0),
+            explorer_background: Vec4::new(0.860, 0.870, 0.890, 1.0),
+            processed_background: Vec4::new(0.536, 0.545, 0.570, 1.0),
+            selection_background: Vec4::new(0.517, 0.680, 1.000, 0.558),
+            paper_background: Vec4::new(1.0, 1.0, 1.0, 1.0),
+            text_main: Vec4::new(0.18, 0.19, 0.20, 1.0),
+            text_muted: Vec4::new(0.34, 0.36, 0.39, 1.0),
+            text_scene_heading: Vec4::new(0.10, 0.10, 0.12, 1.0),
+            text_action: Vec4::new(0.12, 0.13, 0.15, 1.0),
+            text_character: Vec4::new(0.20, 0.16, 0.12, 1.0),
+            text_dialogue: Vec4::new(0.11, 0.12, 0.13, 1.0),
+            text_parenthetical: Vec4::new(0.24, 0.28, 0.32, 1.0),
+            text_transition: Vec4::new(0.15, 0.23, 0.31, 1.0),
+            text_markdown_heading: Vec4::new(0.18, 0.24, 0.40, 1.0),
+            text_markdown_quote: Vec4::new(0.22, 0.29, 0.26, 1.0),
+            text_markdown_code: Vec4::new(0.29, 0.17, 0.18, 1.0),
+            text_markdown_rule: Vec4::new(0.35, 0.35, 0.38, 1.0),
+            link_fallback: Vec4::new(0.100, 0.380, 0.720, 1.0),
+            link_prop: Vec4::new(0.680, 0.400, 0.100, 1.0),
+            link_place: Vec4::new(0.120, 0.500, 0.340, 1.0),
+            link_character: Vec4::new(0.569, 0.058, 0.822, 1.0),
+            link_faction: Vec4::new(0.680, 0.176, 0.209, 1.0),
+            link_concept: Vec4::new(0.560, 0.280, 0.140, 1.0),
+            link_hover_hsv_value_adjustment: 0.380,
+            processed_glass: false,
+            explorer_glass: false,
+            settings_glass: false,
+        }
+    }
+
+    pub(crate) fn dark() -> Self {
+        Self {
+            name: "Dark".to_string(),
+            app_background: Vec4::new(0.14, 0.15, 0.17, 1.0),
+            top_menu_background: Vec4::new(0.12, 0.13, 0.15, 1.0),
+            explorer_background: Vec4::new(0.16, 0.17, 0.19, 1.0),
+            processed_background: Vec4::new(0.18, 0.19, 0.21, 1.0),
+            selection_background: Vec4::new(0.25, 0.45, 0.85, 0.45),
+            paper_background: Vec4::new(0.12, 0.12, 0.14, 1.0),
+            text_main: Vec4::new(0.88, 0.89, 0.91, 1.0),
+            text_muted: Vec4::new(0.58, 0.60, 0.64, 1.0),
+            text_scene_heading: Vec4::new(0.92, 0.93, 0.95, 1.0),
+            text_action: Vec4::new(0.86, 0.87, 0.89, 1.0),
+            text_character: Vec4::new(0.95, 0.85, 0.65, 1.0),
+            text_dialogue: Vec4::new(0.90, 0.91, 0.93, 1.0),
+            text_parenthetical: Vec4::new(0.72, 0.76, 0.82, 1.0),
+            text_transition: Vec4::new(0.65, 0.78, 0.92, 1.0),
+            text_markdown_heading: Vec4::new(0.60, 0.75, 0.98, 1.0),
+            text_markdown_quote: Vec4::new(0.70, 0.82, 0.75, 1.0),
+            text_markdown_code: Vec4::new(0.95, 0.65, 0.68, 1.0),
+            text_markdown_rule: Vec4::new(0.45, 0.47, 0.50, 1.0),
+            link_fallback: Vec4::new(0.35, 0.65, 0.95, 1.0),
+            link_prop: Vec4::new(0.85, 0.60, 0.25, 1.0),
+            link_place: Vec4::new(0.30, 0.75, 0.55, 1.0),
+            link_character: Vec4::new(0.85, 0.45, 0.90, 1.0),
+            link_faction: Vec4::new(0.85, 0.35, 0.40, 1.0),
+            link_concept: Vec4::new(0.80, 0.50, 0.30, 1.0),
+            link_hover_hsv_value_adjustment: 0.20,
+            processed_glass: false,
+            explorer_glass: false,
+            settings_glass: false,
+        }
+    }
+
     pub(crate) fn app_background_clamped(&self) -> Vec4 {
         Vec4::new(
             self.app_background.x.clamp(0.0, 1.0),
@@ -1886,6 +2096,188 @@ impl ThemeSettings {
 
     pub(crate) fn selection_background_color(&self) -> Color {
         let rgba = self.selection_background_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    pub(crate) fn paper_background_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.paper_background.x.clamp(0.0, 1.0),
+            self.paper_background.y.clamp(0.0, 1.0),
+            self.paper_background.z.clamp(0.0, 1.0),
+            self.paper_background.w.clamp(0.0, 1.0),
+        )
+    }
+
+    pub(crate) fn paper_background_color(&self) -> Color {
+        let rgba = self.paper_background_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    pub(crate) fn text_main_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.text_main.x.clamp(0.0, 1.0),
+            self.text_main.y.clamp(0.0, 1.0),
+            self.text_main.z.clamp(0.0, 1.0),
+            self.text_main.w.clamp(0.0, 1.0),
+        )
+    }
+
+    pub(crate) fn text_main_color(&self) -> Color {
+        let rgba = self.text_main_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    pub(crate) fn text_muted_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.text_muted.x.clamp(0.0, 1.0),
+            self.text_muted.y.clamp(0.0, 1.0),
+            self.text_muted.z.clamp(0.0, 1.0),
+            self.text_muted.w.clamp(0.0, 1.0),
+        )
+    }
+
+    pub(crate) fn text_muted_color(&self) -> Color {
+        let rgba = self.text_muted_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    pub(crate) fn text_scene_heading_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.text_scene_heading.x.clamp(0.0, 1.0),
+            self.text_scene_heading.y.clamp(0.0, 1.0),
+            self.text_scene_heading.z.clamp(0.0, 1.0),
+            self.text_scene_heading.w.clamp(0.0, 1.0),
+        )
+    }
+
+    pub(crate) fn text_scene_heading_color(&self) -> Color {
+        let rgba = self.text_scene_heading_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    pub(crate) fn text_action_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.text_action.x.clamp(0.0, 1.0),
+            self.text_action.y.clamp(0.0, 1.0),
+            self.text_action.z.clamp(0.0, 1.0),
+            self.text_action.w.clamp(0.0, 1.0),
+        )
+    }
+
+    pub(crate) fn text_action_color(&self) -> Color {
+        let rgba = self.text_action_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    pub(crate) fn text_character_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.text_character.x.clamp(0.0, 1.0),
+            self.text_character.y.clamp(0.0, 1.0),
+            self.text_character.z.clamp(0.0, 1.0),
+            self.text_character.w.clamp(0.0, 1.0),
+        )
+    }
+
+    pub(crate) fn text_character_color(&self) -> Color {
+        let rgba = self.text_character_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    pub(crate) fn text_dialogue_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.text_dialogue.x.clamp(0.0, 1.0),
+            self.text_dialogue.y.clamp(0.0, 1.0),
+            self.text_dialogue.z.clamp(0.0, 1.0),
+            self.text_dialogue.w.clamp(0.0, 1.0),
+        )
+    }
+
+    pub(crate) fn text_dialogue_color(&self) -> Color {
+        let rgba = self.text_dialogue_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    pub(crate) fn text_parenthetical_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.text_parenthetical.x.clamp(0.0, 1.0),
+            self.text_parenthetical.y.clamp(0.0, 1.0),
+            self.text_parenthetical.z.clamp(0.0, 1.0),
+            self.text_parenthetical.w.clamp(0.0, 1.0),
+        )
+    }
+
+    pub(crate) fn text_parenthetical_color(&self) -> Color {
+        let rgba = self.text_parenthetical_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    pub(crate) fn text_transition_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.text_transition.x.clamp(0.0, 1.0),
+            self.text_transition.y.clamp(0.0, 1.0),
+            self.text_transition.z.clamp(0.0, 1.0),
+            self.text_transition.w.clamp(0.0, 1.0),
+        )
+    }
+
+    pub(crate) fn text_transition_color(&self) -> Color {
+        let rgba = self.text_transition_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    pub(crate) fn text_markdown_heading_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.text_markdown_heading.x.clamp(0.0, 1.0),
+            self.text_markdown_heading.y.clamp(0.0, 1.0),
+            self.text_markdown_heading.z.clamp(0.0, 1.0),
+            self.text_markdown_heading.w.clamp(0.0, 1.0),
+        )
+    }
+
+    pub(crate) fn text_markdown_heading_color(&self) -> Color {
+        let rgba = self.text_markdown_heading_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    pub(crate) fn text_markdown_quote_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.text_markdown_quote.x.clamp(0.0, 1.0),
+            self.text_markdown_quote.y.clamp(0.0, 1.0),
+            self.text_markdown_quote.z.clamp(0.0, 1.0),
+            self.text_markdown_quote.w.clamp(0.0, 1.0),
+        )
+    }
+
+    pub(crate) fn text_markdown_quote_color(&self) -> Color {
+        let rgba = self.text_markdown_quote_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    pub(crate) fn text_markdown_code_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.text_markdown_code.x.clamp(0.0, 1.0),
+            self.text_markdown_code.y.clamp(0.0, 1.0),
+            self.text_markdown_code.z.clamp(0.0, 1.0),
+            self.text_markdown_code.w.clamp(0.0, 1.0),
+        )
+    }
+
+    pub(crate) fn text_markdown_code_color(&self) -> Color {
+        let rgba = self.text_markdown_code_clamped();
+        Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
+    }
+
+    pub(crate) fn text_markdown_rule_clamped(&self) -> Vec4 {
+        Vec4::new(
+            self.text_markdown_rule.x.clamp(0.0, 1.0),
+            self.text_markdown_rule.y.clamp(0.0, 1.0),
+            self.text_markdown_rule.z.clamp(0.0, 1.0),
+            self.text_markdown_rule.w.clamp(0.0, 1.0),
+        )
+    }
+
+    pub(crate) fn text_markdown_rule_color(&self) -> Color {
+        let rgba = self.text_markdown_rule_clamped();
         Color::srgba(rgba.x, rgba.y, rgba.z, rgba.w)
     }
 
@@ -2274,6 +2666,32 @@ impl FromWorld for EditorState {
             processed_bg_color: theme_settings.processed_background_color(),
             selection_bg_rgba: theme_settings.selection_background_clamped(),
             selection_bg_color: theme_settings.selection_background_color(),
+            paper_bg_rgba: theme_settings.paper_background_clamped(),
+            paper_bg_color: theme_settings.paper_background_color(),
+            text_main_rgba: theme_settings.text_main_clamped(),
+            text_main_color: theme_settings.text_main_color(),
+            text_muted_rgba: theme_settings.text_muted_clamped(),
+            text_muted_color: theme_settings.text_muted_color(),
+            text_scene_heading_rgba: theme_settings.text_scene_heading_clamped(),
+            text_scene_heading_color: theme_settings.text_scene_heading_color(),
+            text_action_rgba: theme_settings.text_action_clamped(),
+            text_action_color: theme_settings.text_action_color(),
+            text_character_rgba: theme_settings.text_character_clamped(),
+            text_character_color: theme_settings.text_character_color(),
+            text_dialogue_rgba: theme_settings.text_dialogue_clamped(),
+            text_dialogue_color: theme_settings.text_dialogue_color(),
+            text_parenthetical_rgba: theme_settings.text_parenthetical_clamped(),
+            text_parenthetical_color: theme_settings.text_parenthetical_color(),
+            text_transition_rgba: theme_settings.text_transition_clamped(),
+            text_transition_color: theme_settings.text_transition_color(),
+            text_markdown_heading_rgba: theme_settings.text_markdown_heading_clamped(),
+            text_markdown_heading_color: theme_settings.text_markdown_heading_color(),
+            text_markdown_quote_rgba: theme_settings.text_markdown_quote_clamped(),
+            text_markdown_quote_color: theme_settings.text_markdown_quote_color(),
+            text_markdown_code_rgba: theme_settings.text_markdown_code_clamped(),
+            text_markdown_code_color: theme_settings.text_markdown_code_color(),
+            text_markdown_rule_rgba: theme_settings.text_markdown_rule_clamped(),
+            text_markdown_rule_color: theme_settings.text_markdown_rule_color(),
             link_fallback_rgba: theme_settings.link_fallback_clamped(),
             link_fallback_color: theme_settings.link_fallback_color(),
             link_prop_rgba: theme_settings.link_prop_clamped(),
@@ -2292,6 +2710,9 @@ impl FromWorld for EditorState {
             theme_color_picker_open: false,
             theme_overlay_open: false,
             theme_category: ThemeCategory::Theme,
+            current_theme_name: theme_settings.name.clone(),
+            theme_name_input: String::new(),
+            available_themes: list_available_themes(),
             show_system_titlebar: settings.show_system_titlebar,
             caret_blink: Timer::from_seconds(0.5, TimerMode::Repeating),
             caret_visible: true,

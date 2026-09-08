@@ -39,5 +39,51 @@ pub(crate) fn fountain_line_style(kind: &LineKind) -> Option<LineRenderStyle> {
         _ => None,
     }
 }
+
+pub(crate) fn fountain_line_style_for_state(
+    state: &EditorState,
+    kind: &LineKind,
+) -> Option<LineRenderStyle> {
+    match kind {
+        LineKind::SceneHeading => Some(LineRenderStyle::new(
+            FontVariant::Bold,
+            state.text_scene_heading_color,
+            1.0,
+            1.0,
+        )),
+        LineKind::Action => Some(LineRenderStyle::new(
+            FontVariant::Regular,
+            state.text_action_color,
+            1.0,
+            1.0,
+        )),
+        LineKind::Character => Some(LineRenderStyle::new(
+            FontVariant::Bold,
+            state.text_character_color,
+            1.0,
+            1.0,
+        )),
+        LineKind::Dialogue => Some(LineRenderStyle::new(
+            FontVariant::Regular,
+            state.text_dialogue_color,
+            1.0,
+            1.0,
+        )),
+        LineKind::Parenthetical => Some(LineRenderStyle::new(
+            FontVariant::Italic,
+            state.text_parenthetical_color,
+            1.0,
+            1.0,
+        )),
+        LineKind::Transition => Some(LineRenderStyle::new(
+            FontVariant::BoldItalic,
+            state.text_transition_color,
+            1.0,
+            1.0,
+        )),
+        _ => None,
+    }
+}
+
 #[allow(unused_imports)]
 use super::*;

@@ -85,7 +85,61 @@ pub(crate) fn markdown_line_style(
     }
 }
 
+pub(crate) fn markdown_line_style_for_state(
+    state: &EditorState,
+    kind: &LineKind,
+    markdown_heading_level: Option<u8>,
+) -> Option<LineRenderStyle> {
+    match kind {
+        LineKind::MarkdownHeading => Some(markdown_heading_style_for_color(
+            markdown_heading_level.unwrap_or(1),
+            state.text_markdown_heading_color,
+        )),
+        LineKind::MarkdownListItem => Some(LineRenderStyle::new(
+            FontVariant::Regular,
+            state.text_action_color,
+            1.0,
+            1.0,
+        )),
+        LineKind::MarkdownQuote => Some(LineRenderStyle::new(
+            FontVariant::Italic,
+            state.text_markdown_quote_color,
+            1.0,
+            1.0,
+        )),
+        LineKind::MarkdownCodeFence => Some(LineRenderStyle::new(
+            FontVariant::Bold,
+            state.text_markdown_code_color,
+            1.0,
+            1.0,
+        )),
+        LineKind::MarkdownCode => Some(LineRenderStyle::new(
+            FontVariant::Regular,
+            state.text_markdown_code_color,
+            1.0,
+            1.0,
+        )),
+        LineKind::MarkdownRule => Some(LineRenderStyle::new(
+            FontVariant::Bold,
+            state.text_markdown_rule_color,
+            1.0,
+            1.0,
+        )),
+        LineKind::MarkdownParagraph => Some(LineRenderStyle::new(
+            FontVariant::Regular,
+            state.text_action_color,
+            1.0,
+            1.0,
+        )),
+        _ => None,
+    }
+}
+
 pub(crate) fn markdown_heading_style(level: u8) -> LineRenderStyle {
+    markdown_heading_style_for_color(level, COLOR_MARKDOWN_HEADING)
+}
+
+pub(crate) fn markdown_heading_style_for_color(level: u8, color: Color) -> LineRenderStyle {
     let (font_scale, line_height_scale) = match level.clamp(1, 6) {
         1 => (1.80, 2.15),
         2 => (1.55, 1.85),
@@ -97,7 +151,7 @@ pub(crate) fn markdown_heading_style(level: u8) -> LineRenderStyle {
 
     LineRenderStyle::new(
         FontVariant::Bold,
-        COLOR_MARKDOWN_HEADING,
+        color,
         font_scale,
         line_height_scale,
     )

@@ -258,17 +258,25 @@ pub(crate) fn save_persistent_ui_state(ui_state: &PersistentUiState) -> io::Resu
     Ok(())
 }
 
-pub(crate) fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
-    let path = PathBuf::from(THEME_SETTINGS_PATH);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
+pub(crate) fn ron_string_from_theme(theme: &ThemeSettings) -> String {
     let app_background = theme.app_background_clamped();
     let top_menu_background = theme.top_menu_background_clamped();
     let explorer_background = theme.explorer_background_clamped();
     let processed_background = theme.processed_background_clamped();
     let selection_background = theme.selection_background_clamped();
+    let paper_background = theme.paper_background_clamped();
+    let text_main = theme.text_main_clamped();
+    let text_muted = theme.text_muted_clamped();
+    let text_scene_heading = theme.text_scene_heading_clamped();
+    let text_action = theme.text_action_clamped();
+    let text_character = theme.text_character_clamped();
+    let text_dialogue = theme.text_dialogue_clamped();
+    let text_parenthetical = theme.text_parenthetical_clamped();
+    let text_transition = theme.text_transition_clamped();
+    let text_markdown_heading = theme.text_markdown_heading_clamped();
+    let text_markdown_quote = theme.text_markdown_quote_clamped();
+    let text_markdown_code = theme.text_markdown_code_clamped();
+    let text_markdown_rule = theme.text_markdown_rule_clamped();
     let link_fallback = theme.link_fallback_clamped();
     let link_prop = theme.link_prop_clamped();
     let link_place = theme.link_place_clamped();
@@ -276,13 +284,28 @@ pub(crate) fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
     let link_faction = theme.link_faction_clamped();
     let link_concept = theme.link_concept_clamped();
     let link_hover_hsv_value_adjustment = theme.link_hover_hsv_value_adjustment_clamped();
-    let contents = format!(
+
+    format!(
         "(\n\
+         \tname: \"{}\",\n\
          \tapp_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \ttop_menu_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \texplorer_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tprocessed_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tselection_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \tpaper_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \ttext_main: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \ttext_muted: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \ttext_scene_heading: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \ttext_action: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \ttext_character: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \ttext_dialogue: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \ttext_parenthetical: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \ttext_transition: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \ttext_markdown_heading: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \ttext_markdown_quote: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \ttext_markdown_code: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
+         \ttext_markdown_rule: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tlink_fallback: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tlink_prop: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \tlink_place: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
@@ -294,6 +317,7 @@ pub(crate) fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
          \texplorer_glass: {},\n\
          \tsettings_glass: {},\n\
          )\n",
+        theme.name,
         app_background.x,
         app_background.y,
         app_background.z,
@@ -314,6 +338,58 @@ pub(crate) fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
         selection_background.y,
         selection_background.z,
         selection_background.w,
+        paper_background.x,
+        paper_background.y,
+        paper_background.z,
+        paper_background.w,
+        text_main.x,
+        text_main.y,
+        text_main.z,
+        text_main.w,
+        text_muted.x,
+        text_muted.y,
+        text_muted.z,
+        text_muted.w,
+        text_scene_heading.x,
+        text_scene_heading.y,
+        text_scene_heading.z,
+        text_scene_heading.w,
+        text_action.x,
+        text_action.y,
+        text_action.z,
+        text_action.w,
+        text_character.x,
+        text_character.y,
+        text_character.z,
+        text_character.w,
+        text_dialogue.x,
+        text_dialogue.y,
+        text_dialogue.z,
+        text_dialogue.w,
+        text_parenthetical.x,
+        text_parenthetical.y,
+        text_parenthetical.z,
+        text_parenthetical.w,
+        text_transition.x,
+        text_transition.y,
+        text_transition.z,
+        text_transition.w,
+        text_markdown_heading.x,
+        text_markdown_heading.y,
+        text_markdown_heading.z,
+        text_markdown_heading.w,
+        text_markdown_quote.x,
+        text_markdown_quote.y,
+        text_markdown_quote.z,
+        text_markdown_quote.w,
+        text_markdown_code.x,
+        text_markdown_code.y,
+        text_markdown_code.z,
+        text_markdown_code.w,
+        text_markdown_rule.x,
+        text_markdown_rule.y,
+        text_markdown_rule.z,
+        text_markdown_rule.w,
         link_fallback.x,
         link_fallback.y,
         link_fallback.z,
@@ -342,11 +418,117 @@ pub(crate) fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
         theme.processed_glass,
         theme.explorer_glass,
         theme.settings_glass
-    );
+    )
+}
 
+pub(crate) fn save_theme_settings(theme: &ThemeSettings) -> io::Result<()> {
+    let path = PathBuf::from(THEME_SETTINGS_PATH);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let contents = ron_string_from_theme(theme);
     fs::write(&path, contents)?;
     info!("[theme] Saved theme to {}", path.display());
     Ok(())
+}
+
+pub(crate) fn list_available_themes() -> Vec<String> {
+    let mut themes = vec!["Default".to_string(), "Classic".to_string(), "Dark".to_string()];
+    let dir = Path::new(THEMES_DIR);
+    if let Ok(entries) = fs::read_dir(dir) {
+        let mut custom_themes = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) == Some("ron") {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    let stem_str = stem.to_string();
+                    if !themes.iter().any(|t| t.eq_ignore_ascii_case(&stem_str)) {
+                        custom_themes.push(stem_str);
+                    }
+                }
+            }
+        }
+        custom_themes.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        themes.extend(custom_themes);
+    }
+    themes
+}
+
+pub(crate) fn load_named_theme(name: &str) -> Option<ThemeSettings> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.eq_ignore_ascii_case("Default") {
+        return Some(ThemeSettings::default());
+    }
+    if trimmed.eq_ignore_ascii_case("Classic") {
+        return Some(ThemeSettings::classic());
+    }
+    if trimmed.eq_ignore_ascii_case("Dark") {
+        return Some(ThemeSettings::dark());
+    }
+    let path = PathBuf::from(THEMES_DIR).join(format!("{trimmed}.ron"));
+    if let Ok(contents) = fs::read_to_string(&path) {
+        let mut theme = theme_settings_from_ron(&contents, &ThemeSettings::default());
+        if theme.name.is_empty() || theme.name == "Default" {
+            theme.name = trimmed.to_string();
+        }
+        Some(theme)
+    } else {
+        None
+    }
+}
+
+pub(crate) fn save_named_theme(name: &str, theme: &ThemeSettings) -> io::Result<()> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "Theme name cannot be empty"));
+    }
+    let dir = PathBuf::from(THEMES_DIR);
+    fs::create_dir_all(&dir)?;
+    let mut theme_to_save = theme.clone();
+    theme_to_save.name = trimmed.to_string();
+    let contents = ron_string_from_theme(&theme_to_save);
+    let path = dir.join(format!("{trimmed}.ron"));
+    fs::write(&path, contents)?;
+    info!("[theme] Saved named theme to {}", path.display());
+    Ok(())
+}
+
+pub(crate) fn apply_theme_to_state(state: &mut EditorState, theme: &ThemeSettings) {
+    state.current_theme_name = theme.name.clone();
+    state.app_bg_rgba = theme.app_background_clamped();
+    state.top_menu_bg_rgba = theme.top_menu_background_clamped();
+    state.explorer_bg_rgba = theme.explorer_background_clamped();
+    state.processed_bg_rgba = theme.processed_background_clamped();
+    state.selection_bg_rgba = theme.selection_background_clamped();
+    state.paper_bg_rgba = theme.paper_background_clamped();
+    state.text_main_rgba = theme.text_main_clamped();
+    state.text_muted_rgba = theme.text_muted_clamped();
+    state.text_scene_heading_rgba = theme.text_scene_heading_clamped();
+    state.text_action_rgba = theme.text_action_clamped();
+    state.text_character_rgba = theme.text_character_clamped();
+    state.text_dialogue_rgba = theme.text_dialogue_clamped();
+    state.text_parenthetical_rgba = theme.text_parenthetical_clamped();
+    state.text_transition_rgba = theme.text_transition_clamped();
+    state.text_markdown_heading_rgba = theme.text_markdown_heading_clamped();
+    state.text_markdown_quote_rgba = theme.text_markdown_quote_clamped();
+    state.text_markdown_code_rgba = theme.text_markdown_code_clamped();
+    state.text_markdown_rule_rgba = theme.text_markdown_rule_clamped();
+    state.link_fallback_rgba = theme.link_fallback_clamped();
+    state.link_prop_rgba = theme.link_prop_clamped();
+    state.link_place_rgba = theme.link_place_clamped();
+    state.link_character_rgba = theme.link_character_clamped();
+    state.link_faction_rgba = theme.link_faction_clamped();
+    state.link_concept_rgba = theme.link_concept_clamped();
+    state.link_hover_hsv_value_adjustment = theme.link_hover_hsv_value_adjustment_clamped();
+    state.processed_glass = theme.processed_glass;
+    state.explorer_glass = theme.explorer_glass;
+    state.settings_glass = theme.settings_glass;
+    sync_theme_colors(state);
+    state.available_themes = list_available_themes();
+    state.processed_cache_dirty_from_line = Some(0);
 }
 
 pub(crate) fn parse_ron_value(contents: &str, key: &str) -> Option<String> {
@@ -555,6 +737,7 @@ pub(crate) fn persistent_ui_state_from_ron(
 }
 
 pub(crate) fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) -> ThemeSettings {
+    let name = parse_ron_string(contents, "name").unwrap_or_else(|| defaults.name.clone());
     let app_background =
         parse_ron_vec4(contents, "app_background").unwrap_or(defaults.app_background);
     let top_menu_background =
@@ -576,6 +759,28 @@ pub(crate) fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) 
                     .unwrap_or(defaults.selection_background.w),
             )
         });
+    let paper_background =
+        parse_ron_vec4(contents, "paper_background").unwrap_or(defaults.paper_background);
+    let text_main = parse_ron_vec4(contents, "text_main").unwrap_or(defaults.text_main);
+    let text_muted = parse_ron_vec4(contents, "text_muted").unwrap_or(defaults.text_muted);
+    let text_scene_heading =
+        parse_ron_vec4(contents, "text_scene_heading").unwrap_or(defaults.text_scene_heading);
+    let text_action = parse_ron_vec4(contents, "text_action").unwrap_or(defaults.text_action);
+    let text_character =
+        parse_ron_vec4(contents, "text_character").unwrap_or(defaults.text_character);
+    let text_dialogue = parse_ron_vec4(contents, "text_dialogue").unwrap_or(defaults.text_dialogue);
+    let text_parenthetical =
+        parse_ron_vec4(contents, "text_parenthetical").unwrap_or(defaults.text_parenthetical);
+    let text_transition =
+        parse_ron_vec4(contents, "text_transition").unwrap_or(defaults.text_transition);
+    let text_markdown_heading =
+        parse_ron_vec4(contents, "text_markdown_heading").unwrap_or(defaults.text_markdown_heading);
+    let text_markdown_quote =
+        parse_ron_vec4(contents, "text_markdown_quote").unwrap_or(defaults.text_markdown_quote);
+    let text_markdown_code =
+        parse_ron_vec4(contents, "text_markdown_code").unwrap_or(defaults.text_markdown_code);
+    let text_markdown_rule =
+        parse_ron_vec4(contents, "text_markdown_rule").unwrap_or(defaults.text_markdown_rule);
     let legacy_processed_link =
         parse_ron_vec4(contents, "processed_link").unwrap_or(defaults.link_fallback);
     let link_fallback = parse_ron_vec4(contents, "link_fallback").unwrap_or(legacy_processed_link);
@@ -597,6 +802,7 @@ pub(crate) fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) 
         .unwrap_or(defaults.settings_glass);
 
     ThemeSettings {
+        name,
         app_background: clamp_vec4_rgba(app_background),
         top_menu_background: clamp_vec4_rgba(top_menu_background),
         explorer_background: clamp_vec4_rgba(explorer_background),
@@ -607,6 +813,19 @@ pub(crate) fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) 
             selection_background.z.clamp(0.0, 1.0),
             selection_background.w.clamp(0.0, 1.0),
         ),
+        paper_background: clamp_vec4_rgba(paper_background),
+        text_main: clamp_vec4_rgba(text_main),
+        text_muted: clamp_vec4_rgba(text_muted),
+        text_scene_heading: clamp_vec4_rgba(text_scene_heading),
+        text_action: clamp_vec4_rgba(text_action),
+        text_character: clamp_vec4_rgba(text_character),
+        text_dialogue: clamp_vec4_rgba(text_dialogue),
+        text_parenthetical: clamp_vec4_rgba(text_parenthetical),
+        text_transition: clamp_vec4_rgba(text_transition),
+        text_markdown_heading: clamp_vec4_rgba(text_markdown_heading),
+        text_markdown_quote: clamp_vec4_rgba(text_markdown_quote),
+        text_markdown_code: clamp_vec4_rgba(text_markdown_code),
+        text_markdown_rule: clamp_vec4_rgba(text_markdown_rule),
         link_fallback: clamp_vec4_rgba(link_fallback),
         link_prop: clamp_vec4_rgba(link_prop),
         link_place: clamp_vec4_rgba(link_place),
@@ -755,6 +974,11 @@ pub(crate) fn persistent_ui_state_from_state(state: &EditorState) -> PersistentU
 
 pub(crate) fn theme_settings_from_state(state: &EditorState) -> ThemeSettings {
     ThemeSettings {
+        name: if state.current_theme_name.is_empty() {
+            "Default".to_string()
+        } else {
+            state.current_theme_name.clone()
+        },
         app_background: clamp_vec4_rgba(state.app_bg_rgba),
         top_menu_background: clamp_vec4_rgba(state.top_menu_bg_rgba),
         explorer_background: clamp_vec4_rgba(state.explorer_bg_rgba),
@@ -765,6 +989,19 @@ pub(crate) fn theme_settings_from_state(state: &EditorState) -> ThemeSettings {
             state.selection_bg_rgba.z.clamp(0.0, 1.0),
             state.selection_bg_rgba.w.clamp(0.0, 1.0),
         ),
+        paper_background: clamp_vec4_rgba(state.paper_bg_rgba),
+        text_main: clamp_vec4_rgba(state.text_main_rgba),
+        text_muted: clamp_vec4_rgba(state.text_muted_rgba),
+        text_scene_heading: clamp_vec4_rgba(state.text_scene_heading_rgba),
+        text_action: clamp_vec4_rgba(state.text_action_rgba),
+        text_character: clamp_vec4_rgba(state.text_character_rgba),
+        text_dialogue: clamp_vec4_rgba(state.text_dialogue_rgba),
+        text_parenthetical: clamp_vec4_rgba(state.text_parenthetical_rgba),
+        text_transition: clamp_vec4_rgba(state.text_transition_rgba),
+        text_markdown_heading: clamp_vec4_rgba(state.text_markdown_heading_rgba),
+        text_markdown_quote: clamp_vec4_rgba(state.text_markdown_quote_rgba),
+        text_markdown_code: clamp_vec4_rgba(state.text_markdown_code_rgba),
+        text_markdown_rule: clamp_vec4_rgba(state.text_markdown_rule_rgba),
         link_fallback: clamp_vec4_rgba(state.link_fallback_rgba),
         link_prop: clamp_vec4_rgba(state.link_prop_rgba),
         link_place: clamp_vec4_rgba(state.link_place_rgba),
@@ -801,6 +1038,32 @@ pub(crate) fn sync_theme_colors(state: &mut EditorState) {
         state.selection_bg_rgba.z,
         state.selection_bg_rgba.w,
     );
+    state.paper_bg_rgba = clamp_vec4_rgba(state.paper_bg_rgba);
+    state.paper_bg_color = color_from_rgba(state.paper_bg_rgba);
+    state.text_main_rgba = clamp_vec4_rgba(state.text_main_rgba);
+    state.text_main_color = color_from_rgba(state.text_main_rgba);
+    state.text_muted_rgba = clamp_vec4_rgba(state.text_muted_rgba);
+    state.text_muted_color = color_from_rgba(state.text_muted_rgba);
+    state.text_scene_heading_rgba = clamp_vec4_rgba(state.text_scene_heading_rgba);
+    state.text_scene_heading_color = color_from_rgba(state.text_scene_heading_rgba);
+    state.text_action_rgba = clamp_vec4_rgba(state.text_action_rgba);
+    state.text_action_color = color_from_rgba(state.text_action_rgba);
+    state.text_character_rgba = clamp_vec4_rgba(state.text_character_rgba);
+    state.text_character_color = color_from_rgba(state.text_character_rgba);
+    state.text_dialogue_rgba = clamp_vec4_rgba(state.text_dialogue_rgba);
+    state.text_dialogue_color = color_from_rgba(state.text_dialogue_rgba);
+    state.text_parenthetical_rgba = clamp_vec4_rgba(state.text_parenthetical_rgba);
+    state.text_parenthetical_color = color_from_rgba(state.text_parenthetical_rgba);
+    state.text_transition_rgba = clamp_vec4_rgba(state.text_transition_rgba);
+    state.text_transition_color = color_from_rgba(state.text_transition_rgba);
+    state.text_markdown_heading_rgba = clamp_vec4_rgba(state.text_markdown_heading_rgba);
+    state.text_markdown_heading_color = color_from_rgba(state.text_markdown_heading_rgba);
+    state.text_markdown_quote_rgba = clamp_vec4_rgba(state.text_markdown_quote_rgba);
+    state.text_markdown_quote_color = color_from_rgba(state.text_markdown_quote_rgba);
+    state.text_markdown_code_rgba = clamp_vec4_rgba(state.text_markdown_code_rgba);
+    state.text_markdown_code_color = color_from_rgba(state.text_markdown_code_rgba);
+    state.text_markdown_rule_rgba = clamp_vec4_rgba(state.text_markdown_rule_rgba);
+    state.text_markdown_rule_color = color_from_rgba(state.text_markdown_rule_rgba);
     state.link_fallback_rgba = clamp_vec4_rgba(state.link_fallback_rgba);
     state.link_fallback_color = color_from_rgba(state.link_fallback_rgba);
     state.link_prop_rgba = clamp_vec4_rgba(state.link_prop_rgba);
@@ -828,6 +1091,19 @@ pub(crate) fn theme_rgba_for_target(state: &EditorState, target: ThemeColorTarge
         ThemeColorTarget::ExplorerBackground => state.explorer_bg_rgba,
         ThemeColorTarget::ProcessedBackground => state.processed_bg_rgba,
         ThemeColorTarget::SelectionBackground => state.selection_bg_rgba,
+        ThemeColorTarget::PaperBackground => state.paper_bg_rgba,
+        ThemeColorTarget::TextMain => state.text_main_rgba,
+        ThemeColorTarget::TextMuted => state.text_muted_rgba,
+        ThemeColorTarget::TextSceneHeading => state.text_scene_heading_rgba,
+        ThemeColorTarget::TextAction => state.text_action_rgba,
+        ThemeColorTarget::TextCharacter => state.text_character_rgba,
+        ThemeColorTarget::TextDialogue => state.text_dialogue_rgba,
+        ThemeColorTarget::TextParenthetical => state.text_parenthetical_rgba,
+        ThemeColorTarget::TextTransition => state.text_transition_rgba,
+        ThemeColorTarget::TextMarkdownHeading => state.text_markdown_heading_rgba,
+        ThemeColorTarget::TextMarkdownQuote => state.text_markdown_quote_rgba,
+        ThemeColorTarget::TextMarkdownCode => state.text_markdown_code_rgba,
+        ThemeColorTarget::TextMarkdownRule => state.text_markdown_rule_rgba,
         ThemeColorTarget::LinkFallback => state.link_fallback_rgba,
         ThemeColorTarget::LinkProp => state.link_prop_rgba,
         ThemeColorTarget::LinkPlace => state.link_place_rgba,
@@ -844,6 +1120,19 @@ pub(crate) fn theme_color_for_target(state: &EditorState, target: ThemeColorTarg
         ThemeColorTarget::ExplorerBackground => state.explorer_bg_color,
         ThemeColorTarget::ProcessedBackground => state.processed_bg_color,
         ThemeColorTarget::SelectionBackground => state.selection_bg_color,
+        ThemeColorTarget::PaperBackground => state.paper_bg_color,
+        ThemeColorTarget::TextMain => state.text_main_color,
+        ThemeColorTarget::TextMuted => state.text_muted_color,
+        ThemeColorTarget::TextSceneHeading => state.text_scene_heading_color,
+        ThemeColorTarget::TextAction => state.text_action_color,
+        ThemeColorTarget::TextCharacter => state.text_character_color,
+        ThemeColorTarget::TextDialogue => state.text_dialogue_color,
+        ThemeColorTarget::TextParenthetical => state.text_parenthetical_color,
+        ThemeColorTarget::TextTransition => state.text_transition_color,
+        ThemeColorTarget::TextMarkdownHeading => state.text_markdown_heading_color,
+        ThemeColorTarget::TextMarkdownQuote => state.text_markdown_quote_color,
+        ThemeColorTarget::TextMarkdownCode => state.text_markdown_code_color,
+        ThemeColorTarget::TextMarkdownRule => state.text_markdown_rule_color,
         ThemeColorTarget::LinkFallback => state.link_fallback_color,
         ThemeColorTarget::LinkProp => state.link_prop_color,
         ThemeColorTarget::LinkPlace => state.link_place_color,
@@ -860,6 +1149,19 @@ pub(crate) fn set_active_theme_rgba(state: &mut EditorState, rgba: Vec4) {
         ThemeColorTarget::ExplorerBackground => state.explorer_bg_rgba = rgba,
         ThemeColorTarget::ProcessedBackground => state.processed_bg_rgba = rgba,
         ThemeColorTarget::SelectionBackground => state.selection_bg_rgba = rgba,
+        ThemeColorTarget::PaperBackground => state.paper_bg_rgba = rgba,
+        ThemeColorTarget::TextMain => state.text_main_rgba = rgba,
+        ThemeColorTarget::TextMuted => state.text_muted_rgba = rgba,
+        ThemeColorTarget::TextSceneHeading => state.text_scene_heading_rgba = rgba,
+        ThemeColorTarget::TextAction => state.text_action_rgba = rgba,
+        ThemeColorTarget::TextCharacter => state.text_character_rgba = rgba,
+        ThemeColorTarget::TextDialogue => state.text_dialogue_rgba = rgba,
+        ThemeColorTarget::TextParenthetical => state.text_parenthetical_rgba = rgba,
+        ThemeColorTarget::TextTransition => state.text_transition_rgba = rgba,
+        ThemeColorTarget::TextMarkdownHeading => state.text_markdown_heading_rgba = rgba,
+        ThemeColorTarget::TextMarkdownQuote => state.text_markdown_quote_rgba = rgba,
+        ThemeColorTarget::TextMarkdownCode => state.text_markdown_code_rgba = rgba,
+        ThemeColorTarget::TextMarkdownRule => state.text_markdown_rule_rgba = rgba,
         ThemeColorTarget::LinkFallback => state.link_fallback_rgba = rgba,
         ThemeColorTarget::LinkProp => state.link_prop_rgba = rgba,
         ThemeColorTarget::LinkPlace => state.link_place_rgba = rgba,
@@ -868,6 +1170,7 @@ pub(crate) fn set_active_theme_rgba(state: &mut EditorState, rgba: Vec4) {
         ThemeColorTarget::LinkConcept => state.link_concept_rgba = rgba,
     }
     sync_theme_colors(state);
+    state.processed_cache_dirty_from_line = Some(0);
 }
 
 impl EditorState {
@@ -901,11 +1204,7 @@ impl EditorState {
             ThemeColorTarget::LinkCharacter => self.link_character_rgba,
             ThemeColorTarget::LinkFaction => self.link_faction_rgba,
             ThemeColorTarget::LinkConcept => self.link_concept_rgba,
-            ThemeColorTarget::AppBackground
-            | ThemeColorTarget::TopMenuBackground
-            | ThemeColorTarget::ExplorerBackground
-            | ThemeColorTarget::ProcessedBackground
-            | ThemeColorTarget::SelectionBackground => self.link_fallback_rgba,
+            _ => self.link_fallback_rgba,
         }
     }
 }
