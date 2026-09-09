@@ -2347,7 +2347,7 @@ pub(crate) fn panel_bundle(
                                 ..default()
                             },
                             UiTransform::default(),
-                            BackgroundColor(Color::srgba(0.12, 0.12, 0.13, 0.35)),
+                            BackgroundColor(Color::BLACK),
                             Visibility::Hidden,
                             ZIndex(2),
                             PanelCaret { kind },

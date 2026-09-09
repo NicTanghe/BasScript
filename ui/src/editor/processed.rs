@@ -213,15 +213,98 @@ pub(crate) fn processed_page_top_for_slot(
     geometry.paper_top + slot as f32 * page_step_px - anchor_scroll_offset_px
 }
 
-pub(crate) fn processed_text_top_for_slot(
-    geometry: &ProcessedPageGeometry,
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ProcessedPagePlacement {
+    pub(crate) paper_top: f32,
+    pub(crate) paper_height: f32,
+    pub(crate) text_top: f32,
+}
+
+impl ProcessedPagePlacement {
+    pub(crate) fn text_top_in_paper(self) -> f32 {
+        self.text_top - self.paper_top
+    }
+
+    pub(crate) fn contains_y(self, y: f32) -> bool {
+        y >= self.paper_top && y < self.paper_top + self.paper_height
+    }
+}
+
+// Continuous chunks are an allocation detail, not fixed-height pages. Share their
+// measured positions between text, paper, caret, selections and mouse hit testing.
+pub(crate) fn processed_page_placements(
+    state: &EditorState,
+    layout: &ProcessedPageLayout,
+    all_lines: &[ProcessedVisualLine],
+    view: &ProcessedView,
+    scroll_bias_px: f32,
+) -> Vec<ProcessedPagePlacement> {
+    let step_lines = layout.page_step_lines.max(1);
+    let first_page = view.start_index / step_lines;
+    let total_pages = processed_page_count_for_lines(all_lines, step_lines);
+    let count = total_pages
+        .saturating_sub(first_page)
+        .min(PROCESSED_PAPER_CAPACITY);
+    let geometry = &layout.geometry;
+    let line_height = scaled_line_height(state).max(1.0);
+    let anchor_offset = processed_anchor_scroll_offset_px_from_lines(
+        state,
+        all_lines,
+        view.anchor_index,
+        step_lines,
+        line_height,
+    );
+    let top_padding = (geometry.text_top - geometry.paper_top).max(0.0);
+    let mut next_top = geometry.paper_top - anchor_offset + scroll_bias_px;
+    (0..count)
+        .map(|slot| {
+            let (padding, height, gap) = if state.processed_paginated {
+                (top_padding, geometry.paper_height, geometry.page_gap)
+            } else {
+                let start = view.start_index + slot * step_lines;
+                let end = (start + step_lines).min(all_lines.len());
+                // The view is padded for reusable text entities near EOF. Those
+                // placeholders must not enlarge the continuous paper.
+                let content_height = all_lines[start.min(end)..end]
+                    .iter()
+                    .map(|line| processed_visual_line_height_units(state, line))
+                    .sum::<f32>()
+                    * line_height;
+                let padding = if slot == 0 { top_padding } else { 0.0 };
+                let bottom_padding = if first_page + slot + 1 == total_pages {
+                    state.page_margin_bottom * state.zoom.max(f32::EPSILON)
+                } else {
+                    0.0
+                };
+                (
+                    padding,
+                    (content_height + padding + bottom_padding).max(1.0),
+                    0.0,
+                )
+            };
+            let placement = ProcessedPagePlacement {
+                paper_top: next_top,
+                paper_height: height,
+                text_top: next_top + padding,
+            };
+            next_top += height + gap;
+            placement
+        })
+        .collect()
+}
+
+pub(crate) fn processed_paper_height_for_slot(
+    pages: &[ProcessedPagePlacement],
+    paginated: bool,
     slot: usize,
-    page_step_px: f32,
-    anchor_scroll_offset_px: f32,
 ) -> f32 {
-    let page_top =
-        processed_page_top_for_slot(geometry, slot, page_step_px, anchor_scroll_offset_px);
-    page_top + (geometry.text_top - geometry.paper_top)
+    let page = pages[slot];
+    if !paginated && slot == 0 {
+        let last = pages.last().unwrap();
+        last.paper_top + last.paper_height - page.paper_top
+    } else {
+        page.paper_height
+    }
 }
 
 pub(crate) fn processed_anchor_page_top_for_state(
@@ -346,17 +429,14 @@ fn processed_caret_screen_y(state: &mut EditorState, panel_size: Vec2) -> Option
     }
 
     let line_height = scaled_line_height(state).max(1.0);
-    let anchor_offset = processed_anchor_scroll_offset_px_from_lines(
+    let pages = processed_page_placements(
         state,
+        &layout,
         &lines,
-        view.anchor_index,
-        step_lines,
-        line_height,
+        &view,
+        state.processed_zoom_anchor_bias_px,
     );
-    let page_step_px = processed_page_step_px(&layout.geometry, state.zoom);
-    let page_text_top =
-        processed_text_top_for_slot(&layout.geometry, slot, page_step_px, anchor_offset)
-            + state.processed_zoom_anchor_bias_px;
+    let page_text_top = pages.get(slot)?.text_top;
     let page_start = caret_page.saturating_mul(step_lines);
     let line_in_page = caret_visual_index % step_lines;
     let line_top =
@@ -2046,6 +2126,126 @@ mod processed_markdown_inline_tests {
         state.processed_paginated = true;
         state.reparse();
         state
+    }
+
+    #[test]
+    fn continuous_scroll_keeps_the_caret_stable_when_recycling_chunks() {
+        let mut state = rendered_test_state();
+        let step = processed_page_step_lines();
+        state.document = Document::from_text(&"# Heading\nBody\n".repeat(step * 2));
+        state.processed_paginated = false;
+        state.reparse();
+        let panel_size = Vec2::new(1200.0, 900.0);
+        for zoom in [0.8, 1.65] {
+            state.set_zoom(zoom);
+            let line_height = scaled_line_height(&state);
+            for boundary in [step, step * 2] {
+                state.processed_top_visual = boundary - 1;
+                state.processed_top_line = boundary - 1;
+                state.cursor.position = Position {
+                    line: boundary + 1,
+                    column: 0,
+                };
+                let layout = processed_page_layout(panel_size, &state);
+                let lines = processed_display_lines(
+                    &mut state,
+                    layout.wrap_columns,
+                    layout.lines_per_page,
+                    layout.spacer_lines,
+                );
+                let row_height =
+                    processed_visual_line_height_units(&state, &lines[boundary - 1]) * line_height;
+                let margin = if boundary == step {
+                    state.page_margin_top * zoom
+                } else {
+                    0.0
+                };
+                state.processed_zoom_anchor_bias_px = -row_height - margin + 1.0;
+                let before = processed_caret_screen_y(&mut state, panel_size).unwrap().0;
+                apply_processed_panel_vertical_scroll(
+                    &mut state,
+                    Some(panel_size),
+                    2.0 / line_height,
+                    40,
+                );
+                assert_eq!(state.processed_top_visual, boundary);
+                let after = processed_caret_screen_y(&mut state, panel_size).unwrap().0;
+                assert!((after - (before - 2.0)).abs() < 0.02, "{before} -> {after}");
+                apply_processed_panel_vertical_scroll(
+                    &mut state,
+                    Some(panel_size),
+                    -2.0 / line_height,
+                    40,
+                );
+                let restored = processed_caret_screen_y(&mut state, panel_size).unwrap().0;
+                assert_eq!(state.processed_top_visual, boundary - 1);
+                assert!((restored - before).abs() < 0.02);
+            }
+        }
+    }
+
+    #[test]
+    fn styled_rows_hit_their_own_chunk_and_paginated_pages_keep_a4_spacing() {
+        let mut state = rendered_test_state();
+        let step = processed_page_step_lines();
+        state.document = Document::from_text(&"# Heading\nBody\n".repeat(step * 2));
+        state.set_zoom(1.4);
+        state.reparse();
+        for paginated in [false, true] {
+            state.processed_paginated = paginated;
+            state.processed_top_visual = step + 3;
+            let layout = processed_page_layout(Vec2::new(1200.0, 900.0), &state);
+            let lines = processed_display_lines(
+                &mut state,
+                layout.wrap_columns,
+                layout.lines_per_page,
+                layout.spacer_lines,
+            );
+            let view = build_processed_view(
+                &lines,
+                state.processed_top_visual,
+                step,
+                step * PROCESSED_PAPER_CAPACITY,
+            );
+            let pages = processed_page_placements(&state, &layout, &lines, &view, -3.0);
+            let line_height = scaled_line_height(&state);
+            for (slot, page) in pages.iter().enumerate() {
+                if paginated {
+                    assert_eq!(page.paper_height, layout.geometry.paper_height);
+                    if slot > 0 {
+                        let expected = pages[slot - 1].paper_top
+                            + layout.geometry.paper_height
+                            + layout.geometry.page_gap;
+                        assert!((page.paper_top - expected).abs() < 0.02);
+                    }
+                }
+                let start = view.start_index + slot * step;
+                let mut top = page.text_top;
+                for (offset, line) in lines
+                    .iter()
+                    .skip(start)
+                    .take(layout.lines_per_page)
+                    .enumerate()
+                {
+                    let height = processed_visual_line_height_units(&state, line) * line_height;
+                    if !line.is_spacer && height > 0.0 {
+                        let y = top + height * 0.5;
+                        assert_eq!(pages.iter().position(|page| page.contains_y(y)), Some(slot));
+                        assert_eq!(
+                            processed_visual_line_offset_at_height(
+                                &state,
+                                &lines,
+                                start,
+                                layout.lines_per_page,
+                                (y - page.text_top) / line_height,
+                            ),
+                            offset
+                        );
+                    }
+                    top += height;
+                }
+            }
+        }
     }
 
     #[test]

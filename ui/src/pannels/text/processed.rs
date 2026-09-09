@@ -144,10 +144,12 @@ pub(crate) fn apply_processed_visual_scroll_px(
 
     if delta_px > 0.0 {
         while state.processed_top_visual < max_visual {
-            let current_height =
-                processed_visual_line_height_units(state, &all_lines[state.processed_top_visual])
-                    .max(f32::EPSILON)
-                    * base_line_height;
+            let current_height = processed_visual_scroll_step_height(
+                state,
+                &all_lines[state.processed_top_visual],
+                state.processed_top_visual,
+                base_line_height,
+            );
             if state.processed_zoom_anchor_bias_px > -current_height {
                 break;
             }
@@ -155,10 +157,12 @@ pub(crate) fn apply_processed_visual_scroll_px(
             state.processed_top_visual = state.processed_top_visual.saturating_add(1);
         }
 
-        let current_height =
-            processed_visual_line_height_units(state, &all_lines[state.processed_top_visual])
-                .max(f32::EPSILON)
-                * base_line_height;
+        let current_height = processed_visual_scroll_step_height(
+            state,
+            &all_lines[state.processed_top_visual],
+            state.processed_top_visual,
+            base_line_height,
+        );
         if state.processed_top_visual == max_visual
             && state.processed_zoom_anchor_bias_px < -current_height
         {
@@ -169,10 +173,12 @@ pub(crate) fn apply_processed_visual_scroll_px(
     } else {
         while state.processed_zoom_anchor_bias_px > 0.0 && state.processed_top_visual > 0 {
             state.processed_top_visual = state.processed_top_visual.saturating_sub(1);
-            let previous_height =
-                processed_visual_line_height_units(state, &all_lines[state.processed_top_visual])
-                    .max(f32::EPSILON)
-                    * base_line_height;
+            let previous_height = processed_visual_scroll_step_height(
+                state,
+                &all_lines[state.processed_top_visual],
+                state.processed_top_visual,
+                base_line_height,
+            );
             state.processed_zoom_anchor_bias_px -= previous_height;
         }
 
@@ -184,6 +190,23 @@ pub(crate) fn apply_processed_visual_scroll_px(
     }
 
     0.0
+}
+
+fn processed_visual_scroll_step_height(
+    state: &EditorState,
+    line: &ProcessedVisualLine,
+    visual_index: usize,
+    base_line_height: f32,
+) -> f32 {
+    let height =
+        processed_visual_line_height_units(state, line).max(f32::EPSILON) * base_line_height;
+    // The first continuous chunk owns the document's top margin. Scroll that
+    // margin out before recycling the chunk so the next chunk does not jump up.
+    if !state.processed_paginated && visual_index + 1 == processed_page_step_lines() {
+        height + state.page_margin_top * state.zoom.max(f32::EPSILON)
+    } else {
+        height
+    }
 }
 
 pub(crate) fn apply_cursor_follow_scroll_policy(

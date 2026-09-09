@@ -72,7 +72,13 @@ pub(crate) fn render_editor(
         ),
     >,
     mut caret_query: Query<
-        (&PanelCaret, &mut Node, &mut Visibility, &mut UiTransform),
+        (
+            &PanelCaret,
+            &mut Node,
+            &mut Visibility,
+            &mut UiTransform,
+            &mut BackgroundColor,
+        ),
         (
             Without<PanelText>,
             Without<PanelPaper>,
@@ -151,7 +157,7 @@ pub(crate) fn render_editor(
                 .clone_from_if_neq("");
             text_color.set_if_neq(TextColor(Color::NONE));
         }
-        for (_, mut node, mut visibility, mut transform) in caret_query.iter_mut() {
+        for (_, mut node, mut visibility, mut transform, _) in caret_query.iter_mut() {
             node.width = px(0.0);
             node.height = px(0.0);
             transform.scale = Vec2::ONE;
@@ -241,28 +247,13 @@ pub(crate) fn render_editor(
     let first_visible_page = processed_view.start_index / processed_page_step_lines;
     let processed_total_pages =
         processed_page_count_for_lines(&processed_all_lines, processed_page_step_lines);
-    let processed_anchor_offset_px = processed_anchor_scroll_offset_px_from_lines(
+    let processed_pages = processed_page_placements(
         &state,
+        &processed_layout_info,
         &processed_all_lines,
-        processed_view.anchor_index,
-        processed_page_step_lines,
-        processed_line_height,
+        &processed_view,
+        state.processed_zoom_anchor_bias_px,
     );
-    let processed_page_step_pixels = processed_page_step_px(&processed_geometry, state.zoom);
-    let continuous_visible_page_count = processed_total_pages
-        .saturating_sub(first_visible_page)
-        .clamp(1, PROCESSED_PAPER_CAPACITY);
-    let continuous_top_padding =
-        (processed_geometry.text_top - processed_geometry.paper_top).max(0.0);
-    let continuous_bottom_padding = if first_visible_page
-        .saturating_add(continuous_visible_page_count)
-        >= processed_total_pages
-    {
-        state.page_margin_bottom * state.zoom.max(f32::EPSILON)
-    } else {
-        0.0
-    };
-    let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
     for (_, mut transform) in canvas_query.iter_mut() {
         transform.scale = Vec2::ONE;
         transform.translation = Val2::ZERO;
@@ -274,32 +265,21 @@ pub(crate) fn render_editor(
             continue;
         }
 
-        let page_index = first_visible_page.saturating_add(panel_paper.slot);
-        if page_index >= processed_total_pages {
+        let Some(page) = processed_pages.get(panel_paper.slot) else {
             visibility.set_if_neq(Visibility::Hidden);
             continue;
-        }
+        };
 
-        let page_top = processed_page_top_for_slot(
-            &processed_geometry,
-            panel_paper.slot,
-            processed_page_step_pixels,
-            processed_anchor_offset_px,
-        ) + processed_zoom_bias_px;
         let page_left = processed_geometry.paper_left - state.processed_horizontal_scroll;
 
         node.left = px(page_left);
-        node.top = px(page_top);
+        node.top = px(page.paper_top);
         node.width = px(processed_geometry.paper_width);
-        node.height = if !state.processed_paginated && panel_paper.slot == 0 {
-            px(
-                processed_page_step_pixels * continuous_visible_page_count as f32
-                    + continuous_top_padding
-                    + continuous_bottom_padding,
-            )
-        } else {
-            px(processed_geometry.paper_height)
-        };
+        node.height = px(processed_paper_height_for_slot(
+            &processed_pages,
+            state.processed_paginated,
+            panel_paper.slot,
+        ));
         node.overflow = if state.processed_paginated {
             Overflow::clip()
         } else {
@@ -346,7 +326,7 @@ pub(crate) fn render_editor(
         );
         let line_height_units = processed_visual_line_height_units(&state, visual_line);
         let next_left = px(processed_geometry.text_left - processed_geometry.paper_left);
-        let next_top = px(processed_geometry.text_top - processed_geometry.paper_top
+        let next_top = px(processed_pages[paper_text.slot].text_top_in_paper()
             + line_top_units * processed_line_height);
         let next_width = px(processed_geometry.text_width);
         let next_height = px(line_height_units * processed_line_height);
@@ -374,7 +354,6 @@ pub(crate) fn render_editor(
     }
 
     let text_left_in_paper = processed_geometry.text_left - processed_geometry.paper_left;
-    let text_top_in_paper = processed_geometry.text_top - processed_geometry.paper_top;
     let checklist_icon_size = (processed_line_height * 0.72).clamp(8.0, 16.0);
     let checklist_icon_gap = (processed_line_height * 0.20).clamp(2.0, 4.0);
 
@@ -419,7 +398,7 @@ pub(crate) fn render_editor(
         let line_top_units =
             processed_visual_line_top_units(&state, &processed_all_lines, page_start, line_offset);
         node.left = px((text_left_in_paper - checklist_icon_size - checklist_icon_gap).max(0.0));
-        node.top = px(text_top_in_paper
+        node.top = px(processed_pages[icon.slot].text_top_in_paper()
             + line_top_units * processed_line_height
             + ((processed_line_height - checklist_icon_size) * 0.5).max(0.0));
         node.width = px(checklist_icon_size);
@@ -429,8 +408,15 @@ pub(crate) fn render_editor(
 
     let plain_view = plain_lines.join("\n");
 
-    for (panel_text, mut text, mut text_font, mut line_height_comp, mut node, mut transform, mut text_color) in
-        text_query.iter_mut()
+    for (
+        panel_text,
+        mut text,
+        mut text_font,
+        mut line_height_comp,
+        mut node,
+        mut transform,
+        mut text_color,
+    ) in text_query.iter_mut()
     {
         let next_node = match panel_text.kind {
             PanelKind::Plain => {
@@ -519,9 +505,7 @@ pub(crate) fn render_editor(
         processed_lines_per_page,
         &processed_text_layout_query,
         &processed_geometry,
-        processed_page_step_pixels,
-        processed_anchor_offset_px,
-        processed_zoom_bias_px,
+        &processed_pages,
         processed_char_width,
         processed_line_height,
     );
@@ -544,9 +528,7 @@ pub(crate) fn render_editor(
         processed_lines_per_page,
         &processed_text_layout_query,
         &processed_geometry,
-        processed_page_step_pixels,
-        processed_anchor_offset_px,
-        processed_zoom_bias_px,
+        &processed_pages,
         processed_char_width,
         processed_line_height,
     );
@@ -635,7 +617,13 @@ pub(crate) fn render_processed_images(
     );
     let first_visible_page = processed_view.start_index / processed_page_step_lines;
     let text_left_in_paper = processed_geometry.text_left - processed_geometry.paper_left;
-    let text_top_in_paper = processed_geometry.text_top - processed_geometry.paper_top;
+    let processed_pages = processed_page_placements(
+        &state,
+        &processed_layout_info,
+        &processed_all_lines,
+        &processed_view,
+        state.processed_zoom_anchor_bias_px,
+    );
 
     for (image_block_node, mut image_node, mut node, mut visibility) in
         processed_image_query.iter_mut()
@@ -702,7 +690,7 @@ pub(crate) fn render_processed_images(
         let left = text_left_in_paper + (max_width - display_width) * 0.5;
         let line_top_units =
             processed_visual_line_top_units(&state, &processed_all_lines, page_start, line_offset);
-        let top = text_top_in_paper
+        let top = processed_pages[image_block_node.slot].text_top_in_paper()
             + line_top_units * processed_line_height
             + ((reserved_height - display_height) * 0.5).max(0.0);
 

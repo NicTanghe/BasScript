@@ -216,14 +216,6 @@ pub(crate) fn handle_mouse_selection(
     let processed_char_width = scaled_char_width(&state).max(1.0);
     let plain_origin_x = scaled_text_padding_x(&state) - state.plain_horizontal_scroll;
     let plain_origin_y = scaled_text_padding_y(&state);
-    let processed_anchor_offset_px = processed_anchor_scroll_offset_px_from_lines(
-        &state,
-        &processed_all_lines,
-        processed_view.anchor_index,
-        processed_step_lines,
-        processed_line_height,
-    );
-    let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
     let mut hit = None::<(PanelKind, Position, Option<String>, bool)>;
 
     for (panel, relative_cursor, computed) in panel_query.iter() {
@@ -258,37 +250,24 @@ pub(crate) fn handle_mouse_selection(
             }
 
             let geometry = processed_layout.geometry;
-            let processed_step_px = processed_page_step_px(&geometry, state.zoom);
             let text_left = geometry.text_left - state.processed_horizontal_scroll;
             let text_right = text_left + geometry.text_width;
-
-            let mut clicked_page = None;
-            for slot in 0..PROCESSED_PAPER_CAPACITY {
-                let page_index = first_visible_page.saturating_add(slot);
-                let page_top = processed_page_top_for_slot(
-                    &geometry,
-                    slot,
-                    processed_step_px,
-                    processed_anchor_offset_px,
-                ) + processed_zoom_bias_px;
-                let page_bottom = page_top + geometry.paper_height;
-
-                if panel_y >= page_top && panel_y <= page_bottom {
-                    clicked_page = Some((slot, page_index));
-                    break;
-                }
-            }
-
-            let Some((slot, page_index)) = clicked_page else {
+            let pages = processed_page_placements(
+                &state,
+                &processed_layout,
+                &processed_all_lines,
+                &processed_view,
+                state.processed_zoom_anchor_bias_px,
+            );
+            let Some((slot, page)) = pages
+                .iter()
+                .enumerate()
+                .find(|(_, page)| page.contains_y(panel_y))
+            else {
                 continue;
             };
-
-            let text_top = processed_text_top_for_slot(
-                &geometry,
-                slot,
-                processed_step_px,
-                processed_anchor_offset_px,
-            ) + processed_zoom_bias_px;
+            let page_index = first_visible_page + slot;
+            let text_top = page.text_top;
             let local_x = (panel_x - text_left).max(0.0);
             let local_y = (panel_y - text_top).max(0.0);
             let page_start = page_index.saturating_mul(processed_step_lines);
@@ -581,46 +560,26 @@ pub(crate) fn hovered_processed_link_at_cursor(
     let first_visible_page = processed_view.start_index / processed_step_lines;
     let processed_line_height = scaled_line_height(state).max(1.0);
     let processed_char_width = scaled_char_width(state).max(1.0);
-    let processed_anchor_offset_px = processed_anchor_scroll_offset_px_from_lines(
-        state,
-        &processed_all_lines,
-        processed_view.anchor_index,
-        processed_step_lines,
-        processed_line_height,
-    );
-    let processed_zoom_bias_px = state.processed_zoom_anchor_bias_px;
     let size = computed.size() * computed.inverse_scale_factor();
     let panel_x = (normalized.x + 0.5) * size.x;
     let panel_y = (normalized.y + 0.5) * size.y;
     let geometry = processed_layout.geometry;
-    let processed_step_px = processed_page_step_px(&geometry, state.zoom);
     let text_left = geometry.text_left - state.processed_horizontal_scroll;
     let text_right = text_left + geometry.text_width;
 
-    let mut hovered_page = None;
-    for slot in 0..PROCESSED_PAPER_CAPACITY {
-        let page_index = first_visible_page.saturating_add(slot);
-        let page_top = processed_page_top_for_slot(
-            &geometry,
-            slot,
-            processed_step_px,
-            processed_anchor_offset_px,
-        ) + processed_zoom_bias_px;
-        let page_bottom = page_top + geometry.paper_height;
-
-        if panel_y >= page_top && panel_y <= page_bottom {
-            hovered_page = Some((slot, page_index));
-            break;
-        }
-    }
-
-    let (slot, page_index) = hovered_page?;
-    let text_top = processed_text_top_for_slot(
-        &geometry,
-        slot,
-        processed_step_px,
-        processed_anchor_offset_px,
-    ) + processed_zoom_bias_px;
+    let pages = processed_page_placements(
+        state,
+        &processed_layout,
+        &processed_all_lines,
+        &processed_view,
+        state.processed_zoom_anchor_bias_px,
+    );
+    let (slot, page) = pages
+        .iter()
+        .enumerate()
+        .find(|(_, page)| page.contains_y(panel_y))?;
+    let page_index = first_visible_page + slot;
+    let text_top = page.text_top;
     let local_x = (panel_x - text_left).max(0.0);
     let local_y = (panel_y - text_top).max(0.0);
     let page_start = page_index.saturating_mul(processed_step_lines);
@@ -757,9 +716,7 @@ pub(crate) fn render_selection_rects(
         ),
     >,
     processed_geometry: &ProcessedPageGeometry,
-    processed_page_step_pixels: f32,
-    processed_anchor_offset_px: f32,
-    processed_zoom_bias_px: f32,
+    processed_pages: &[ProcessedPagePlacement],
     processed_char_width: f32,
     processed_line_height: f32,
 ) {
@@ -896,12 +853,10 @@ pub(crate) fn render_selection_rects(
             }
 
             let text_left = processed_geometry.text_left - state.processed_horizontal_scroll;
-            let text_top = processed_text_top_for_slot(
-                processed_geometry,
-                slot,
-                processed_page_step_pixels,
-                processed_anchor_offset_px,
-            ) + processed_zoom_bias_px;
+            let Some(page) = processed_pages.get(slot) else {
+                continue;
+            };
+            let text_top = page.text_top;
 
             let line_text = visual_line.text.as_str();
             let display_len = line_text.chars().count();

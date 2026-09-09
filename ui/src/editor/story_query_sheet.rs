@@ -932,7 +932,6 @@ pub(crate) fn sync_story_query_sheet_ui(
     let lines_per_page = result_layout.lines_per_page.max(1).min(page_step_lines);
     let processed_font_size = scaled_font_size(&state);
     let processed_line_height = scaled_line_height(&state).max(1.0);
-    let processed_page_step_pixels = processed_page_step_px(&result_geometry, state.zoom);
     let (horizontal_min, horizontal_max) =
         story_query_horizontal_scroll_bounds(&result_layout, result_panel_size);
     let layout_signature = StoryQueryLayoutSignature {
@@ -963,13 +962,6 @@ pub(crate) fn sync_story_query_sheet_ui(
         }
     }
 
-    let processed_anchor_offset_px = processed_anchor_scroll_offset_px_from_lines(
-        &state,
-        &state.story_query_sheet.visual_lines,
-        state.story_query_sheet.result_scroll_visual,
-        page_step_lines,
-        processed_line_height,
-    );
     let processed_view_capacity = page_step_lines
         .saturating_mul(PROCESSED_PAPER_CAPACITY)
         .max(1);
@@ -980,19 +972,13 @@ pub(crate) fn sync_story_query_sheet_ui(
         processed_view_capacity,
     );
     let first_visible_page = processed_view.start_index / page_step_lines;
-    let total_pages =
-        processed_page_count_for_lines(&state.story_query_sheet.visual_lines, page_step_lines);
-    let continuous_visible_page_count = total_pages
-        .saturating_sub(first_visible_page)
-        .min(PROCESSED_PAPER_CAPACITY)
-        .max(1);
-    let continuous_top_padding = (result_geometry.text_top - result_geometry.paper_top).max(0.0);
-    let continuous_bottom_padding =
-        if first_visible_page.saturating_add(continuous_visible_page_count) >= total_pages {
-            state.page_margin_bottom * state.zoom.max(f32::EPSILON)
-        } else {
-            0.0
-        };
+    let processed_pages = processed_page_placements(
+        &state,
+        &result_layout,
+        &state.story_query_sheet.visual_lines,
+        &processed_view,
+        state.story_query_sheet.result_scroll_anchor_bias_px,
+    );
     let page_label = story_query_page_label(
         &state.story_query_sheet,
         first_visible_page,
@@ -1001,33 +987,22 @@ pub(crate) fn sync_story_query_sheet_ui(
 
     for (paper, mut node, mut visibility, mut color, mut transform) in story_paper_query.iter_mut()
     {
-        let page_index = first_visible_page.saturating_add(paper.slot);
-        if page_index >= total_pages {
+        let Some(page) = processed_pages.get(paper.slot) else {
             *visibility = Visibility::Hidden;
             continue;
-        }
+        };
 
-        let page_top = processed_page_top_for_slot(
-            &result_geometry,
-            paper.slot,
-            processed_page_step_pixels,
-            processed_anchor_offset_px,
-        ) + state.story_query_sheet.result_scroll_anchor_bias_px;
         let page_left =
             result_geometry.paper_left - state.story_query_sheet.result_horizontal_scroll;
 
         node.left = px(page_left);
-        node.top = px(page_top);
+        node.top = px(page.paper_top);
         node.width = px(result_geometry.paper_width);
-        node.height = if !state.processed_paginated && paper.slot == 0 {
-            px(
-                processed_page_step_pixels * continuous_visible_page_count as f32
-                    + continuous_top_padding
-                    + continuous_bottom_padding,
-            )
-        } else {
-            px(result_geometry.paper_height)
-        };
+        node.height = px(processed_paper_height_for_slot(
+            &processed_pages,
+            state.processed_paginated,
+            paper.slot,
+        ));
         node.overflow = if state.processed_paginated {
             Overflow::clip()
         } else {
@@ -1043,9 +1018,12 @@ pub(crate) fn sync_story_query_sheet_ui(
         *visibility = Visibility::Visible;
     }
 
-    for (_, mut node, mut transform) in rendered_text_node_query.iter_mut() {
+    for (text, mut node, mut transform) in rendered_text_node_query.iter_mut() {
+        let Some(page) = processed_pages.get(text.slot) else {
+            continue;
+        };
         node.left = px(result_geometry.text_left - result_geometry.paper_left);
-        node.top = px(result_geometry.text_top - result_geometry.paper_top);
+        node.top = px(page.text_top_in_paper());
         node.width = px(result_geometry.text_width);
         node.height = px(result_geometry.text_height);
         node.overflow = Overflow::visible();

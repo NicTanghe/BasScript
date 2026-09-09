@@ -71,6 +71,25 @@ pub(crate) fn caret_x_offset_for_state(state: &EditorState) -> f32 {
     }
 }
 
+pub(crate) fn caret_color_for_state(state: &EditorState, panel: PanelKind) -> Color {
+    let background = match panel {
+        PanelKind::Plain => state.ui_colors.color(UiColor::PlainBackground),
+        PanelKind::Processed => state.paper_bg_color,
+    }
+    .to_linear();
+    let luminance = 0.2126 * background.red + 0.7152 * background.green + 0.0722 * background.blue;
+    let color = if luminance > 0.179 {
+        Color::BLACK
+    } else {
+        Color::WHITE
+    };
+    if state.vim_enabled && state.vim_mode != VimMode::Insert {
+        color.with_alpha(0.5)
+    } else {
+        color
+    }
+}
+
 pub(crate) fn processed_caret_line_height(
     state: &EditorState,
     visual_line: &ProcessedVisualLine,
@@ -82,7 +101,13 @@ pub(crate) fn processed_caret_line_height(
 
 pub(crate) fn render_panel_carets(
     caret_query: &mut Query<
-        (&PanelCaret, &mut Node, &mut Visibility, &mut UiTransform),
+        (
+            &PanelCaret,
+            &mut Node,
+            &mut Visibility,
+            &mut UiTransform,
+            &mut BackgroundColor,
+        ),
         (
             Without<PanelText>,
             Without<PanelPaper>,
@@ -115,13 +140,16 @@ pub(crate) fn render_panel_carets(
         ),
     >,
     processed_geometry: &ProcessedPageGeometry,
-    processed_page_step_pixels: f32,
-    processed_anchor_offset_px: f32,
-    processed_zoom_bias_px: f32,
+    processed_pages: &[ProcessedPagePlacement],
     processed_char_width: f32,
     processed_line_height: f32,
 ) {
-    for (panel_caret, mut node, mut visibility, mut transform) in caret_query.iter_mut() {
+    for (panel_caret, mut node, mut visibility, mut transform, mut color) in caret_query.iter_mut()
+    {
+        color.set_if_neq(BackgroundColor(caret_color_for_state(
+            state,
+            panel_caret.kind,
+        )));
         if !caret_visible {
             *visibility = Visibility::Hidden;
             continue;
@@ -197,12 +225,11 @@ pub(crate) fn render_panel_carets(
                         (Some(text_block), computed.inverse_scale_factor())
                     });
 
-                let page_text_top = processed_text_top_for_slot(
-                    processed_geometry,
-                    slot,
-                    processed_page_step_pixels,
-                    processed_anchor_offset_px,
-                ) + processed_zoom_bias_px;
+                let Some(page) = processed_pages.get(slot) else {
+                    *visibility = Visibility::Hidden;
+                    continue;
+                };
+                let page_text_top = page.text_top;
                 let page_start_in_view = slot.saturating_mul(processed_page_step_lines);
                 let line_top = processed_visual_line_top_units(
                     state,
