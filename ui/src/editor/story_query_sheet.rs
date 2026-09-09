@@ -424,8 +424,8 @@ pub(crate) fn story_query_sheet_menu_bundle(font: Handle<Font>) -> impl Bundle {
             border: UiRect::left(px(1.0)),
             ..default()
         },
-        BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.10)),
-        BackgroundColor(Color::srgb(0.88, 0.89, 0.91)),
+        ThemedBorder,
+        ThemedBackground(UiColor::PanelBackground),
         children![
             (
                 Node {
@@ -439,21 +439,21 @@ pub(crate) fn story_query_sheet_menu_bundle(font: Handle<Font>) -> impl Bundle {
                         font.clone(),
                         "Story Query Sheet",
                         16.0,
-                        COLOR_TEXT_MAIN,
+                        ThemedText::Main,
                         StoryQuerySheetTextSlot::Title,
                     ),
                     story_query_text(
                         font.clone(),
                         "",
                         11.0,
-                        COLOR_TEXT_MUTED,
+                        ThemedText::Muted,
                         StoryQuerySheetTextSlot::Status,
                     ),
                     story_query_text(
                         font.clone(),
                         "",
                         10.0,
-                        COLOR_TEXT_MUTED,
+                        ThemedText::Muted,
                         StoryQuerySheetTextSlot::Page,
                     ),
                 ],
@@ -688,8 +688,8 @@ pub(crate) fn story_query_dropdown_options_bundle(
             border: UiRect::all(px(1.0)),
             ..default()
         },
-        BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.12)),
-        BackgroundColor(Color::srgb(0.82, 0.84, 0.86)),
+        ThemedBorder,
+        ThemedBackground(UiColor::PanelBackground),
         StoryQueryDropdownOptionsRoot { kind },
         children![
             story_query_dropdown_option_button(font.clone(), kind, 0),
@@ -720,7 +720,7 @@ pub(crate) fn story_query_dropdown_option_button(
             overflow: Overflow::clip(),
             ..default()
         },
-        BackgroundColor(BUTTON_NORMAL),
+        ThemedButton,
         children![(
             Text::new(""),
             TextLayout::no_wrap(),
@@ -729,7 +729,7 @@ pub(crate) fn story_query_dropdown_option_button(
                 font_size: FontSize::Px(10.0),
                 ..default()
             },
-            TextColor(COLOR_TEXT_MAIN),
+            ThemedText::Main,
             StoryQueryDropdownOptionText { kind, slot_index },
         )],
     )
@@ -750,7 +750,7 @@ pub(crate) fn story_query_control_button(
             overflow: Overflow::clip(),
             ..default()
         },
-        BackgroundColor(BUTTON_NORMAL),
+        ThemedButton,
         children![(
             Text::new(""),
             TextLayout::no_wrap(),
@@ -759,7 +759,7 @@ pub(crate) fn story_query_control_button(
                 font_size: FontSize::Px(11.0),
                 ..default()
             },
-            TextColor(COLOR_TEXT_MAIN),
+            ThemedText::Main,
             slot,
         )],
     )
@@ -777,7 +777,7 @@ pub(crate) fn story_query_static_button(
             padding: UiRect::axes(px(8.0), px(6.0)),
             ..default()
         },
-        BackgroundColor(BUTTON_NORMAL),
+        ThemedButton,
         children![(
             Text::new(label),
             TextLayout::no_wrap(),
@@ -786,7 +786,7 @@ pub(crate) fn story_query_static_button(
                 font_size: FontSize::Px(11.0),
                 ..default()
             },
-            TextColor(COLOR_TEXT_MAIN),
+            ThemedText::Main,
         )],
     )
 }
@@ -795,7 +795,7 @@ pub(crate) fn story_query_text(
     font: Handle<Font>,
     text: &str,
     font_size: f32,
-    color: Color,
+    color: ThemedText,
     slot: StoryQuerySheetTextSlot,
 ) -> impl Bundle {
     (
@@ -807,7 +807,7 @@ pub(crate) fn story_query_text(
             ..default()
         },
         LineHeight::Px(font_size + 2.0),
-        TextColor(color),
+        color,
         slot,
     )
 }
@@ -1036,7 +1036,7 @@ pub(crate) fn sync_story_query_sheet_ui(
         transform.scale = Vec2::ONE;
         transform.translation = Val2::ZERO;
         color.0 = if state.processed_paginated || paper.slot == 0 {
-            COLOR_PAPER
+            state.paper_bg_color.with_alpha(1.0)
         } else {
             Color::NONE
         };
@@ -1085,9 +1085,9 @@ pub(crate) fn sync_story_query_sheet_ui(
             .map(|choice| choice.value == story_query_dropdown_current_value(sheet, option.kind))
             .unwrap_or(false)
         {
-            BackgroundColor(BUTTON_PRESSED)
+            BackgroundColor(state.ui_colors.color(UiColor::ActiveBackground))
         } else {
-            BackgroundColor(BUTTON_NORMAL)
+            BackgroundColor(state.ui_colors.color(UiColor::ButtonBackground))
         };
     }
 

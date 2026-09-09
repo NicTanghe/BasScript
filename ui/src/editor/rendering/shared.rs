@@ -99,13 +99,7 @@ pub(crate) fn render_editor(
         ),
     >,
     mut paper_query: Query<
-        (
-            &PanelPaper,
-            &mut Node,
-            &mut Visibility,
-            &mut BackgroundColor,
-            &mut UiTransform,
-        ),
+        (&PanelPaper, &mut Node, &mut Visibility, &mut UiTransform),
         (
             Without<PanelText>,
             Without<PanelCaret>,
@@ -169,7 +163,7 @@ pub(crate) fn render_editor(
             node.height = px(0.0);
             visibility.set_if_neq(Visibility::Hidden);
         }
-        for (_, _, mut visibility, _, _) in paper_query.iter_mut() {
+        for (_, _, mut visibility, _) in paper_query.iter_mut() {
             visibility.set_if_neq(Visibility::Hidden);
         }
         for (_, mut transform) in canvas_query.iter_mut() {
@@ -274,8 +268,7 @@ pub(crate) fn render_editor(
         transform.translation = Val2::ZERO;
     }
 
-    for (panel_paper, mut node, mut visibility, mut color, mut transform) in paper_query.iter_mut()
-    {
+    for (panel_paper, mut node, mut visibility, mut transform) in paper_query.iter_mut() {
         if panel_paper.kind != PanelKind::Processed {
             visibility.set_if_neq(Visibility::Hidden);
             continue;
@@ -314,11 +307,6 @@ pub(crate) fn render_editor(
         };
         transform.scale = Vec2::ONE;
         transform.translation = Val2::ZERO;
-        color.0 = if state.processed_paginated || panel_paper.slot == 0 {
-            COLOR_PAPER
-        } else {
-            Color::NONE
-        };
         visibility.set_if_neq(Visibility::Visible);
     }
 

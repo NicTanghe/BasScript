@@ -166,8 +166,8 @@ pub(crate) fn spawn_markdown_metadata_controls(
                 border: UiRect::all(px(MARKDOWN_METADATA_BORDER_WIDTH)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.92, 0.93, 0.95, 0.96)),
-            BorderColor::all(Color::srgba(0.10, 0.12, 0.14, 0.16)),
+            ThemedBackground(UiColor::PanelBackground),
+            ThemedBorder,
             RelativeCursorPosition::default(),
             ZIndex(8),
             GlobalZIndex(8),
@@ -222,8 +222,8 @@ pub(crate) fn markdown_metadata_field_button(
             border: UiRect::all(px(MARKDOWN_METADATA_BORDER_WIDTH)),
             ..default()
         },
-        BackgroundColor(BUTTON_NORMAL),
-        BorderColor::all(Color::srgba(0.10, 0.12, 0.14, 0.12)),
+        ThemedButton,
+        ThemedBorder,
         MarkdownMetadataFieldButton { field },
         children![(
             Text::new(""),
@@ -232,7 +232,7 @@ pub(crate) fn markdown_metadata_field_button(
                 font_size: FontSize::Px(MARKDOWN_METADATA_FONT_SIZE),
                 ..default()
             },
-            TextColor(COLOR_TEXT_MAIN),
+            ThemedText::Main,
             MarkdownMetadataFieldText { field },
         )],
     )
@@ -254,8 +254,8 @@ pub(crate) fn markdown_metadata_dropdown(
             border: UiRect::all(px(MARKDOWN_METADATA_BORDER_WIDTH)),
             ..default()
         },
-        BackgroundColor(Color::srgba(0.97, 0.98, 0.99, 0.98)),
-        BorderColor::all(Color::srgba(0.10, 0.12, 0.14, 0.18)),
+        ThemedBackground(UiColor::PanelBackground),
+        ThemedBorder,
         ZIndex(12),
         GlobalZIndex(12),
         MarkdownMetadataDropdownRoot { field },
@@ -287,7 +287,7 @@ pub(crate) fn markdown_metadata_dropdown_option(
             overflow: Overflow::clip(),
             ..default()
         },
-        BackgroundColor(BUTTON_NORMAL),
+        ThemedButton,
         MarkdownMetadataDropdownOptionButton { field, slot_index },
         children![(
             Text::new(""),
@@ -296,7 +296,7 @@ pub(crate) fn markdown_metadata_dropdown_option(
                 font_size: FontSize::Px(MARKDOWN_METADATA_FONT_SIZE),
                 ..default()
             },
-            TextColor(COLOR_TEXT_MAIN),
+            ThemedText::Main,
             MarkdownMetadataDropdownOptionText { field, slot_index },
         )],
     )
@@ -423,9 +423,9 @@ pub(crate) fn sync_markdown_metadata_controls_ui(
         node.padding = UiRect::axes(px(metrics.field_horizontal_padding), px(0.0));
         node.border = UiRect::all(px(metrics.border_width));
         background.0 = if state.markdown_metadata_focus == Some(button.field) {
-            BUTTON_PRESSED
+            state.ui_colors.color(UiColor::ActiveBackground)
         } else {
-            BUTTON_NORMAL
+            state.ui_colors.color(UiColor::InputBackground)
         };
     }
 
@@ -464,9 +464,9 @@ pub(crate) fn sync_markdown_metadata_controls_ui(
         background.0 = if state.markdown_metadata_dropdown == Some(option.field)
             && option.slot_index == state.markdown_metadata_dropdown_highlight
         {
-            BUTTON_PRESSED
+            state.ui_colors.color(UiColor::ActiveBackground)
         } else {
-            BUTTON_NORMAL
+            state.ui_colors.color(UiColor::InputBackground)
         };
         node.height = px(metrics.dropdown_row_height);
         node.padding = UiRect::axes(px(metrics.field_horizontal_padding), px(0.0));

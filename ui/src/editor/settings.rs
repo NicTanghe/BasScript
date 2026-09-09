@@ -259,6 +259,10 @@ pub(crate) fn save_persistent_ui_state(ui_state: &PersistentUiState) -> io::Resu
 }
 
 pub(crate) fn ron_string_from_theme(theme: &ThemeSettings) -> String {
+    let ui_colors = UiColor::ALL.map(|role| {
+        let rgba = theme.ui_colors.rgba(role);
+        format!("\t{}: ({:.3}, {:.3}, {:.3}, {:.3}),\n", role.key(), rgba.x, rgba.y, rgba.z, rgba.w)
+    }).join("");
     let app_background = theme.app_background_clamped();
     let top_menu_background = theme.top_menu_background_clamped();
     let explorer_background = theme.explorer_background_clamped();
@@ -288,6 +292,7 @@ pub(crate) fn ron_string_from_theme(theme: &ThemeSettings) -> String {
     format!(
         "(\n\
          \tname: \"{}\",\n\
+         {}\
          \tapp_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \ttop_menu_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
          \texplorer_background: ({:.3}, {:.3}, {:.3}, {:.3}),\n\
@@ -318,6 +323,7 @@ pub(crate) fn ron_string_from_theme(theme: &ThemeSettings) -> String {
          \tsettings_glass: {},\n\
          )\n",
         theme.name,
+        ui_colors,
         app_background.x,
         app_background.y,
         app_background.z,
@@ -498,6 +504,7 @@ pub(crate) fn save_named_theme(name: &str, theme: &ThemeSettings) -> io::Result<
 
 pub(crate) fn apply_theme_to_state(state: &mut EditorState, theme: &ThemeSettings) {
     state.current_theme_name = theme.name.clone();
+    state.ui_colors = theme.ui_colors.clone();
     state.app_bg_rgba = theme.app_background_clamped();
     state.top_menu_bg_rgba = theme.top_menu_background_clamped();
     state.explorer_bg_rgba = theme.explorer_background_clamped();
@@ -803,6 +810,21 @@ pub(crate) fn theme_settings_from_ron(contents: &str, defaults: &ThemeSettings) 
 
     ThemeSettings {
         name,
+        ui_colors: {
+            // Older dark themes have no widget colors. Supply a matching palette
+            // while preserving all explicitly saved colors.
+            let mut palette = if (app_background.x + app_background.y + app_background.z) / 3.0 < 0.5 {
+                UiPalette::dark()
+            } else {
+                defaults.ui_colors.clone()
+            };
+            for role in UiColor::ALL {
+                if let Some(rgba) = parse_ron_vec4(contents, role.key()) {
+                    palette.set(role, rgba);
+                }
+            }
+            palette
+        },
         app_background: clamp_vec4_rgba(app_background),
         top_menu_background: clamp_vec4_rgba(top_menu_background),
         explorer_background: clamp_vec4_rgba(explorer_background),
@@ -974,6 +996,7 @@ pub(crate) fn persistent_ui_state_from_state(state: &EditorState) -> PersistentU
 
 pub(crate) fn theme_settings_from_state(state: &EditorState) -> ThemeSettings {
     ThemeSettings {
+        ui_colors: state.ui_colors.clone(),
         name: if state.current_theme_name.is_empty() {
             "Default".to_string()
         } else {
@@ -1039,6 +1062,7 @@ pub(crate) fn sync_theme_colors(state: &mut EditorState) {
         state.selection_bg_rgba.w,
     );
     state.paper_bg_rgba = clamp_vec4_rgba(state.paper_bg_rgba);
+    state.paper_bg_rgba.w = 1.0;
     state.paper_bg_color = color_from_rgba(state.paper_bg_rgba);
     state.text_main_rgba = clamp_vec4_rgba(state.text_main_rgba);
     state.text_main_color = color_from_rgba(state.text_main_rgba);
@@ -1086,6 +1110,7 @@ pub(crate) fn active_theme_rgba(state: &EditorState) -> Vec4 {
 
 pub(crate) fn theme_rgba_for_target(state: &EditorState, target: ThemeColorTarget) -> Vec4 {
     match target {
+        ThemeColorTarget::Ui(role) => state.ui_colors.rgba(role),
         ThemeColorTarget::AppBackground => state.app_bg_rgba,
         ThemeColorTarget::TopMenuBackground => state.top_menu_bg_rgba,
         ThemeColorTarget::ExplorerBackground => state.explorer_bg_rgba,
@@ -1115,6 +1140,7 @@ pub(crate) fn theme_rgba_for_target(state: &EditorState, target: ThemeColorTarge
 
 pub(crate) fn theme_color_for_target(state: &EditorState, target: ThemeColorTarget) -> Color {
     match target {
+        ThemeColorTarget::Ui(role) => state.ui_colors.color(role),
         ThemeColorTarget::AppBackground => state.app_bg_color,
         ThemeColorTarget::TopMenuBackground => state.top_menu_bg_color,
         ThemeColorTarget::ExplorerBackground => state.explorer_bg_color,
@@ -1144,6 +1170,7 @@ pub(crate) fn theme_color_for_target(state: &EditorState, target: ThemeColorTarg
 
 pub(crate) fn set_active_theme_rgba(state: &mut EditorState, rgba: Vec4) {
     match state.theme_color_target {
+        ThemeColorTarget::Ui(role) => state.ui_colors.set(role, rgba),
         ThemeColorTarget::AppBackground => state.app_bg_rgba = rgba,
         ThemeColorTarget::TopMenuBackground => state.top_menu_bg_rgba = rgba,
         ThemeColorTarget::ExplorerBackground => state.explorer_bg_rgba = rgba,

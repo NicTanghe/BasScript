@@ -57,7 +57,7 @@ pub(crate) fn status_line_bundle(
                 ..default()
             },
             LineHeight::Px(STATUS_LINE_LINE_HEIGHT),
-            TextColor(COLOR_TEXT_MAIN),
+            ThemedText::Main,
             StatusText,
         )],
     )

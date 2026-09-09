@@ -55,7 +55,7 @@ pub(crate) fn workspace_prompt_bundle(font: Handle<Font>) -> impl Bundle {
                 border_radius: BorderRadius::all(px(7.0)),
                 ..default()
             },
-            BackgroundColor(COLOR_WORKSPACE_PROMPT_BG),
+            ThemedBackground(UiColor::PanelBackground),
             BorderColor::all(Color::srgba(0.15, 0.17, 0.20, 0.22)),
             children![
                 (
@@ -65,7 +65,7 @@ pub(crate) fn workspace_prompt_bundle(font: Handle<Font>) -> impl Bundle {
                         font_size: FontSize::Px(14.0),
                         ..default()
                     },
-                    TextColor(COLOR_TEXT_MAIN),
+                    ThemedText::Main,
                     WorkspacePromptTitle,
                 ),
                 (
@@ -78,7 +78,7 @@ pub(crate) fn workspace_prompt_bundle(font: Handle<Font>) -> impl Bundle {
                         border_radius: BorderRadius::all(px(5.0)),
                         ..default()
                     },
-                    BackgroundColor(COLOR_WORKSPACE_PROMPT_INPUT_BG),
+                    ThemedBackground(UiColor::InputBackground),
                     BorderColor::all(Color::srgba(0.15, 0.17, 0.20, 0.18)),
                     children![(
                         Text::new(""),
@@ -87,7 +87,7 @@ pub(crate) fn workspace_prompt_bundle(font: Handle<Font>) -> impl Bundle {
                             font_size: FontSize::Px(12.0),
                             ..default()
                         },
-                        TextColor(COLOR_TEXT_MAIN),
+                        ThemedText::Main,
                         WorkspacePromptInput,
                     )],
                 ),
@@ -98,7 +98,7 @@ pub(crate) fn workspace_prompt_bundle(font: Handle<Font>) -> impl Bundle {
                         font_size: FontSize::Px(11.0),
                         ..default()
                     },
-                    TextColor(COLOR_TEXT_MUTED),
+                    ThemedText::Muted,
                     WorkspacePromptHint,
                 ),
                 (
@@ -189,7 +189,7 @@ pub(crate) fn workspace_link_folder_option_bundle(font: Handle<Font>, slot: usiz
             border_radius: BorderRadius::all(px(4.0)),
             ..default()
         },
-        BackgroundColor(BUTTON_NORMAL),
+        ThemedButton,
         children![(
             Text::new(""),
             TextFont {
@@ -197,7 +197,7 @@ pub(crate) fn workspace_link_folder_option_bundle(font: Handle<Font>, slot: usiz
                 font_size: FontSize::Px(11.0),
                 ..default()
             },
-            TextColor(COLOR_TEXT_MAIN),
+            ThemedText::Main,
             WorkspaceLinkFolderOptionLabel { slot },
         )],
     )
@@ -303,11 +303,11 @@ pub(crate) fn sync_workspace_prompt_ui(
                 .is_some_and(|folder_index| *folder_index == *selected)
         }) || *interaction == Interaction::Pressed
         {
-            BUTTON_PRESSED
+            state.ui_colors.color(UiColor::ActiveBackground)
         } else if *interaction == Interaction::Hovered {
-            BUTTON_HOVER
+            state.ui_colors.color(UiColor::ButtonHover)
         } else {
-            BUTTON_NORMAL
+            state.ui_colors.color(UiColor::ButtonBackground)
         };
     }
     for (label, mut text) in folder_label_query.iter_mut() {

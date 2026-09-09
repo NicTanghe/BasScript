@@ -58,6 +58,8 @@ mod splitters;
 use splitters::*;
 mod settings;
 use settings::*;
+mod theme_ui;
+use theme_ui::*;
 mod linking;
 use linking::*;
 mod selection;
@@ -94,7 +96,11 @@ use dialogs::*;
 #[cfg(test)]
 mod glass_tests;
 #[cfg(test)]
+mod paper_color_tests;
+#[cfg(test)]
 mod theme_overlay_tests;
+#[cfg(test)]
+mod theme_ui_tests;
 #[cfg(target_os = "linux")]
 mod linux_glass;
 mod pdf_export;

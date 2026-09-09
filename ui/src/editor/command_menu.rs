@@ -18,7 +18,7 @@ pub(crate) fn command_menu_bundle(font: Handle<Font>) -> impl Bundle {
             padding: UiRect::axes(px(16.0), px(10.0)),
             ..default()
         },
-        BackgroundColor(Color::srgba(0.08, 0.09, 0.11, 0.92)),
+        ThemedBackground(UiColor::PanelBackground),
         ZIndex(96),
         CommandMenuRoot,
         children![(
@@ -36,7 +36,7 @@ pub(crate) fn command_menu_bundle(font: Handle<Font>) -> impl Bundle {
                         font_size: FontSize::Px(13.0),
                         ..default()
                     },
-                    TextColor(Color::srgb(0.96, 0.97, 0.99)),
+                    ThemedText::Main,
                     CommandMenuInputText,
                 ),
                 (
@@ -46,7 +46,7 @@ pub(crate) fn command_menu_bundle(font: Handle<Font>) -> impl Bundle {
                         font_size: FontSize::Px(11.0),
                         ..default()
                     },
-                    TextColor(Color::srgba(0.78, 0.80, 0.84, 0.92)),
+                    ThemedText::Muted,
                     CommandMenuHintText,
                 ),
             ],

@@ -626,7 +626,7 @@ pub(crate) fn workspace_sidebar_bundle(font: Handle<Font>, background: Color) ->
                     font_size: FontSize::Px(12.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MUTED),
+                ThemedText::Muted,
                 WorkspaceRootLabel,
             ),
             (
@@ -736,7 +736,7 @@ pub(crate) fn sync_workspace_sidebar(
                     font_size: FontSize::Px(12.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MUTED),
+                ThemedText::Muted,
             ));
             return;
         }
@@ -767,7 +767,7 @@ pub(crate) fn sync_workspace_sidebar(
                         fonts.regular.clone()
                     };
                     let row_bg = if is_selected {
-                        COLOR_WORKSPACE_ROW_SELECTED_BG
+                        state.selection_bg_color
                     } else {
                         Color::srgba(0.0, 0.0, 0.0, 0.0)
                     };
@@ -795,7 +795,7 @@ pub(crate) fn sync_workspace_sidebar(
                                     font_size: FontSize::Px(12.0),
                                     ..default()
                                 },
-                                TextColor(COLOR_TEXT_MUTED),
+                                ThemedText::Muted,
                             ),
                             (
                                 Node {
@@ -821,7 +821,7 @@ pub(crate) fn sync_workspace_sidebar(
                                     font_size: FontSize::Px(12.0),
                                     ..default()
                                 },
-                                TextColor(COLOR_TEXT_MAIN),
+                                ThemedText::Main,
                             )
                         ],
                     ));
@@ -845,15 +845,10 @@ pub(crate) fn sync_workspace_sidebar(
                                 if workspace_paths_match(selected_path, file_path)
                         )
                     });
-                    let text_color = if is_active {
-                        COLOR_WORKSPACE_FILE_SELECTED
-                    } else {
-                        COLOR_WORKSPACE_FILE
-                    };
                     let row_bg = match (is_selected, is_active) {
-                        (true, true) => COLOR_WORKSPACE_ROW_SELECTED_ACTIVE_BG,
-                        (true, false) => COLOR_WORKSPACE_ROW_SELECTED_BG,
-                        (false, true) => COLOR_WORKSPACE_ROW_ACTIVE_BG,
+                        (true, true) => state.ui_colors.color(UiColor::ActiveBackground),
+                        (true, false) => state.selection_bg_color,
+                        (false, true) => state.ui_colors.color(UiColor::ActiveBackground),
                         (false, false) => Color::srgba(0.0, 0.0, 0.0, 0.0),
                     };
 
@@ -875,7 +870,7 @@ pub(crate) fn sync_workspace_sidebar(
                                 font_size: FontSize::Px(12.0),
                                 ..default()
                             },
-                            TextColor(text_color),
+                            ThemedText::Main,
                         )],
                     ));
                 }
@@ -992,31 +987,31 @@ pub(crate) fn folder_contains_active_file(
         .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
-pub(crate) fn style_workspace_file_entry_text(
+pub(crate) fn style_workspace_rows(
     state: Res<EditorState>,
-    mut file_button_query: Query<
-        (&Interaction, &WorkspaceFileButton, &Children),
-        (Changed<Interaction>, With<Button>),
+    mut rows: Query<
+        (&Interaction, Option<&WorkspaceFileButton>, Option<&WorkspaceFolderToggleButton>, &mut BackgroundColor),
+        Or<(With<WorkspaceFileButton>, With<WorkspaceFolderToggleButton>)>,
     >,
-    mut text_color_query: Query<&mut TextColor>,
 ) {
-    for (interaction, workspace_file_button, children) in file_button_query.iter_mut() {
-        let color = match *interaction {
-            Interaction::Hovered | Interaction::Pressed => COLOR_WORKSPACE_FILE_HOVER,
-            Interaction::None => {
-                if state.workspace_active_file == Some(workspace_file_button.index) {
-                    COLOR_WORKSPACE_FILE_SELECTED
-                } else {
-                    COLOR_WORKSPACE_FILE
-                }
-            }
+    for (interaction, file, folder, mut background) in &mut rows {
+        let active = file.is_some_and(|file| state.workspace_active_file == Some(file.index));
+        let selected = match (&state.workspace_selected_row, file, folder) {
+            (Some(WorkspaceSelectedRow::File(path)), Some(file), _) => state.workspace_files
+                .get(file.index).is_some_and(|entry| workspace_paths_match(path, &entry.path)),
+            (Some(WorkspaceSelectedRow::Folder(key)), _, Some(folder)) => *key == folder.folder_key,
+            _ => false,
         };
-
-        for child in children.iter() {
-            if let Ok(mut text_color) = text_color_query.get_mut(child) {
-                text_color.0 = color;
-            }
-        }
+        let color = if *interaction != Interaction::None {
+            themed_button_color(&state, *interaction)
+        } else if active {
+            state.ui_colors.color(UiColor::ActiveBackground)
+        } else if selected {
+            state.selection_bg_color
+        } else {
+            Color::NONE
+        };
+        background.set_if_neq(BackgroundColor(color));
     }
 }
 #[allow(unused_imports)]

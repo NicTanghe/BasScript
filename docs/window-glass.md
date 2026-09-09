@@ -9,7 +9,7 @@ initialized with the native display connection. This does not require a Bevy for
 
 Open **Settings → Theme** and enable any of:
 
-- **Processed background glass**: processed text background and paper.
+- **Processed background glass**: the processed pane around the paper.
 - **Explorer glass**: the workspace sidebar.
 - **Settings glass**: settings, keybindings, theme screens and the top menu.
 
@@ -28,6 +28,12 @@ take effect immediately. All three remain off by default.
 Linux glass uses each surface's theme color, with alpha capped at `0.72`.
 Lower the color's alpha in Theme for more transparency. Text, controls, the
 plain editor, the status line and the Canvas board retain their normal styling.
+
+**Paper background** controls the page color in the processed editor and story-query
+results. Paper always stays opaque, including when processed-background glass is
+enabled. The paper color's alpha is fixed at 1; the surrounding pane retains its
+own tint and glass setting. This applies to both paginated and continuous views.
+See [Theme colors](theme-colors.md) for the interface color settings.
 
 ## Linux support
 
@@ -139,11 +145,14 @@ all three have been visually verified.
 
 ## Verification
 
-`cargo test --workspace --locked --offline` passed all 204 tests after this change.
-The glass regression tests cover
-independent switches, transparent ancestors, removing the paper background,
+Run `cargo test --workspace --locked --offline`. The glass regression tests cover
+independent switches, transparent ancestors, keeping the paper opaque,
 restoring normal colors when disabled or unavailable, preserving the Canvas
 background and retaining a lower Linux theme alpha.
+
+Paper-color regressions run the theme and page-rendering systems together across
+redraws in either order. They cover live color changes, new pages, opaque paper with glass,
+and paginated and continuous pages in both the editor and story-query results.
 
 For a native smoke test:
 

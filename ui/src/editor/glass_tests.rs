@@ -98,7 +98,7 @@ fn glass_toggles_open_the_root_and_only_the_selected_surfaces() {
         .processed_glass = true;
     app.update();
     assert!(color(&app, surfaces.processed).alpha() < 1.0);
-    assert_eq!(color(&app, surfaces.paper), Color::NONE);
+    assert_eq!(color(&app, surfaces.paper), COLOR_PAPER);
     assert_eq!(color(&app, surfaces.plain), COLOR_PANEL_BODY_PLAIN);
 
     app.world_mut().resource_mut::<EditorState>().settings_glass = true;

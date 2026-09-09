@@ -95,7 +95,7 @@ pub(crate) fn setup(
                                     font_size: FontSize::Px(14.0),
                                     ..default()
                                 },
-                                TextColor(COLOR_TEXT_MAIN),
+                                ThemedText::Main,
                             ),
                             (
                                 Node {
@@ -945,7 +945,7 @@ pub(crate) fn toolbar_button(
             padding: UiRect::axes(px(12.0), px(6.0)),
             ..default()
         },
-        BackgroundColor(BUTTON_NORMAL),
+        ThemedButton,
         children![(
             Text::new(label),
             TextFont {
@@ -953,7 +953,7 @@ pub(crate) fn toolbar_button(
                 font_size: FontSize::Px(13.0),
                 ..default()
             },
-            TextColor(COLOR_TEXT_MAIN),
+            ThemedText::Main,
         )],
     )
 }
@@ -966,7 +966,7 @@ pub(crate) fn settings_toggle_button(font: Handle<Font>, action: SettingsAction)
             padding: UiRect::axes(px(12.0), px(6.0)),
             ..default()
         },
-        BackgroundColor(BUTTON_NORMAL),
+        ThemedButton,
         children![(
             Text::new(""),
             TextFont {
@@ -974,7 +974,7 @@ pub(crate) fn settings_toggle_button(font: Handle<Font>, action: SettingsAction)
                 font_size: FontSize::Px(13.0),
                 ..default()
             },
-            TextColor(COLOR_TEXT_MAIN),
+            ThemedText::Main,
             SettingToggleLabel { action },
         )],
     )
@@ -993,7 +993,7 @@ pub(crate) fn settings_action_button(
             padding: UiRect::axes(px(12.0), px(6.0)),
             ..default()
         },
-        BackgroundColor(BUTTON_NORMAL),
+        ThemedButton,
         children![(
             Text::new(label),
             TextFont {
@@ -1001,7 +1001,7 @@ pub(crate) fn settings_action_button(
                 font_size: FontSize::Px(13.0),
                 ..default()
             },
-            TextColor(COLOR_TEXT_MAIN),
+            ThemedText::Main,
         )],
     )
 }
@@ -1018,7 +1018,7 @@ pub(crate) fn keybind_setting_row(font: Handle<Font>, action: ShortcutAction) ->
             border_radius: BorderRadius::all(px(4.0)),
             ..default()
         },
-        BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.30)),
+        ThemedBackground(UiColor::PanelBackground),
         children![
             (
                 Text::new(shortcut_action_description(action)),
@@ -1027,7 +1027,7 @@ pub(crate) fn keybind_setting_row(font: Handle<Font>, action: ShortcutAction) ->
                     font_size: FontSize::Px(13.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MUTED),
+                ThemedText::Muted,
                 Node {
                     flex_grow: 1.0,
                     min_width: px(180.0),
@@ -1042,7 +1042,7 @@ pub(crate) fn keybind_setting_row(font: Handle<Font>, action: ShortcutAction) ->
                     min_width: px(170.0),
                     ..default()
                 },
-                BackgroundColor(BUTTON_NORMAL),
+                ThemedButton,
                 children![(
                     Text::new(""),
                     TextFont {
@@ -1050,7 +1050,7 @@ pub(crate) fn keybind_setting_row(font: Handle<Font>, action: ShortcutAction) ->
                         font_size: FontSize::Px(13.0),
                         ..default()
                     },
-                    TextColor(COLOR_TEXT_MAIN),
+                    ThemedText::Main,
                     KeybindBindingLabel { action },
                 )],
             ),
@@ -1079,7 +1079,7 @@ pub(crate) fn settings_screen_heading(
                     font_size: FontSize::Px(22.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MAIN),
+                ThemedText::Main,
             ),
             (
                 Text::new(description),
@@ -1088,7 +1088,7 @@ pub(crate) fn settings_screen_heading(
                     font_size: FontSize::Px(13.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MUTED),
+                ThemedText::Muted,
             ),
         ],
     )
@@ -1112,7 +1112,7 @@ pub(crate) fn keybind_row(font: Handle<Font>, binding: &str, description: &str) 
                     font_size: FontSize::Px(13.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MAIN),
+                ThemedText::Main,
                 Node {
                     width: px(210.0),
                     ..default()
@@ -1125,7 +1125,7 @@ pub(crate) fn keybind_row(font: Handle<Font>, binding: &str, description: &str) 
                     font_size: FontSize::Px(13.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MUTED),
+                ThemedText::Muted,
             ),
         ],
     )
@@ -1139,7 +1139,7 @@ pub(crate) fn keybind_section_heading(font: Handle<Font>, label: &str) -> impl B
             font_size: FontSize::Px(16.0),
             ..default()
         },
-        TextColor(COLOR_TEXT_MAIN),
+        ThemedText::Main,
         Node {
             width: percent(100.0),
             margin: UiRect::new(px(0.0), px(0.0), px(12.0), px(2.0)),
@@ -1159,7 +1159,7 @@ pub(crate) fn keybind_help_card(font: Handle<Font>) -> impl Bundle {
             border_radius: BorderRadius::all(px(5.0)),
             ..default()
         },
-        BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.42)),
+        ThemedBackground(UiColor::PanelBackground),
         children![
             (
                 Text::new("Changing a shortcut"),
@@ -1168,7 +1168,7 @@ pub(crate) fn keybind_help_card(font: Handle<Font>) -> impl Bundle {
                     font_size: FontSize::Px(13.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MAIN),
+                ThemedText::Main,
             ),
             (
                 Text::new(
@@ -1179,7 +1179,7 @@ pub(crate) fn keybind_help_card(font: Handle<Font>) -> impl Bundle {
                     font_size: FontSize::Px(12.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MUTED),
+                ThemedText::Muted,
             ),
         ],
     )
@@ -1207,7 +1207,7 @@ pub(crate) fn margin_setting_row(
                     font_size: FontSize::Px(13.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MAIN),
+                ThemedText::Main,
             ),
             settings_action_button(font.clone(), "-", decrease_action),
             (
@@ -1217,7 +1217,7 @@ pub(crate) fn margin_setting_row(
                     font_size: FontSize::Px(13.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MAIN),
+                ThemedText::Main,
                 SettingMarginLabel { edge },
             ),
             settings_action_button(font, "+", increase_action),
@@ -1241,7 +1241,7 @@ pub(crate) fn theme_overlay_tab_button(
             border_radius: BorderRadius::all(px(3.0)),
             ..default()
         },
-        BackgroundColor(BUTTON_NORMAL),
+        ThemedButton,
         children![(
             Text::new(label),
             TextFont {
@@ -1249,7 +1249,7 @@ pub(crate) fn theme_overlay_tab_button(
                 font_size: FontSize::Px(11.0),
                 ..default()
             },
-            TextColor(COLOR_TEXT_MAIN),
+            ThemedText::Main,
         )],
     )
 }
@@ -1265,7 +1265,7 @@ pub(crate) fn theme_preset_button(font: Handle<Font>, name: &str) -> impl Bundle
             align_items: AlignItems::Center,
             ..default()
         },
-        BackgroundColor(BUTTON_NORMAL),
+        ThemedButton,
         children![(
             Text::new(name),
             TextFont {
@@ -1273,7 +1273,7 @@ pub(crate) fn theme_preset_button(font: Handle<Font>, name: &str) -> impl Bundle
                 font_size: FontSize::Px(11.0),
                 ..default()
             },
-            TextColor(COLOR_TEXT_MAIN),
+            ThemedText::Main,
         )],
     )
 }
@@ -1307,7 +1307,7 @@ pub(crate) fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> i
                             border_radius: BorderRadius::all(px(2.0)),
                             ..default()
                         },
-                        BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.25)),
+                        ThemedBorder,
                         BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
                         ThemeColorPreviewSwatch { target },
                     ),
@@ -1318,7 +1318,7 @@ pub(crate) fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> i
                             font_size: FontSize::Px(12.0),
                             ..default()
                         },
-                        TextColor(COLOR_TEXT_MAIN),
+                        ThemedText::Main,
                         ThemeColorNameLabel { target },
                     ),
                 ],
@@ -1338,7 +1338,7 @@ pub(crate) fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> i
                             font_size: FontSize::Px(11.0),
                             ..default()
                         },
-                        TextColor(COLOR_TEXT_MUTED),
+                        ThemedText::Muted,
                         ThemeColorValueLabel { target },
                     ),
                     (
@@ -1349,7 +1349,7 @@ pub(crate) fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> i
                             border_radius: BorderRadius::all(px(3.0)),
                             ..default()
                         },
-                        BackgroundColor(BUTTON_NORMAL),
+                        ThemedButton,
                         children![(
                             Text::new("Pick"),
                             TextFont {
@@ -1357,7 +1357,7 @@ pub(crate) fn theme_color_row(font: Handle<Font>, target: ThemeColorTarget) -> i
                                 font_size: FontSize::Px(11.0),
                                 ..default()
                             },
-                            TextColor(COLOR_TEXT_MAIN),
+                            ThemedText::Main,
                         )],
                     ),
                 ],
@@ -1385,7 +1385,7 @@ pub(crate) fn theme_link_hover_setting_row(font: Handle<Font>) -> impl Bundle {
                     font_size: FontSize::Px(12.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MAIN),
+                ThemedText::Main,
             ),
             (
                 Node {
@@ -1403,7 +1403,7 @@ pub(crate) fn theme_link_hover_setting_row(font: Handle<Font>) -> impl Bundle {
                             border_radius: BorderRadius::all(px(3.0)),
                             ..default()
                         },
-                        BackgroundColor(BUTTON_NORMAL),
+                        ThemedButton,
                         children![(
                             Text::new("-"),
                             TextFont {
@@ -1411,7 +1411,7 @@ pub(crate) fn theme_link_hover_setting_row(font: Handle<Font>) -> impl Bundle {
                                 font_size: FontSize::Px(12.0),
                                 ..default()
                             },
-                            TextColor(COLOR_TEXT_MAIN),
+                            ThemedText::Main,
                         )],
                     ),
                     (
@@ -1421,7 +1421,7 @@ pub(crate) fn theme_link_hover_setting_row(font: Handle<Font>) -> impl Bundle {
                             font_size: FontSize::Px(11.0),
                             ..default()
                         },
-                        TextColor(COLOR_TEXT_MAIN),
+                        ThemedText::Main,
                         ThemeLinkHoverValueLabel,
                     ),
                     (
@@ -1432,7 +1432,7 @@ pub(crate) fn theme_link_hover_setting_row(font: Handle<Font>) -> impl Bundle {
                             border_radius: BorderRadius::all(px(3.0)),
                             ..default()
                         },
-                        BackgroundColor(BUTTON_NORMAL),
+                        ThemedButton,
                         children![(
                             Text::new("+"),
                             TextFont {
@@ -1440,7 +1440,7 @@ pub(crate) fn theme_link_hover_setting_row(font: Handle<Font>) -> impl Bundle {
                                 font_size: FontSize::Px(12.0),
                                 ..default()
                             },
-                            TextColor(COLOR_TEXT_MAIN),
+                            ThemedText::Main,
                         )],
                     ),
                 ],
@@ -1464,7 +1464,7 @@ pub(crate) fn theme_glass_toggle_button(font: Handle<Font>, action: SettingsActi
             border_radius: BorderRadius::all(px(3.0)),
             ..default()
         },
-        BackgroundColor(BUTTON_NORMAL),
+        ThemedButton,
         children![(
             Text::new(""),
             TextFont {
@@ -1472,7 +1472,7 @@ pub(crate) fn theme_glass_toggle_button(font: Handle<Font>, action: SettingsActi
                 font_size: FontSize::Px(12.0),
                 ..default()
             },
-            TextColor(COLOR_TEXT_MAIN),
+            ThemedText::Main,
             SettingToggleLabel { action },
         )],
     )
@@ -1541,6 +1541,7 @@ pub(crate) fn theme_color_slider_row(
     channel: ThemeSliderChannel,
 ) -> impl Bundle {
     (
+        ThemeColorSliderRow(channel),
         Node {
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
@@ -1555,7 +1556,7 @@ pub(crate) fn theme_color_slider_row(
                     font_size: FontSize::Px(11.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MAIN),
+                ThemedText::Main,
                 Node {
                     width: px(26.0),
                     ..default()
@@ -1592,7 +1593,7 @@ pub(crate) fn theme_color_slider_row(
                     font_size: FontSize::Px(11.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MAIN),
+                ThemedText::Main,
                 ThemeColorLabel {
                     channel: match channel {
                         ThemeSliderChannel::Hue => ThemeColorChannel::Hue,
@@ -1628,8 +1629,8 @@ pub(crate) fn theme_overlay_container_bundle(
             border: UiRect::all(px(1.0)),
             ..default()
         },
-        BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.2)),
-        BackgroundColor(Color::srgb(0.92, 0.93, 0.95)),
+        ThemedBorder,
+        ThemedBackground(UiColor::PanelBackground),
         RelativeCursorPosition::default(),
         ThemeOverlayContainer,
         children![
@@ -1649,7 +1650,7 @@ pub(crate) fn theme_overlay_container_bundle(
                             font_size: FontSize::Px(13.0),
                             ..default()
                         },
-                        TextColor(COLOR_TEXT_MAIN),
+                        ThemedText::Main,
                     ),
                     (
                         Button,
@@ -1661,7 +1662,7 @@ pub(crate) fn theme_overlay_container_bundle(
                             align_items: AlignItems::Center,
                             ..default()
                         },
-                        BackgroundColor(Color::srgb(0.24, 0.52, 0.92)),
+                        ThemedButton,
                         children![(
                             Text::new("OK"),
                             TextFont {
@@ -1669,7 +1670,7 @@ pub(crate) fn theme_overlay_container_bundle(
                                 font_size: FontSize::Px(12.0),
                                 ..default()
                             },
-                            TextColor(Color::WHITE),
+                            ThemedText::Main,
                         )],
                     ),
                 ],
@@ -1685,8 +1686,8 @@ pub(crate) fn theme_overlay_container_bundle(
                     border: UiRect::all(px(1.0)),
                     ..default()
                 },
-                BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.15)),
-                BackgroundColor(Color::srgb(0.84, 0.86, 0.89)),
+                ThemedBorder,
+                ThemedBackground(UiColor::PanelBackground),
                 children![
                     (
                         Button,
@@ -1698,7 +1699,7 @@ pub(crate) fn theme_overlay_container_bundle(
                             align_items: AlignItems::Center,
                             ..default()
                         },
-                        BackgroundColor(BUTTON_NORMAL),
+                        ThemedButton,
                         children![(
                             Text::new("< Prev"),
                             TextFont {
@@ -1706,7 +1707,7 @@ pub(crate) fn theme_overlay_container_bundle(
                                 font_size: FontSize::Px(11.0),
                                 ..default()
                             },
-                            TextColor(COLOR_TEXT_MAIN),
+                            ThemedText::Main,
                         )],
                     ),
                     (
@@ -1716,7 +1717,7 @@ pub(crate) fn theme_overlay_container_bundle(
                             font_size: FontSize::Px(11.0),
                             ..default()
                         },
-                        TextColor(COLOR_TEXT_MAIN),
+                        ThemedText::Main,
                         ThemeCurrentNameLabel,
                     ),
                     (
@@ -1729,7 +1730,7 @@ pub(crate) fn theme_overlay_container_bundle(
                             align_items: AlignItems::Center,
                             ..default()
                         },
-                        BackgroundColor(BUTTON_NORMAL),
+                        ThemedButton,
                         children![(
                             Text::new("Next >"),
                             TextFont {
@@ -1737,7 +1738,7 @@ pub(crate) fn theme_overlay_container_bundle(
                                 font_size: FontSize::Px(11.0),
                                 ..default()
                             },
-                            TextColor(COLOR_TEXT_MAIN),
+                            ThemedText::Main,
                         )],
                     ),
                     (
@@ -1750,7 +1751,7 @@ pub(crate) fn theme_overlay_container_bundle(
                             align_items: AlignItems::Center,
                             ..default()
                         },
-                        BackgroundColor(Color::srgb(0.24, 0.52, 0.92)),
+                        ThemedButton,
                         children![(
                             Text::new("Save"),
                             TextFont {
@@ -1758,7 +1759,7 @@ pub(crate) fn theme_overlay_container_bundle(
                                 font_size: FontSize::Px(11.0),
                                 ..default()
                             },
-                            TextColor(Color::WHITE),
+                            ThemedText::Main,
                         )],
                     ),
                 ],
@@ -1772,6 +1773,7 @@ pub(crate) fn theme_overlay_container_bundle(
                 },
                 children![
                     theme_overlay_tab_button(font.clone(), "Colors", ThemeCategory::Theme),
+                    theme_overlay_tab_button(font.clone(), "UI", ThemeCategory::Controls),
                     theme_overlay_tab_button(font.clone(), "Text", ThemeCategory::Text),
                     theme_overlay_tab_button(font.clone(), "Links", ThemeCategory::Links),
                     theme_overlay_tab_button(font.clone(), "Glass", ThemeCategory::Glass),
@@ -1790,9 +1792,29 @@ pub(crate) fn theme_overlay_container_bundle(
                     theme_color_row(font.clone(), ThemeColorTarget::AppBackground),
                     theme_color_row(font.clone(), ThemeColorTarget::TopMenuBackground),
                     theme_color_row(font.clone(), ThemeColorTarget::ExplorerBackground),
+                    theme_color_row(font.clone(), ThemeColorTarget::Ui(UiColor::PlainBackground)),
                     theme_color_row(font.clone(), ThemeColorTarget::ProcessedBackground),
                     theme_color_row(font.clone(), ThemeColorTarget::PaperBackground),
                     theme_color_row(font.clone(), ThemeColorTarget::SelectionBackground),
+                ],
+            ),
+            (
+                Node {
+                    width: percent(100.0),
+                    display: Display::None,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(4.0),
+                    ..default()
+                },
+                ThemeCategorySection(ThemeCategory::Controls),
+                children![
+                    theme_color_row(font.clone(), ThemeColorTarget::Ui(UiColor::PanelBackground)),
+                    theme_color_row(font.clone(), ThemeColorTarget::Ui(UiColor::InputBackground)),
+                    theme_color_row(font.clone(), ThemeColorTarget::Ui(UiColor::ButtonBackground)),
+                    theme_color_row(font.clone(), ThemeColorTarget::Ui(UiColor::ButtonHover)),
+                    theme_color_row(font.clone(), ThemeColorTarget::Ui(UiColor::ButtonPressed)),
+                    theme_color_row(font.clone(), ThemeColorTarget::Ui(UiColor::ActiveBackground)),
+                    theme_color_row(font.clone(), ThemeColorTarget::Ui(UiColor::Border)),
                 ],
             ),
             (
@@ -1871,7 +1893,7 @@ pub(crate) fn theme_overlay_container_bundle(
                             font_size: FontSize::Px(12.0),
                             ..default()
                         },
-                        TextColor(COLOR_TEXT_MAIN),
+                        ThemedText::Main,
                     ),
                     (
                         Node {
@@ -1893,7 +1915,7 @@ pub(crate) fn theme_overlay_container_bundle(
                             font_size: FontSize::Px(12.0),
                             ..default()
                         },
-                        TextColor(COLOR_TEXT_MAIN),
+                        ThemedText::Main,
                     ),
                     (
                         Node {
@@ -1912,8 +1934,8 @@ pub(crate) fn theme_overlay_container_bundle(
                                     border: UiRect::all(px(1.0)),
                                     ..default()
                                 },
-                                BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.2)),
-                                BackgroundColor(Color::WHITE),
+                                ThemedBorder,
+                                ThemedBackground(UiColor::InputBackground),
                                 children![(
                                     Text::new(""),
                                     TextFont {
@@ -1921,7 +1943,7 @@ pub(crate) fn theme_overlay_container_bundle(
                                         font_size: FontSize::Px(11.0),
                                         ..default()
                                     },
-                                    TextColor(COLOR_TEXT_MAIN),
+                                    ThemedText::Main,
                                     ThemeNameInputText,
                                 )],
                             ),
@@ -1935,7 +1957,7 @@ pub(crate) fn theme_overlay_container_bundle(
                                     align_items: AlignItems::Center,
                                     ..default()
                                 },
-                                BackgroundColor(Color::srgb(0.24, 0.52, 0.92)),
+                                ThemedButton,
                                 children![(
                                     Text::new("Save As New"),
                                     TextFont {
@@ -1943,7 +1965,7 @@ pub(crate) fn theme_overlay_container_bundle(
                                         font_size: FontSize::Px(11.0),
                                         ..default()
                                     },
-                                    TextColor(Color::WHITE),
+                                    ThemedText::Main,
                                 )],
                             ),
                         ],
@@ -1955,7 +1977,7 @@ pub(crate) fn theme_overlay_container_bundle(
                             font_size: FontSize::Px(10.0),
                             ..default()
                         },
-                        TextColor(COLOR_TEXT_MUTED),
+                        ThemedText::Muted,
                     ),
                 ],
             ),
@@ -1970,8 +1992,8 @@ pub(crate) fn theme_overlay_container_bundle(
                     border: UiRect::all(px(1.0)),
                     ..default()
                 },
-                BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.12)),
-                BackgroundColor(Color::srgb(0.86, 0.88, 0.90)),
+                ThemedBorder,
+                ThemedBackground(UiColor::PanelBackground),
                 ThemeColorPickerPanel,
                 children![
                     (
@@ -1981,7 +2003,7 @@ pub(crate) fn theme_overlay_container_bundle(
                             font_size: FontSize::Px(12.0),
                             ..default()
                         },
-                        TextColor(COLOR_TEXT_MAIN),
+                        ThemedText::Main,
                         ThemeScreenTitleLabel,
                     ),
                     theme_visual_picker(font.clone(), hue_sat_wheel),
@@ -2000,7 +2022,7 @@ pub(crate) fn theme_overlay_container_bundle(
                                     font_size: FontSize::Px(11.0),
                                     ..default()
                                 },
-                                TextColor(COLOR_TEXT_MUTED),
+                                ThemedText::Muted,
                                 ThemeSelectionRgbLabel,
                             ),
                             (
@@ -2010,7 +2032,7 @@ pub(crate) fn theme_overlay_container_bundle(
                                     font_size: FontSize::Px(11.0),
                                     ..default()
                                 },
-                                TextColor(COLOR_TEXT_MUTED),
+                                ThemedText::Muted,
                                 ThemeSelectionHsvLabel,
                             ),
                             (
@@ -2020,7 +2042,7 @@ pub(crate) fn theme_overlay_container_bundle(
                                     font_size: FontSize::Px(11.0),
                                     ..default()
                                 },
-                                TextColor(COLOR_TEXT_MAIN),
+                                ThemedText::Main,
                                 ThemeSelectionHexLabel,
                             ),
                         ],
@@ -2029,21 +2051,6 @@ pub(crate) fn theme_overlay_container_bundle(
             ),
         ],
     )
-}
-
-pub(crate) fn style_theme_overlay_ok_button(
-    mut query: Query<
-        (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<ThemeOverlayOkButton>),
-    >,
-) {
-    for (interaction, mut color) in query.iter_mut() {
-        color.0 = match *interaction {
-            Interaction::Pressed => Color::srgb(0.18, 0.42, 0.78),
-            Interaction::Hovered => Color::srgb(0.32, 0.60, 0.98),
-            Interaction::None => Color::srgb(0.24, 0.52, 0.92),
-        };
-    }
 }
 
 pub(crate) fn handle_theme_overlay_buttons(
@@ -2087,8 +2094,14 @@ pub(crate) fn handle_theme_overlay_buttons(
                 ThemeCategory::Theme => {
                     if state.theme_color_target.is_link_color()
                         || state.theme_color_target.is_text_color()
+                        || matches!(state.theme_color_target, ThemeColorTarget::Ui(role) if role != UiColor::PlainBackground)
                     {
                         state.theme_color_target = ThemeColorTarget::AppBackground;
+                    }
+                }
+                ThemeCategory::Controls => {
+                    if !matches!(state.theme_color_target, ThemeColorTarget::Ui(role) if role != UiColor::PlainBackground) {
+                        state.theme_color_target = ThemeColorTarget::Ui(UiColor::PanelBackground);
                     }
                 }
                 ThemeCategory::Text => {
@@ -2437,7 +2450,7 @@ pub(crate) fn processed_overlay_toggle_button<M: Component, L: Component>(
             border_radius: BorderRadius::all(px(4.0)),
             ..default()
         },
-        BackgroundColor(BUTTON_NORMAL),
+        ThemedButton,
         children![(
             Text::new(label),
             TextFont {
@@ -2445,7 +2458,7 @@ pub(crate) fn processed_overlay_toggle_button<M: Component, L: Component>(
                 font_size: FontSize::Px(12.0),
                 ..default()
             },
-            TextColor(COLOR_TEXT_MAIN),
+            ThemedText::Main,
             label_marker,
         )],
     )
@@ -2512,36 +2525,6 @@ pub(crate) fn handle_toolbar_buttons(
                 state.status_message = "Opened settings.".to_string();
             }
         }
-    }
-}
-
-pub(crate) fn style_toolbar_buttons(
-    mut button_query: Query<
-        (&Interaction, &mut BackgroundColor),
-        (
-            Changed<Interaction>,
-            With<Button>,
-            Or<(
-                With<ToolbarAction>,
-                With<SettingsAction>,
-                With<StoryQuerySheetAction>,
-                With<KeybindRebindButton>,
-                With<ThemeColorPickerButton>,
-                With<ProcessedLinkColorToggle>,
-                With<ProcessedPaginationToggle>,
-                With<FormattingMarksToggle>,
-                With<StatusLineToggle>,
-                With<WorkspaceLinkFolderOption>,
-            )>,
-        ),
-    >,
-) {
-    for (interaction, mut color) in button_query.iter_mut() {
-        color.0 = match *interaction {
-            Interaction::Pressed => BUTTON_PRESSED,
-            Interaction::Hovered => BUTTON_HOVER,
-            Interaction::None => BUTTON_NORMAL,
-        };
     }
 }
 
@@ -3682,11 +3665,26 @@ pub(crate) fn sync_glass_surfaces(
         >,
     )>,
 ) {
+    let processed_glass_active = state.processed_glass && native_glass_state.active;
+
+    // Keep paper colors owned by this system, independent of page layout/redraws.
+    // Check every frame so newly created pages also inherit the current theme.
+    for (panel_paper, mut color) in color_queries.p5().iter_mut() {
+        let paper_color = match panel_paper.kind {
+            PanelKind::Processed
+                if !state.processed_paginated && panel_paper.slot != 0 =>
+            {
+                Color::NONE
+            }
+            _ => state.paper_bg_color.with_alpha(1.0),
+        };
+        color.set_if_neq(BackgroundColor(paper_color));
+    }
+
     if !state.is_changed() && !native_glass_state.is_changed() {
         return;
     }
 
-    let processed_glass_active = state.processed_glass && native_glass_state.active;
     let settings_glass_active = state.settings_glass && native_glass_state.active;
 
     if let Ok(mut color) = color_queries.p0().single_mut() {
@@ -3728,14 +3726,14 @@ pub(crate) fn sync_glass_surfaces(
 
     for (panel_root, mut color) in color_queries.p3().iter_mut() {
         color.0 = match panel_root.kind {
-            PanelKind::Plain => COLOR_PANEL_BG,
+            PanelKind::Plain => state.ui_colors.color(UiColor::PlainBackground),
             PanelKind::Processed => Color::NONE,
         };
     }
 
     for (panel_body, mut color) in color_queries.p4().iter_mut() {
         color.0 = match panel_body.kind {
-            PanelKind::Plain => COLOR_PANEL_BODY_PLAIN,
+            PanelKind::Plain => state.ui_colors.color(UiColor::PlainBackground),
             PanelKind::Processed if state.document_format == DocumentFormat::Canvas => {
                 COLOR_CANVAS_BG
             }
@@ -3743,14 +3741,6 @@ pub(crate) fn sync_glass_surfaces(
                 glass_surface_tint(state.processed_bg_color)
             }
             PanelKind::Processed => state.processed_bg_color,
-        };
-    }
-
-    for (panel_paper, mut color) in color_queries.p5().iter_mut() {
-        color.0 = match panel_paper.kind {
-            PanelKind::Processed if processed_glass_active => Color::NONE,
-            PanelKind::Processed => state.paper_bg_color,
-            PanelKind::Plain => state.paper_bg_color,
         };
     }
 }
@@ -4147,11 +4137,12 @@ pub(crate) fn sync_theme_picker_ui(
         >,
         Query<&mut Node, With<ThemeOverlayContainer>>,
         Query<(&ThemeCategorySection, &mut Node)>,
+        Query<(&ThemeColorSliderRow, &mut Node)>,
     )>,
     mut color_queries: ParamSet<(
         Query<(&ThemeColorPreviewSwatch, &mut BackgroundColor)>,
         Query<(&ThemeColorSlider, &mut BackgroundColor)>,
-        Query<(&ThemeOverlayTabButton, &mut BackgroundColor)>,
+        Query<(&ThemeOverlayTabButton, &Interaction, &mut BackgroundColor)>,
     )>,
     mut text_query: Query<
         (
@@ -4213,11 +4204,20 @@ pub(crate) fn sync_theme_picker_ui(
         };
     }
 
-    for (tab, mut bg) in color_queries.p2().iter_mut() {
-        bg.0 = if tab.0 == state.theme_category {
-            Color::srgb(0.72, 0.76, 0.84)
+    for (row, mut node) in node_queries.p6().iter_mut() {
+        node.display = if matches!(row.0, ThemeSliderChannel::Alpha)
+            && state.theme_color_target == ThemeColorTarget::PaperBackground {
+            Display::None
         } else {
-            BUTTON_NORMAL
+            Display::Flex
+        };
+    }
+
+    for (tab, interaction, mut bg) in color_queries.p2().iter_mut() {
+        bg.0 = if tab.0 == state.theme_category && *interaction == Interaction::None {
+            state.ui_colors.color(UiColor::ActiveBackground)
+        } else {
+            themed_button_color(&state, *interaction)
         };
     }
 

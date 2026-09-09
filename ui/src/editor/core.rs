@@ -69,9 +69,6 @@ pub(crate) const WORKSPACE_WIDTH_MIN: f32 = 180.0;
 pub(crate) const EDITOR_PANEL_MIN_WIDTH: f32 = 220.0;
 pub(crate) const UNDECORATED_WINDOW_CORNER_RADIUS: f32 = 8.0;
 
-pub(crate) const BUTTON_NORMAL: Color = Color::srgb(0.80, 0.82, 0.84);
-pub(crate) const BUTTON_HOVER: Color = Color::srgb(0.74, 0.77, 0.80);
-pub(crate) const BUTTON_PRESSED: Color = Color::srgb(0.68, 0.72, 0.76);
 pub(crate) const COLOR_ACTION: Color = Color::srgb(0.12, 0.13, 0.15);
 pub(crate) const COLOR_SCENE: Color = Color::srgb(0.10, 0.10, 0.12);
 pub(crate) const COLOR_CHARACTER: Color = Color::srgb(0.20, 0.16, 0.12);
@@ -88,16 +85,7 @@ pub(crate) const COLOR_PANEL_BODY_PROCESSED: Color = Color::srgb(0.82, 0.83, 0.8
 pub(crate) const COLOR_PAPER: Color = Color::srgb(1.0, 1.0, 1.0);
 pub(crate) const COLOR_TEXT_MAIN: Color = Color::srgb(0.18, 0.19, 0.20);
 pub(crate) const COLOR_TEXT_MUTED: Color = Color::srgb(0.34, 0.36, 0.39);
-pub(crate) const COLOR_WORKSPACE_FILE: Color = Color::srgb(0.18, 0.19, 0.20);
-pub(crate) const COLOR_WORKSPACE_FILE_HOVER: Color = Color::srgb(0.10, 0.35, 0.62);
-pub(crate) const COLOR_WORKSPACE_FILE_SELECTED: Color = Color::srgb(0.69, 0.28, 0.22);
-pub(crate) const COLOR_WORKSPACE_ROW_ACTIVE_BG: Color = Color::srgba(0.69, 0.28, 0.22, 0.15);
-pub(crate) const COLOR_WORKSPACE_ROW_SELECTED_BG: Color = Color::srgba(0.10, 0.35, 0.62, 0.16);
-pub(crate) const COLOR_WORKSPACE_ROW_SELECTED_ACTIVE_BG: Color =
-    Color::srgba(0.69, 0.28, 0.22, 0.24);
 pub(crate) const COLOR_WORKSPACE_PROMPT_BACKDROP: Color = Color::srgba(0.0, 0.0, 0.0, 0.28);
-pub(crate) const COLOR_WORKSPACE_PROMPT_BG: Color = Color::srgb(0.94, 0.95, 0.96);
-pub(crate) const COLOR_WORKSPACE_PROMPT_INPUT_BG: Color = Color::srgb(0.99, 0.99, 1.0);
 pub(crate) const COLOR_SPLITTER_IDLE: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
 pub(crate) const COLOR_SPLITTER_HOVER: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
 pub(crate) const COLOR_SPLITTER_ACTIVE: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
@@ -321,9 +309,6 @@ impl Plugin for UiPlugin {
         app.add_systems(
             Update,
             (
-                style_toolbar_buttons,
-                style_theme_overlay_ok_button,
-                style_workspace_file_entry_text,
                 sync_workspace_prompt_ui,
                 sync_workspace_link_prompt_folder_options.before(sync_workspace_prompt_ui),
                 sync_window_chrome,
@@ -349,6 +334,7 @@ impl Plugin for UiPlugin {
             )
                 .in_set(EditorSystemSet::Presentation),
         );
+        app.add_systems(PostUpdate, (sync_theme_widgets, style_workspace_rows));
     }
 }
 
@@ -534,6 +520,7 @@ pub(crate) struct ThemeOverlayOkButton;
 pub(crate) enum ThemeCategory {
     #[default]
     Theme,
+    Controls,
     Text,
     Links,
     Glass,
@@ -1280,6 +1267,7 @@ pub(crate) enum ThemeSliderChannel {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ThemeColorTarget {
+    Ui(UiColor),
     AppBackground,
     TopMenuBackground,
     ExplorerBackground,
@@ -1329,13 +1317,14 @@ impl ThemeColorTarget {
 
     pub(crate) fn color_label(self) -> &'static str {
         match self {
+            Self::Ui(role) => role.label(),
             Self::AppBackground => "App background",
             Self::TopMenuBackground => "Top menu",
             Self::ExplorerBackground => "Explorer",
             Self::ProcessedBackground => "Processed pane",
             Self::PaperBackground => "Paper background",
             Self::SelectionBackground => "Selection background",
-            Self::TextMain => "Plain / Main text",
+            Self::TextMain => "Interface / plain text",
             Self::TextMuted => "Muted text",
             Self::TextSceneHeading => "Scene heading",
             Self::TextAction => "Action / Body",
@@ -1358,6 +1347,7 @@ impl ThemeColorTarget {
 
     pub(crate) fn status_label(self) -> &'static str {
         match self {
+            Self::Ui(role) => role.label(),
             Self::AppBackground => "app background",
             Self::TopMenuBackground => "top menu background",
             Self::ExplorerBackground => "explorer background",
@@ -1590,6 +1580,7 @@ pub(crate) struct EditorState {
     pub(crate) selection_bg_color: Color,
     pub(crate) paper_bg_rgba: Vec4,
     pub(crate) paper_bg_color: Color,
+    pub(crate) ui_colors: UiPalette,
     pub(crate) text_main_rgba: Vec4,
     pub(crate) text_main_color: Color,
     pub(crate) text_muted_rgba: Vec4,
@@ -1900,6 +1891,7 @@ pub(crate) struct ThemeSettings {
     pub(crate) processed_background: Vec4,
     pub(crate) selection_background: Vec4,
     pub(crate) paper_background: Vec4,
+    pub(crate) ui_colors: UiPalette,
     pub(crate) text_main: Vec4,
     pub(crate) text_muted: Vec4,
     pub(crate) text_scene_heading: Vec4,
@@ -1928,6 +1920,7 @@ impl Default for ThemeSettings {
     fn default() -> Self {
         Self {
             name: "Default".to_string(),
+            ui_colors: UiPalette::default(),
             app_background: Vec4::new(0.79, 0.80, 0.82, 1.0),
             top_menu_background: Vec4::new(0.79, 0.80, 0.82, 1.0),
             explorer_background: Vec4::new(0.86, 0.87, 0.89, 1.0),
@@ -1964,6 +1957,7 @@ impl ThemeSettings {
     pub(crate) fn classic() -> Self {
         Self {
             name: "Classic".to_string(),
+            ui_colors: UiPalette::default(),
             app_background: Vec4::new(0.885, 0.901, 0.898, 1.0),
             top_menu_background: Vec4::new(0.891, 0.907, 0.904, 1.0),
             explorer_background: Vec4::new(0.860, 0.870, 0.890, 1.0),
@@ -1998,6 +1992,7 @@ impl ThemeSettings {
     pub(crate) fn dark() -> Self {
         Self {
             name: "Dark".to_string(),
+            ui_colors: UiPalette::dark(),
             app_background: Vec4::new(0.14, 0.15, 0.17, 1.0),
             top_menu_background: Vec4::new(0.12, 0.13, 0.15, 1.0),
             explorer_background: Vec4::new(0.16, 0.17, 0.19, 1.0),
@@ -2104,7 +2099,7 @@ impl ThemeSettings {
             self.paper_background.x.clamp(0.0, 1.0),
             self.paper_background.y.clamp(0.0, 1.0),
             self.paper_background.z.clamp(0.0, 1.0),
-            self.paper_background.w.clamp(0.0, 1.0),
+            1.0,
         )
     }
 
@@ -2668,6 +2663,7 @@ impl FromWorld for EditorState {
             selection_bg_color: theme_settings.selection_background_color(),
             paper_bg_rgba: theme_settings.paper_background_clamped(),
             paper_bg_color: theme_settings.paper_background_color(),
+            ui_colors: theme_settings.ui_colors.clone(),
             text_main_rgba: theme_settings.text_main_clamped(),
             text_main_color: theme_settings.text_main_color(),
             text_muted_rgba: theme_settings.text_muted_clamped(),

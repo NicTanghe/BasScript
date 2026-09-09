@@ -10,8 +10,6 @@ pub(crate) const LINK_AUTOCOMPLETE_WINDOW_BOTTOM_MARGIN: f32 = 28.0;
 pub(crate) const LINK_AUTOCOMPLETE_MENU_Z: i32 = 120;
 pub(crate) const LINK_AUTOCOMPLETE_ROW_Z: i32 = 121;
 pub(crate) const LINK_AUTOCOMPLETE_TEXT_Z: i32 = 122;
-pub(crate) const COLOR_LINK_AUTOCOMPLETE_MENU_BG: Color = Color::srgb(0.97, 0.98, 0.99);
-pub(crate) const COLOR_LINK_AUTOCOMPLETE_SELECTED_BG: Color = Color::srgb(0.86, 0.91, 0.97);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LinkAutocompleteSource {
@@ -239,8 +237,8 @@ pub(crate) fn spawn_link_autocomplete_menu(
                 overflow: Overflow::clip(),
                 ..default()
             },
-            BackgroundColor(COLOR_LINK_AUTOCOMPLETE_MENU_BG),
-            BorderColor::all(Color::srgba(0.10, 0.12, 0.14, 0.18)),
+            ThemedBackground(UiColor::PanelBackground),
+            ThemedBorder,
             ZIndex(LINK_AUTOCOMPLETE_MENU_Z),
             GlobalZIndex(LINK_AUTOCOMPLETE_MENU_Z),
             LinkAutocompleteRoot,
@@ -290,7 +288,7 @@ pub(crate) fn spawn_link_autocomplete_row(
                     font_size: FontSize::Px(12.0),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MAIN),
+                ThemedText::Main,
                 ZIndex(LINK_AUTOCOMPLETE_TEXT_Z),
                 GlobalZIndex(LINK_AUTOCOMPLETE_TEXT_Z),
                 LinkAutocompleteNameText { index },
@@ -326,7 +324,7 @@ pub(crate) fn spawn_link_autocomplete_row(
                     font_size: FontSize::Px(10.5),
                     ..default()
                 },
-                TextColor(COLOR_TEXT_MUTED),
+                ThemedText::Muted,
                 ZIndex(LINK_AUTOCOMPLETE_TEXT_Z),
                 GlobalZIndex(LINK_AUTOCOMPLETE_TEXT_Z),
                 LinkAutocompleteTargetText { index },
@@ -397,7 +395,7 @@ pub(crate) fn sync_link_autocomplete_ui(
 
         node.display = Display::Flex;
         background.0 = if suggestion_index == active.selected_index {
-            COLOR_LINK_AUTOCOMPLETE_SELECTED_BG
+            state.ui_colors.color(UiColor::ActiveBackground)
         } else {
             Color::NONE
         };
