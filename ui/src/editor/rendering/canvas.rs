@@ -1,8 +1,3 @@
-pub(crate) const COLOR_CANVAS_NODE_BG: Color = Color::srgb(0.96, 0.97, 0.98);
-pub(crate) const COLOR_CANVAS_GROUP_BG: Color = Color::srgba(0.80, 0.84, 0.90, 0.28);
-pub(crate) const COLOR_CANVAS_NODE_BORDER: Color = Color::srgba(0.08, 0.10, 0.12, 0.22);
-pub(crate) const COLOR_CANVAS_NODE_ACTIVE_BORDER: Color = Color::srgb(0.69, 0.28, 0.22);
-pub(crate) const COLOR_CANVAS_EDGE: Color = Color::srgba(0.10, 0.12, 0.15, 0.45);
 pub(crate) const CANVAS_TEXT_SELECTION_RECT_CAPACITY: usize = 64;
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,6 +8,83 @@ pub(crate) struct CanvasRenderedNode {
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct CanvasRenderedNodeText {
     pub(crate) index: usize,
+}
+
+#[derive(Component)]
+pub(crate) enum CanvasRenderedTextColor {
+    Action,
+    Styled(ProcessedLineRenderOverride),
+    Link(String),
+}
+
+impl CanvasRenderedTextColor {
+    fn color(&self, state: &EditorState) -> Color {
+        match self {
+            Self::Action => state.text_action_color,
+            Self::Styled(style) => {
+                processed_line_style_for_state(state, &style.kind, style.markdown_heading_level)
+                    .color
+            }
+            Self::Link(target) => match state.processed_link_color_mode {
+                ProcessedLinkColorMode::Colored => {
+                    state.processed_link_color_for_target(Some(target))
+                }
+                ProcessedLinkColorMode::Hovered | ProcessedLinkColorMode::Plain => {
+                    state.text_action_color
+                }
+            },
+        }
+    }
+}
+
+fn canvas_node_background(state: &EditorState, kind: &CanvasNodeKind) -> Color {
+    match kind {
+        CanvasNodeKind::Group { .. } => state.ui_colors.color(UiColor::PanelBackground),
+        _ => state.paper_bg_color.with_alpha(1.0),
+    }
+}
+
+fn canvas_node_border(state: &EditorState, id: &str) -> Color {
+    state
+        .ui_colors
+        .color(if state.canvas_editing_node_id.as_deref() == Some(id) {
+            UiColor::ActiveBackground
+        } else {
+            UiColor::Border
+        })
+}
+
+// Theme changes must update existing nodes without rebuilding the document or
+// disrupting text editing, selection, pan, or zoom.
+pub(crate) fn sync_canvas_theme(
+    state: Res<EditorState>,
+    mut nodes: Query<
+        (&CanvasRenderedNode, &mut BackgroundColor, &mut BorderColor),
+        Without<CanvasRenderedEdge>,
+    >,
+    mut edges: Query<&mut BackgroundColor, (With<CanvasRenderedEdge>, Without<CanvasRenderedNode>)>,
+    mut texts: Query<(&CanvasRenderedTextColor, &mut TextColor)>,
+) {
+    let Some(canvas) = state
+        .canvas_document
+        .as_ref()
+        .filter(|_| state.document_format == DocumentFormat::Canvas)
+    else {
+        return;
+    };
+    for (rendered, mut background, mut border) in &mut nodes {
+        let Some(node) = canvas.nodes.get(rendered.index) else {
+            continue;
+        };
+        background.set_if_neq(BackgroundColor(canvas_node_background(&state, &node.kind)));
+        border.set_if_neq(BorderColor::all(canvas_node_border(&state, &node.id)));
+    }
+    for mut edge in &mut edges {
+        edge.set_if_neq(BackgroundColor(state.ui_colors.color(UiColor::Border)));
+    }
+    for (role, mut color) in &mut texts {
+        color.set_if_neq(TextColor(role.color(&state)));
+    }
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq)]
@@ -177,7 +249,7 @@ pub(crate) fn sync_canvas_board(
         ) {
             commands.entity(canvas_entity).with_children(|parent| {
                 for (index, _) in canvas.edges.iter().enumerate() {
-                    spawn_canvas_edge(parent, index);
+                    spawn_canvas_edge(parent, index, &state);
                 }
                 for (index, node) in canvas.nodes.iter().enumerate() {
                     spawn_canvas_node(
@@ -349,7 +421,11 @@ pub(crate) fn sync_canvas_text_overlays(
     );
 }
 
-pub(crate) fn spawn_canvas_edge(parent: &mut ChildSpawnerCommands, index: usize) {
+pub(crate) fn spawn_canvas_edge(
+    parent: &mut ChildSpawnerCommands,
+    index: usize,
+    state: &EditorState,
+) {
     for segment in [CanvasEdgeSegment::Horizontal, CanvasEdgeSegment::Vertical] {
         parent.spawn((
             Node {
@@ -360,7 +436,7 @@ pub(crate) fn spawn_canvas_edge(parent: &mut ChildSpawnerCommands, index: usize)
                 height: px(0.0),
                 ..default()
             },
-            BackgroundColor(COLOR_CANVAS_EDGE),
+            BackgroundColor(state.ui_colors.color(UiColor::Border)),
             ZIndex(10),
             CanvasRenderedEdge { index, segment },
         ));
@@ -381,16 +457,9 @@ pub(crate) fn spawn_canvas_node(
     let zoom = state.zoom.max(0.1);
     let left = (node.x - state.canvas_pan.x) * zoom;
     let top = (node.y - state.canvas_pan.y) * zoom;
-    let node_color = match node.kind {
-        CanvasNodeKind::Group { .. } => COLOR_CANVAS_GROUP_BG,
-        _ => COLOR_CANVAS_NODE_BG,
-    };
+    let node_color = canvas_node_background(state, &node.kind);
     let active_text_node = state.canvas_editing_node_id.as_deref() == Some(node.id.as_str());
-    let border_color = if active_text_node {
-        COLOR_CANVAS_NODE_ACTIVE_BORDER
-    } else {
-        COLOR_CANVAS_NODE_BORDER
-    };
+    let border_color = canvas_node_border(state, &node.id);
 
     parent
         .spawn((
@@ -407,7 +476,13 @@ pub(crate) fn spawn_canvas_node(
             },
             BackgroundColor(node_color),
             BorderColor::all(border_color),
-            ZIndex(20 + index as i32),
+            // Group surfaces use the shared panel color, which can be opaque.
+            // Keep them behind cards and connectors regardless of file order.
+            ZIndex(if matches!(node.kind, CanvasNodeKind::Group { .. }) {
+                0
+            } else {
+                20 + index as i32
+            }),
             CanvasRenderedNode { index },
         ))
         .with_children(|node_parent| match &node.kind {
@@ -446,6 +521,7 @@ pub(crate) fn spawn_canvas_node(
                 );
             }
             CanvasNodeKind::Link { url } => {
+                let color_role = CanvasRenderedTextColor::Link(url.clone());
                 node_parent.spawn((
                     Text::new(url.clone()),
                     text_font_for_variant(
@@ -455,7 +531,8 @@ pub(crate) fn spawn_canvas_node(
                         canvas_text_font_size(zoom),
                     ),
                     LineHeight::Px(canvas_text_line_height(zoom)),
-                    TextColor(COLOR_TEXT_MUTED),
+                    TextColor(color_role.color(state)),
+                    color_role,
                     Node {
                         position_type: PositionType::Absolute,
                         left: px(canvas_text_padding_x(zoom)),
@@ -479,7 +556,7 @@ pub(crate) fn spawn_canvas_node(
                         canvas_text_font_size(zoom),
                     ),
                     LineHeight::Px(canvas_text_line_height(zoom)),
-                    TextColor(COLOR_TEXT_MUTED),
+                    ThemedText::Muted,
                     Node {
                         position_type: PositionType::Absolute,
                         left: px(canvas_text_padding_x(zoom)),
@@ -503,7 +580,7 @@ pub(crate) fn spawn_canvas_node(
                         canvas_text_font_size(zoom),
                     ),
                     LineHeight::Px(canvas_text_line_height(zoom)),
-                    TextColor(COLOR_TEXT_MUTED),
+                    ThemedText::Muted,
                     Node {
                         position_type: PositionType::Absolute,
                         left: px(canvas_text_padding_x(zoom)),
@@ -542,7 +619,7 @@ pub(crate) fn spawn_canvas_text_preview(
     }
 
     if mode == CanvasTextRenderMode::Rendered {
-        spawn_canvas_rendered_text_preview(parent, index, text, fonts, zoom);
+        spawn_canvas_rendered_text_preview(parent, index, text, state, fonts, zoom);
         return;
     }
 
@@ -555,7 +632,8 @@ pub(crate) fn spawn_canvas_text_preview(
             ..default()
         },
         LineHeight::Px(canvas_text_line_height(zoom)),
-        TextColor(COLOR_TEXT_MAIN),
+        TextColor(state.text_action_color),
+        CanvasRenderedTextColor::Action,
         Node {
             position_type: PositionType::Absolute,
             left: px(canvas_text_padding_x(zoom)),
@@ -575,6 +653,7 @@ pub(crate) fn spawn_canvas_rendered_text_preview(
     parent: &mut ChildSpawnerCommands,
     index: usize,
     text: &str,
+    state: &EditorState,
     fonts: &EditorFonts,
     zoom: f32,
 ) {
@@ -590,7 +669,8 @@ pub(crate) fn spawn_canvas_rendered_text_preview(
                 font_size,
             ),
             LineHeight::Px(line_height),
-            TextColor(COLOR_TEXT_MAIN),
+            TextColor(state.text_action_color),
+            CanvasRenderedTextColor::Action,
             Node {
                 position_type: PositionType::Absolute,
                 left: px(canvas_text_padding_x(zoom)),
@@ -605,7 +685,7 @@ pub(crate) fn spawn_canvas_rendered_text_preview(
             CanvasRenderedTextStyle::NORMAL,
         ))
         .with_children(|text_parent| {
-            for span in canvas_rendered_text_spans(text) {
+            for span in canvas_rendered_text_spans(text, state) {
                 text_parent.spawn((
                     TextSpan::new(span.text),
                     text_font_for_variant(
@@ -616,6 +696,10 @@ pub(crate) fn spawn_canvas_rendered_text_preview(
                     ),
                     LineHeight::Px(line_height * span.style.line_height_scale),
                     TextColor(span.style.color),
+                    span.render_override.map_or(
+                        CanvasRenderedTextColor::Action,
+                        CanvasRenderedTextColor::Styled,
+                    ),
                     CanvasRenderedTextStyle {
                         font_scale: span.style.font_scale,
                         line_height_scale: span.style.line_height_scale,
@@ -629,6 +713,7 @@ pub(crate) fn spawn_canvas_rendered_text_preview(
 pub(crate) struct CanvasTextPreviewSpan {
     pub(crate) text: String,
     pub(crate) style: LineRenderStyle,
+    pub(crate) render_override: Option<ProcessedLineRenderOverride>,
 }
 
 #[derive(Default)]
@@ -672,7 +757,7 @@ pub(crate) fn spawn_canvas_text_caret(parent: &mut ChildSpawnerCommands, node_in
             ..default()
         },
         UiTransform::default(),
-        BackgroundColor(Color::srgba(0.12, 0.12, 0.13, 0.35)),
+        BackgroundColor(Color::BLACK),
         Visibility::Hidden,
         ZIndex(2),
         CanvasRenderedTextCaret { node_index },
@@ -772,7 +857,10 @@ pub(crate) fn render_canvas_text_carets(
         node.top = px(top);
         node.width = px(width);
         node.height = px(height);
-        color.0 = Color::srgba(0.12, 0.12, 0.13, 0.35);
+        color.set_if_neq(BackgroundColor(caret_color_for_state(
+            state,
+            PanelKind::Processed,
+        )));
         transform.scale = Vec2::ONE;
         transform.translation = Val2::ZERO;
         visibility.set_if_neq(Visibility::Visible);
@@ -1087,7 +1175,7 @@ pub(crate) fn spawn_canvas_image_or_placeholder(
                         ..default()
                     },
                     LineHeight::Px(canvas_text_line_height(zoom)),
-                    TextColor(COLOR_TEXT_MUTED),
+                    ThemedText::Muted,
                     Node {
                         position_type: PositionType::Absolute,
                         left: px(canvas_text_padding_x(zoom)),
@@ -1128,7 +1216,7 @@ pub(crate) fn spawn_canvas_image_error(
             ..default()
         },
         LineHeight::Px(canvas_text_line_height(zoom)),
-        TextColor(COLOR_TEXT_MUTED),
+        ThemedText::Muted,
         Node {
             position_type: PositionType::Absolute,
             left: px(canvas_text_padding_x(zoom)),
@@ -1397,13 +1485,17 @@ pub(crate) fn canvas_text_preview(
     }
 }
 
-pub(crate) fn canvas_rendered_text_spans(text: &str) -> Vec<CanvasTextPreviewSpan> {
+pub(crate) fn canvas_rendered_text_spans(
+    text: &str,
+    state: &EditorState,
+) -> Vec<CanvasTextPreviewSpan> {
     let normalized = text.replace("\r\n", "\n");
     let lines = normalized.split('\n').collect::<Vec<_>>();
     if lines.is_empty() {
         return vec![CanvasTextPreviewSpan {
             text: String::new(),
-            style: default_line_render_style(),
+            style: default_line_render_style_for_state(state),
+            render_override: None,
         }];
     }
 
@@ -1415,12 +1507,13 @@ pub(crate) fn canvas_rendered_text_spans(text: &str) -> Vec<CanvasTextPreviewSpa
             let style = render_override
                 .as_ref()
                 .map(|override_style| {
-                    processed_line_style_for_kind(
+                    processed_line_style_for_state(
+                        state,
                         &override_style.kind,
                         override_style.markdown_heading_level,
                     )
                 })
-                .unwrap_or_else(default_line_render_style);
+                .unwrap_or_else(|| default_line_render_style_for_state(state));
             let mut rendered = render_override
                 .as_ref()
                 .and_then(|override_style| {
@@ -1440,6 +1533,7 @@ pub(crate) fn canvas_rendered_text_spans(text: &str) -> Vec<CanvasTextPreviewSpa
             CanvasTextPreviewSpan {
                 text: rendered,
                 style,
+                render_override,
             }
         })
         .collect()
@@ -1516,6 +1610,175 @@ mod tests {
     use super::*;
     use bevy::ecs::system::{IntoSystem, System};
     use bevy::prelude::World;
+
+    fn theme_test_app(editing: bool) -> App {
+        let mut app = App::new();
+        app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()))
+            .init_asset::<Image>()
+            .init_resource::<EditorState>()
+            .init_resource::<EditorImageCache>()
+            .init_resource::<CaretBlinkState>()
+            .insert_resource(EditorFonts {
+                regular: default(),
+                bold: default(),
+                italic: default(),
+                bold_italic: default(),
+                markdown_regular: default(),
+                markdown_bold: default(),
+                markdown_italic: default(),
+                markdown_bold_italic: default(),
+            })
+            .add_systems(
+                Update,
+                (sync_canvas_board, sync_canvas_text_overlays).chain(),
+            )
+            .add_systems(PostUpdate, (sync_canvas_theme, sync_theme_widgets));
+        app.world_mut().spawn((
+            PanelCanvas {
+                kind: PanelKind::Processed,
+            },
+            Node::default(),
+        ));
+        let mut state = app.world_mut().resource_mut::<EditorState>();
+        state.document_format = DocumentFormat::Canvas;
+        state.document = Document::from_text(
+            r##"{"nodes":[
+            {"id":"text","type":"text","text":"# Heading\nBody\n> Quote\n---\n```","x":0,"y":0,"width":300,"height":300},
+            {"id":"group","type":"group","label":"Group","x":0,"y":0,"width":500,"height":500},
+            {"id":"link","type":"link","url":"https://example.com","x":400,"y":0,"width":300,"height":100},
+            {"id":"file","type":"file","file":"missing-test-image.png","x":400,"y":200,"width":300,"height":100}
+        ],"edges":[{"id":"edge","fromNode":"text","toNode":"link"}]}"##,
+        );
+        state.reparse();
+        state.display_mode = if editing {
+            DisplayMode::Plain
+        } else {
+            DisplayMode::Processed
+        };
+        state.processed_link_color_mode = ProcessedLinkColorMode::Colored;
+        state.vim_enabled = false;
+        state.canvas_editing_node_id = editing.then(|| "text".to_owned());
+        state.canvas_text_cursor = Cursor {
+            position: Position { line: 1, column: 4 },
+            preferred_column: 4,
+        };
+        state.canvas_text_selection_anchor = Some(Position { line: 1, column: 0 });
+        drop(state);
+        app
+    }
+
+    #[test]
+    fn canvas_nodes_follow_live_theme_changes_without_rebuilding_or_losing_edit_state() {
+        for editing in [false, true] {
+            let mut app = theme_test_app(editing);
+            app.update();
+            let nodes = {
+                let world = app.world_mut();
+                world
+                    .query_filtered::<Entity, With<CanvasRenderedNode>>()
+                    .iter(world)
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(nodes.len(), 4);
+            let version = app.world().resource::<EditorState>().canvas_version;
+            let cursor = app.world().resource::<EditorState>().canvas_text_cursor;
+            let mut custom = ThemeSettings::dark();
+            custom.paper_background = Vec4::new(0.2, 0.1, 0.15, 0.25);
+            custom.text_action = Vec4::new(0.9, 0.7, 0.8, 1.0);
+            custom.text_markdown_heading = Vec4::new(0.8, 0.2, 0.6, 1.0);
+            custom.text_markdown_quote = Vec4::new(0.4, 0.8, 0.6, 1.0);
+            custom.text_markdown_rule = Vec4::new(0.5, 0.6, 0.8, 1.0);
+            custom.text_markdown_code = Vec4::new(0.9, 0.5, 0.1, 1.0);
+            custom.link_fallback = Vec4::new(0.1, 0.6, 0.9, 1.0);
+            for theme in [ThemeSettings::default(), ThemeSettings::dark(), custom] {
+                apply_theme_to_state(&mut app.world_mut().resource_mut::<EditorState>(), &theme);
+                app.update();
+                let world = app.world_mut();
+                assert_eq!(world.resource::<EditorState>().canvas_version, version);
+                assert_eq!(world.resource::<EditorState>().canvas_text_cursor, cursor);
+                for &entity in &nodes {
+                    let node = world
+                        .get::<CanvasRenderedNode>(entity)
+                        .expect("theme changes should reuse the node");
+                    assert_eq!(
+                        world.get::<BackgroundColor>(entity).unwrap().0,
+                        if node.index == 1 {
+                            theme.ui_colors.color(UiColor::PanelBackground)
+                        } else {
+                            theme.paper_background_color().with_alpha(1.0)
+                        }
+                    );
+                    assert_eq!(
+                        *world.get::<BorderColor>(entity).unwrap(),
+                        BorderColor::all(theme.ui_colors.color(if editing && node.index == 0 {
+                            UiColor::ActiveBackground
+                        } else {
+                            UiColor::Border
+                        }))
+                    );
+                }
+                for color in world
+                    .query_filtered::<&BackgroundColor, With<CanvasRenderedEdge>>()
+                    .iter(world)
+                {
+                    assert_eq!(color.0, theme.ui_colors.color(UiColor::Border));
+                }
+                for (role, color) in world.query::<(&ThemedText, &TextColor)>().iter(world) {
+                    assert!(matches!(role, ThemedText::Muted));
+                    assert_eq!(color.0, theme.text_muted_color());
+                }
+                for (text, color) in world.query::<(&Text, &TextColor)>().iter(world) {
+                    if text.0 == "https://example.com" {
+                        assert_eq!(color.0, color_from_rgba(theme.link_fallback));
+                    }
+                }
+                if editing {
+                    for (_, color, visibility) in world
+                        .query::<(&CanvasRenderedTextCaret, &BackgroundColor, &Visibility)>()
+                        .iter(world)
+                    {
+                        assert_eq!(*visibility, Visibility::Visible);
+                        assert_eq!(
+                            color.0,
+                            if theme.name == "Default" {
+                                Color::BLACK
+                            } else {
+                                Color::WHITE
+                            }
+                        );
+                    }
+                    let selection_colors = world
+                        .query::<(&CanvasRenderedTextSelection, &BackgroundColor, &Visibility)>()
+                        .iter(world)
+                        .filter(|(_, _, visibility)| **visibility == Visibility::Visible)
+                        .map(|(_, color, _)| color.0)
+                        .collect::<Vec<_>>();
+                    assert_eq!(selection_colors, vec![theme.selection_background_color()]);
+                } else {
+                    let colors = world
+                        .query::<(&TextSpan, &TextColor)>()
+                        .iter(world)
+                        .map(|(span, color)| (span.0.clone(), color.0))
+                        .collect::<Vec<_>>();
+                    for (text, expected) in [
+                        ("Heading\n", theme.text_markdown_heading_color()),
+                        ("Body\n", theme.text_action_color()),
+                        ("Quote\n", theme.text_markdown_quote_color()),
+                        (
+                            "────────────────────────\n",
+                            theme.text_markdown_rule_color(),
+                        ),
+                        ("```", theme.text_markdown_code_color()),
+                    ] {
+                        assert!(
+                            colors.contains(&(text.to_owned(), expected)),
+                            "missing themed span {text:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn canvas_board_system_queries_are_disjoint() {

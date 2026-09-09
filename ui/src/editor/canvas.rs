@@ -8,7 +8,6 @@ pub(crate) const CANVAS_NODE_RESIZE_BORDER_PX: f32 = 10.0;
 pub(crate) const CANVAS_TEXT_PADDING_X: f32 = 10.0;
 pub(crate) const CANVAS_TEXT_PADDING_Y: f32 = 10.0;
 
-pub(crate) const COLOR_CANVAS_BG: Color = Color::srgb(0.38, 0.40, 0.43);
 
 #[derive(Component)]
 pub(crate) struct PanelCanvas {

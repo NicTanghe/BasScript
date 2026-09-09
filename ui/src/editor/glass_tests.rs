@@ -160,22 +160,59 @@ fn native_availability_restores_backgrounds_without_changing_preferences() {
 }
 
 #[test]
-fn glass_keeps_canvas_solid_and_preserves_a_lighter_linux_tint() {
+fn canvas_uses_the_same_glass_and_theme_surfaces_as_text_documents() {
     let (mut app, surfaces) = setup();
-    app.world_mut().resource_mut::<NativeGlassState>().active = true;
     {
         let mut state = app.world_mut().resource_mut::<EditorState>();
-        state.processed_glass = true;
-        state.explorer_glass = true;
-        state.document_format = DocumentFormat::Canvas;
+        state.processed_bg_color = Color::srgba(0.3, 0.4, 0.5, 0.9);
         state.explorer_bg_color = Color::srgba(0.2, 0.4, 0.6, 0.25);
     }
-    app.update();
-    assert_eq!(color(&app, surfaces.processed), COLOR_CANVAS_BG);
-    assert_eq!(color(&app, surfaces.plain), COLOR_PANEL_BODY_PLAIN);
-    #[cfg(target_os = "linux")]
-    assert_eq!(
-        color(&app, surfaces.explorer),
-        Color::srgba(0.2, 0.4, 0.6, 0.25)
-    );
+    for available in [false, true, false] {
+        app.world_mut().resource_mut::<NativeGlassState>().active = available;
+        for enabled in [false, true, false] {
+            {
+                let mut state = app.world_mut().resource_mut::<EditorState>();
+                state.processed_glass = enabled;
+                state.explorer_glass = enabled;
+                state.settings_glass = enabled;
+            }
+            let mut text_colors = None;
+            for format in [
+                DocumentFormat::Markdown,
+                DocumentFormat::Fountain,
+                DocumentFormat::Canvas,
+            ] {
+                app.world_mut()
+                    .resource_mut::<EditorState>()
+                    .document_format = format;
+                app.update();
+                let colors = [
+                    surfaces.root,
+                    surfaces.processed,
+                    surfaces.plain,
+                    surfaces.paper,
+                    surfaces.explorer,
+                    surfaces.menu,
+                    surfaces.settings,
+                ]
+                .map(|entity| color(&app, entity));
+                if let Some(expected) = text_colors {
+                    assert_eq!(colors, expected);
+                } else {
+                    text_colors = Some(colors);
+                }
+                #[cfg(target_os = "linux")]
+                if enabled && available {
+                    assert_eq!(
+                        color(&app, surfaces.processed),
+                        Color::srgba(0.3, 0.4, 0.5, 0.72)
+                    );
+                    assert_eq!(
+                        color(&app, surfaces.explorer),
+                        Color::srgba(0.2, 0.4, 0.6, 0.25)
+                    );
+                }
+            }
+        }
+    }
 }

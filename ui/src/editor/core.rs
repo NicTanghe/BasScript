@@ -83,7 +83,6 @@ pub(crate) const COLOR_PANEL_BG: Color = Color::srgb(0.89, 0.90, 0.91);
 pub(crate) const COLOR_PANEL_BODY_PLAIN: Color = Color::srgb(0.96, 0.96, 0.97);
 pub(crate) const COLOR_PANEL_BODY_PROCESSED: Color = Color::srgb(0.82, 0.83, 0.84);
 pub(crate) const COLOR_PAPER: Color = Color::srgb(1.0, 1.0, 1.0);
-pub(crate) const COLOR_TEXT_MAIN: Color = Color::srgb(0.18, 0.19, 0.20);
 pub(crate) const COLOR_TEXT_MUTED: Color = Color::srgb(0.34, 0.36, 0.39);
 pub(crate) const COLOR_WORKSPACE_PROMPT_BACKDROP: Color = Color::srgba(0.0, 0.0, 0.0, 0.28);
 pub(crate) const COLOR_SPLITTER_IDLE: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
@@ -334,7 +333,10 @@ impl Plugin for UiPlugin {
             )
                 .in_set(EditorSystemSet::Presentation),
         );
-        app.add_systems(PostUpdate, (sync_theme_widgets, style_workspace_rows));
+        app.add_systems(
+            PostUpdate,
+            (sync_theme_widgets, sync_canvas_theme, style_workspace_rows),
+        );
     }
 }
 

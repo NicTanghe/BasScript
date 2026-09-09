@@ -44,6 +44,56 @@ fn setup() -> App {
 }
 
 #[test]
+fn theme_popup_is_opaque_and_stacks_above_document_content() {
+    let mut app = setup();
+    app.add_plugins(
+        DefaultPlugins
+            .build()
+            .disable::<bevy::state::app::StatesPlugin>()
+            .disable::<bevy::winit::WinitPlugin>()
+            .disable::<bevy::render::RenderPlugin>()
+            .disable::<bevy::log::LogPlugin>(),
+    );
+    app.world_mut()
+        .resource_mut::<EditorState>()
+        .ui_colors
+        .set(UiColor::PanelBackground, Vec4::new(0.16, 0.17, 0.19, 0.25));
+    let document = app.world_mut().spawn((Node::default(), ZIndex(1000))).id();
+    let underlays = [1, 8, 12].map(|layer| {
+        app.world_mut()
+            .spawn((Node::default(), GlobalZIndex(layer), ChildOf(document)))
+            .id()
+    });
+    // Canvas nodes use local layers, including high indices in large boards.
+    let canvas_node = app
+        .world_mut()
+        .spawn((Node::default(), ZIndex(10_000), ChildOf(document)))
+        .id();
+    app.update();
+    let world = app.world_mut();
+    let (popup_index, background) = world.query_filtered::<
+        (&bevy::ui::ComputedStackIndex, &BackgroundColor), With<ThemeOverlayContainer>
+    >().single(world).unwrap();
+    assert_eq!(background.0, Color::srgb(0.16, 0.17, 0.19));
+    let popup_index = popup_index.0;
+    for underlay in underlays.into_iter().chain([canvas_node]) {
+        assert!(
+            world
+                .get::<bevy::ui::ComputedStackIndex>(underlay)
+                .unwrap()
+                .0
+                < popup_index
+        );
+    }
+    let button_index = world
+        .query_filtered::<&bevy::ui::ComputedStackIndex, With<ThemeOverlayOkButton>>()
+        .single(world)
+        .unwrap()
+        .0;
+    assert!(button_index > popup_index);
+}
+
+#[test]
 fn existing_widgets_and_explorer_follow_theme_changes() {
     let mut app = setup();
     for theme in [

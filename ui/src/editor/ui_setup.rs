@@ -1633,6 +1633,10 @@ pub(crate) fn theme_overlay_container_bundle(
         ThemedBackground(UiColor::PanelBackground),
         RelativeCursorPosition::default(),
         ThemeOverlayContainer,
+        OpaqueThemedBackground,
+        // Processed text and metadata use global layers; the popup must sit
+        // above those layers as well as above its local canvas siblings.
+        GlobalZIndex(25),
         children![
             (
                 Node {
@@ -3734,9 +3738,6 @@ pub(crate) fn sync_glass_surfaces(
     for (panel_body, mut color) in color_queries.p4().iter_mut() {
         color.0 = match panel_body.kind {
             PanelKind::Plain => state.ui_colors.color(UiColor::PlainBackground),
-            PanelKind::Processed if state.document_format == DocumentFormat::Canvas => {
-                COLOR_CANVAS_BG
-            }
             PanelKind::Processed if processed_glass_active => {
                 glass_surface_tint(state.processed_bg_color)
             }

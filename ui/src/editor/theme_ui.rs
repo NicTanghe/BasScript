@@ -101,6 +101,9 @@ impl UiPalette {
 pub(crate) struct ThemedBackground(pub(crate) UiColor);
 
 #[derive(Component)]
+pub(crate) struct OpaqueThemedBackground;
+
+#[derive(Component)]
 #[require(BorderColor)]
 pub(crate) struct ThemedBorder;
 
@@ -130,7 +133,14 @@ pub(crate) fn themed_button_color(state: &EditorState, interaction: Interaction)
 // styled in the same frame. Document text and color-picker swatches opt out.
 pub(crate) fn sync_theme_widgets(
     state: Res<EditorState>,
-    mut backgrounds: Query<(&ThemedBackground, &mut BackgroundColor), Without<ThemedButton>>,
+    mut backgrounds: Query<
+        (
+            &ThemedBackground,
+            Has<OpaqueThemedBackground>,
+            &mut BackgroundColor,
+        ),
+        Without<ThemedButton>,
+    >,
     mut buttons: Query<
         (&Interaction, &mut BackgroundColor),
         (
@@ -145,8 +155,13 @@ pub(crate) fn sync_theme_widgets(
     mut texts: Query<(&ThemedText, &mut TextColor)>,
     mut borders: Query<&mut BorderColor, With<ThemedBorder>>,
 ) {
-    for (role, mut color) in &mut backgrounds {
-        color.set_if_neq(BackgroundColor(state.ui_colors.color(role.0)));
+    for (role, opaque, mut color) in &mut backgrounds {
+        let theme_color = state.ui_colors.color(role.0);
+        color.set_if_neq(BackgroundColor(if opaque {
+            theme_color.with_alpha(1.0)
+        } else {
+            theme_color
+        }));
     }
     for (interaction, mut color) in &mut buttons {
         color.set_if_neq(BackgroundColor(themed_button_color(&state, *interaction)));

@@ -36,3 +36,13 @@ The added fields use the same `(red, green, blue, alpha)` values as other colors
 Existing theme files continue to load. Missing interface colors use a dark or
 light palette based on the saved app background; explicitly saved colors are
 preserved. Changes and preset switches update existing controls immediately.
+
+Canvas shares these settings: **Processed pane** colors the board, **Paper** colors
+cards, **Panels / popups** colors groups, and **Borders** colors outlines and
+connectors. The editing border uses **Active controls**. Document text, Markdown
+headings, quotes, rules, code, links, selections and the cursor use the same theme
+values as the text editor. Changes update existing canvas nodes immediately.
+Processed-background glass also applies to the canvas board; cards stay opaque.
+
+The floating Theme Options panel stays opaque, including when the panel color has
+transparency, and appears above document text, metadata and canvas nodes.
