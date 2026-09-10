@@ -2,12 +2,11 @@ pub(crate) const WORKSPACE_ROOT_LABEL_EMPTY: &str = "No workspace opened.";
 pub(crate) const WORKSPACE_ROOT_LABEL_PREFIX: &str = "";
 pub(crate) const WORKSPACE_EMPTY_RESULTS_LABEL: &str = "No .fountain/.md/.txt/.canvas files found.";
 
-pub(crate) const WORKSPACE_SIDEBAR_HORIZONTAL_PADDING: f32 = 8.0;
 // Inset the heading to align with the padded tree rows below it.
-pub(crate) const WORKSPACE_ROOT_LABEL_LEFT_MARGIN: f32 = 6.0;
+pub(crate) const WORKSPACE_ROOT_LABEL_LEFT_MARGIN: f32 = 14.0;
 pub(crate) const WORKSPACE_TREE_LIST_LEFT_MARGIN: f32 = 0.0;
 pub(crate) const WORKSPACE_TREE_DEPTH_INDENT: f32 = 16.0;
-pub(crate) const WORKSPACE_FILE_ROW_EXTRA_LEFT: f32 = 6.0;
+pub(crate) const WORKSPACE_FILE_ROW_EXTRA_LEFT: f32 = 14.0;
 pub(crate) const WORKSPACE_TREE_VERTICAL_PADDING: f32 = 14.0;
 pub(crate) const WORKSPACE_TREE_ROW_HEIGHT: f32 = 26.0;
 pub(crate) const WORKSPACE_TREE_ROW_GAP: f32 = 2.0;
@@ -610,7 +609,7 @@ pub(crate) fn workspace_sidebar_bundle(font: Handle<Font>, background: Color) ->
             flex_direction: FlexDirection::Column,
             row_gap: px(12.0),
             padding: UiRect::axes(
-                px(WORKSPACE_SIDEBAR_HORIZONTAL_PADDING),
+                px(0.0),
                 px(WORKSPACE_TREE_VERTICAL_PADDING),
             ),
             ..default()
@@ -798,7 +797,6 @@ pub(crate) fn sync_workspace_sidebar(
                             align_items: AlignItems::Center,
                             column_gap: px(6.0),
                             padding: UiRect::new(px(left_indent), px(8.0), px(0.0), px(0.0)),
-                            border_radius: BorderRadius::all(px(UI_CONTROL_CORNER_RADIUS)),
                             overflow: Overflow::clip(),
                             ..default()
                         },
@@ -879,7 +877,6 @@ pub(crate) fn sync_workspace_sidebar(
                             flex_shrink: 0.0,
                             align_items: AlignItems::Center,
                             padding: UiRect::new(px(left_indent), px(8.0), px(0.0), px(0.0)),
-                            border_radius: BorderRadius::all(px(UI_CONTROL_CORNER_RADIUS)),
                             overflow: Overflow::clip(),
                             ..default()
                         },

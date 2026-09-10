@@ -31,9 +31,15 @@ pub(crate) fn blink_caret(
     time: Res<Time<Real>>,
     mut blink: ResMut<CaretBlinkState>,
     state: Res<EditorState>,
+    windows: Query<&Window>,
     mut redraw: MessageWriter<bevy::window::RequestRedraw>,
     mut last_tick: Local<Duration>,
 ) {
+    let focused = windows.is_empty() || windows.iter().any(|window| window.focused);
+    if !focused {
+        return;
+    }
+
     // The render thread's timestamp can be a frame behind after sleeping. Count
     // the idle gap now, rather than blinking twice when that timestamp catches up.
     let now = time.elapsed().saturating_add(
@@ -151,7 +157,7 @@ pub(crate) fn render_panel_carets(
             panel_caret.kind,
         )));
         if !caret_visible {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         }
 
@@ -303,13 +309,29 @@ pub(crate) fn render_panel_carets(
             caret_top + caret_y_offset
         };
         let caret_top = origin_y + local_caret_top;
-        node.left = px(caret_left);
-        node.top = px(caret_top);
-        node.width = px(panel_caret_width);
-        node.height = px(caret_height);
-        transform.scale = Vec2::ONE;
-        transform.translation = Val2::ZERO;
-        *visibility = Visibility::Visible;
+        let left = px(caret_left);
+        let top = px(caret_top);
+        let width = px(panel_caret_width);
+        let height = px(caret_height);
+        if node.left != left {
+            node.left = left;
+        }
+        if node.top != top {
+            node.top = top;
+        }
+        if node.width != width {
+            node.width = width;
+        }
+        if node.height != height {
+            node.height = height;
+        }
+        if transform.scale != Vec2::ONE {
+            transform.scale = Vec2::ONE;
+        }
+        if transform.translation != Val2::ZERO {
+            transform.translation = Val2::ZERO;
+        }
+        visibility.set_if_neq(Visibility::Visible);
     }
 }
 #[allow(unused_imports)]

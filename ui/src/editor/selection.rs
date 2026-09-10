@@ -478,12 +478,24 @@ pub(crate) fn sync_hovered_processed_link(
     mut state: ResMut<EditorState>,
 ) {
     if state.document_format == DocumentFormat::Canvas {
-        state.hovered_processed_link = None;
+        if state.hovered_processed_link.is_some() {
+            state.hovered_processed_link = None;
+        }
         return;
     }
 
-    state.hovered_processed_link =
-        hovered_processed_link_at_cursor(&panel_query, &processed_text_layout_query, &mut state);
+    let unborrowed = state.bypass_change_detection();
+    let old_plain_scroll = unborrowed.plain_horizontal_scroll;
+    let old_proc_scroll = unborrowed.processed_horizontal_scroll;
+    let next =
+        hovered_processed_link_at_cursor(&panel_query, &processed_text_layout_query, unborrowed);
+    let scroll_changed = (unborrowed.plain_horizontal_scroll - old_plain_scroll).abs() > 0.001
+        || (unborrowed.processed_horizontal_scroll - old_proc_scroll).abs() > 0.001;
+    let link_changed = unborrowed.hovered_processed_link != next;
+    if scroll_changed || link_changed {
+        unborrowed.hovered_processed_link = next;
+        state.set_changed();
+    }
 }
 
 pub(crate) fn hovered_processed_link_at_cursor(
@@ -920,16 +932,28 @@ pub(crate) fn render_selection_rects(
             PanelKind::Processed => processed_rects.get(selection_rect.index).copied(),
         };
         let Some((left, top, width, height)) = rect else {
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         };
 
-        node.left = px(left);
-        node.top = px(top);
-        node.width = px(width);
-        node.height = px(height);
-        color.0 = state.selection_bg_color;
-        *visibility = Visibility::Visible;
+        let left = px(left);
+        let top = px(top);
+        let width = px(width);
+        let height = px(height);
+        if node.left != left {
+            node.left = left;
+        }
+        if node.top != top {
+            node.top = top;
+        }
+        if node.width != width {
+            node.width = width;
+        }
+        if node.height != height {
+            node.height = height;
+        }
+        color.set_if_neq(BackgroundColor(state.selection_bg_color));
+        visibility.set_if_neq(Visibility::Visible);
     }
 }
 

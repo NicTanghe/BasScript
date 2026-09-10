@@ -1,0 +1,112 @@
+{
+  "cpu_units": "100% = one CPU core",
+  "processes": {
+    "217026": {
+      "cwd": "/tmp/basscript-idle-investigation"
+    }
+  },
+  "samples": [
+    {
+      "seconds": 10.0,
+      "active_window": "_NET_ACTIVE_WINDOW(WINDOW): window id # 0x6a00003",
+      "processes": {
+        "217026": {
+          "cpu_percent": 114.3,
+          "top_threads": [
+            {
+              "tid": "217075",
+              "name": "basscript-app",
+              "cpu_percent": 19.7
+            },
+            {
+              "tid": "217059",
+              "name": "Compute Task Po",
+              "cpu_percent": 16.2
+            },
+            {
+              "tid": "217057",
+              "name": "Compute Task Po",
+              "cpu_percent": 15.7
+            },
+            {
+              "tid": "217060",
+              "name": "Compute Task Po",
+              "cpu_percent": 15.3
+            },
+            {
+              "tid": "217062",
+              "name": "Compute Task Po",
+              "cpu_percent": 14.7
+            },
+            {
+              "tid": "217061",
+              "name": "Compute Task Po",
+              "cpu_percent": 13.8
+            },
+            {
+              "tid": "217058",
+              "name": "Compute Task Po",
+              "cpu_percent": 13.5
+            },
+            {
+              "tid": "217026",
+              "name": "basscript-app",
+              "cpu_percent": 5.4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seconds": 10.008,
+      "active_window": "_NET_ACTIVE_WINDOW(WINDOW): window id # 0x6a00003",
+      "processes": {
+        "217026": {
+          "cpu_percent": 98.42,
+          "top_threads": [
+            {
+              "tid": "217075",
+              "name": "basscript-app",
+              "cpu_percent": 16.59
+            },
+            {
+              "tid": "217059",
+              "name": "Compute Task Po",
+              "cpu_percent": 13.69
+            },
+            {
+              "tid": "217061",
+              "name": "Compute Task Po",
+              "cpu_percent": 12.89
+            },
+            {
+              "tid": "217057",
+              "name": "Compute Task Po",
+              "cpu_percent": 12.79
+            },
+            {
+              "tid": "217060",
+              "name": "Compute Task Po",
+              "cpu_percent": 12.79
+            },
+            {
+              "tid": "217062",
+              "name": "Compute Task Po",
+              "cpu_percent": 12.69
+            },
+            {
+              "tid": "217058",
+              "name": "Compute Task Po",
+              "cpu_percent": 12.49
+            },
+            {
+              "tid": "217026",
+              "name": "basscript-app",
+              "cpu_percent": 4.6
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

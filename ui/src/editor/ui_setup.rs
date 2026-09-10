@@ -105,14 +105,15 @@ pub(crate) fn setup(
                             (
                                 Node {
                                     flex_direction: FlexDirection::Row,
-                                    flex_wrap: FlexWrap::Wrap,
+                                    flex_wrap: FlexWrap::NoWrap,
                                     flex_grow: 1.0,
+                                    flex_basis: px(0.0),
                                     min_width: px(0.0),
                                     justify_content: JustifyContent::End,
                                     column_gap: px(6.0),
-                                    row_gap: px(6.0),
                                     ..default()
                                 },
+                                ToolbarControls,
                                 children![
                                     toolbar_button(
                                         font.clone(),
@@ -943,6 +944,15 @@ pub(crate) fn setup_processed_papers(
     }
 }
 
+#[derive(Component)]
+pub(crate) struct ToolbarControls;
+
+#[derive(Component)]
+pub(crate) struct ToolbarButtonLabel {
+    action: ToolbarAction,
+    full: String,
+}
+
 pub(crate) fn toolbar_button(
     font: Handle<Font>,
     label: &str,
@@ -963,6 +973,10 @@ pub(crate) fn toolbar_button(
         ThemedButton,
         children![(
             Text::new(label),
+            ToolbarButtonLabel {
+                action,
+                full: label.to_owned(),
+            },
             TextLayout::no_wrap(),
             TextFont {
                 font: font.into(),
@@ -3715,56 +3729,62 @@ pub(crate) fn sync_glass_surfaces(
 
     if let Ok(mut color) = color_queries.p0().single_mut() {
         // Every ancestor must let alpha through or the desktop remains hidden.
-        color.0 = if state.any_glass_enabled() && native_glass_state.active {
+        let next = if state.any_glass_enabled() && native_glass_state.active {
             Color::NONE
         } else {
             state.app_bg_color
         };
+        color.set_if_neq(BackgroundColor(next));
     }
 
     if let Ok(mut color) = color_queries.p1().single_mut() {
-        color.0 = if settings_glass_active {
+        let next = if settings_glass_active {
             glass_surface_tint(state.top_menu_bg_color)
         } else {
             state.top_menu_bg_color
         };
+        color.set_if_neq(BackgroundColor(next));
     }
 
     if let Ok(mut color) = color_queries.p2().single_mut() {
-        color.0 = if state.explorer_glass && native_glass_state.active {
+        let next = if state.explorer_glass && native_glass_state.active {
             glass_surface_tint(state.explorer_bg_color)
         } else {
             state.explorer_bg_color
         };
+        color.set_if_neq(BackgroundColor(next));
     }
 
     if let Ok(mut color) = color_queries.p6().single_mut() {
-        color.0 = state.app_bg_color;
+        color.set_if_neq(BackgroundColor(state.app_bg_color));
     }
 
     for mut color in color_queries.p7().iter_mut() {
-        color.0 = if settings_glass_active {
+        let next = if settings_glass_active {
             glass_surface_tint(state.app_bg_color)
         } else {
             state.app_bg_color
         };
+        color.set_if_neq(BackgroundColor(next));
     }
 
     for (panel_root, mut color) in color_queries.p3().iter_mut() {
-        color.0 = match panel_root.kind {
+        let next = match panel_root.kind {
             PanelKind::Plain => state.ui_colors.color(UiColor::PlainBackground),
             PanelKind::Processed => Color::NONE,
         };
+        color.set_if_neq(BackgroundColor(next));
     }
 
     for (panel_body, mut color) in color_queries.p4().iter_mut() {
-        color.0 = match panel_body.kind {
+        let next = match panel_body.kind {
             PanelKind::Plain => state.ui_colors.color(UiColor::PlainBackground),
             PanelKind::Processed if processed_glass_active => {
                 glass_surface_tint(state.processed_bg_color)
             }
             PanelKind::Processed => state.processed_bg_color,
         };
+        color.set_if_neq(BackgroundColor(next));
     }
 }
 
@@ -3792,7 +3812,62 @@ pub(crate) fn sync_top_menu_visibility(
     };
 
     for mut node in top_menu_query.iter_mut() {
-        node.display = display;
+        if node.display != display {
+            node.display = display;
+        }
+    }
+}
+
+pub(crate) fn sync_toolbar_layout(
+    mut controls_query: Query<(&ComputedNode, &mut Node), With<ToolbarControls>>,
+    mut buttons_query: Query<&mut Node, (With<ToolbarAction>, Without<ToolbarControls>)>,
+    mut labels_query: Query<(&ToolbarButtonLabel, &mut Text)>,
+) {
+    let Ok((computed, mut controls)) = controls_query.single_mut() else {
+        return;
+    };
+    let available_width = computed.size().x * computed.inverse_scale_factor();
+    if available_width <= 0.0 {
+        return;
+    }
+
+    // Keep every action on one row. At half-screen widths, tighten the gaps;
+    // use shorter labels only when the full labels would no longer fit.
+    let roomy = available_width >= 720.0;
+    let compact_labels = available_width < 640.0;
+    let padding_x = if roomy {
+        12.0
+    } else if compact_labels {
+        6.0
+    } else {
+        8.0
+    };
+    let gap = px(if roomy { 6.0 } else { 4.0 });
+    if controls.column_gap != gap {
+        controls.column_gap = gap;
+    }
+    let padding = UiRect::axes(px(padding_x), px(7.0));
+    for mut button in &mut buttons_query {
+        if button.padding != padding {
+            button.padding = padding;
+        }
+    }
+    for (label, mut text) in &mut labels_query {
+        let next = if compact_labels {
+            match label.action {
+                ToolbarAction::OpenWorkspace => "Open",
+                ToolbarAction::ExportPdf => "PDF",
+                ToolbarAction::StoryQuerySheet => "Story",
+                ToolbarAction::ZoomOut => "-",
+                ToolbarAction::ZoomIn => "+",
+                _ => &label.full,
+            }
+        } else {
+            &label.full
+        };
+        if text.0 != next {
+            **text = next.to_owned();
+        }
     }
 }
 
@@ -3856,6 +3931,10 @@ pub(crate) fn sync_rounded_window_surfaces(
         ),
     >,
 ) {
+    if !state.is_changed() && !screen_state.is_changed() {
+        return;
+    }
+
     let round_window = !state.show_system_titlebar;
     let editor_screen_active = *screen_state.get() == UiScreenState::Editor;
     let editor_top_radius_active = round_window && editor_screen_active && state.top_menu_collapsed;
@@ -3961,11 +4040,14 @@ pub(crate) fn sync_panel_display_mode(
     mut panel_root_query: Query<(&PanelRoot, &mut Node)>,
 ) {
     for (panel_root, mut node) in panel_root_query.iter_mut() {
-        node.display = if state.panel_visible(panel_root.kind) {
+        let display = if state.panel_visible(panel_root.kind) {
             Display::Flex
         } else {
             Display::None
         };
+        if node.display != display {
+            node.display = display;
+        }
     }
 }
 
@@ -4036,39 +4118,60 @@ pub(crate) fn sync_settings_ui(
     >,
 ) {
     if let Ok(mut editor_root) = editor_root_query.single_mut() {
-        editor_root.display = if *screen_state.get() == UiScreenState::Editor {
+        let target = if *screen_state.get() == UiScreenState::Editor {
             Display::Flex
         } else {
             Display::None
         };
+        if editor_root.display != target {
+            editor_root.display = target;
+        }
     }
 
     if let Ok(mut settings_root) = settings_root_query.single_mut() {
-        settings_root.display = if *screen_state.get() == UiScreenState::Settings {
+        let target = if *screen_state.get() == UiScreenState::Settings {
             Display::Flex
         } else {
             Display::None
         };
+        if settings_root.display != target {
+            settings_root.display = target;
+        }
     }
 
     if let Ok(mut keybinds_root) = keybinds_root_query.single_mut() {
-        keybinds_root.display = if *screen_state.get() == UiScreenState::Keybinds {
+        let target = if *screen_state.get() == UiScreenState::Keybinds {
             Display::Flex
         } else {
             Display::None
         };
+        if keybinds_root.display != target {
+            keybinds_root.display = target;
+        }
     }
 
     if let Ok(mut theme_root) = theme_root_query.single_mut() {
-        theme_root.display = if *screen_state.get() == UiScreenState::Theme {
+        let target = if *screen_state.get() == UiScreenState::Theme {
             Display::Flex
         } else {
             Display::None
         };
+        if theme_root.display != target {
+            theme_root.display = target;
+        }
+    }
+
+    // Skip updating all settings, margin, and keybind labels while in the editor.
+    if *screen_state.get() == UiScreenState::Editor {
+        return;
+    }
+
+    if !state.is_changed() && !screen_state.is_changed() {
+        return;
     }
 
     for (label, mut text) in toggle_label_query.iter_mut() {
-        **text = match label.action {
+        let next = match label.action {
             SettingsAction::DialogueDoubleSpaceNewline => format!(
                 "Double space as newline in dialogue (processed modes): {}",
                 if state.dialogue_double_space_newline {
@@ -4122,6 +4225,9 @@ pub(crate) fn sync_settings_ui(
             ),
             _ => String::new(),
         };
+        if text.0 != next {
+            **text = next;
+        }
     }
 
     for (label, mut text) in margin_label_query.iter_mut() {
@@ -4131,15 +4237,21 @@ pub(crate) fn sync_settings_ui(
             MarginEdge::Top => state.page_margin_top,
             MarginEdge::Bottom => state.page_margin_bottom,
         };
-        **text = format!("{value:.1} pt");
+        let next = format!("{value:.1} pt");
+        if text.0 != next {
+            **text = next;
+        }
     }
 
     for (label, mut text) in keybind_label_query.iter_mut() {
-        **text = if state.pending_keybind_capture == Some(label.action) {
+        let next = if state.pending_keybind_capture == Some(label.action) {
             "Press key...".to_string()
         } else {
             binding_display(state.keybinds.binding(label.action))
         };
+        if text.0 != next {
+            **text = next;
+        }
     }
 }
 
@@ -4198,25 +4310,39 @@ pub(crate) fn sync_theme_picker_ui(
     >,
     wheel_size_query: Query<&ComputedNode, With<ThemeHueSatWheel>>,
 ) {
+    let theme_active = *screen_state.get() == UiScreenState::Theme || state.theme_overlay_open;
     for mut container in node_queries.p4().iter_mut() {
-        container.display =
-            if state.theme_overlay_open && *screen_state.get() == UiScreenState::Editor {
-                Display::Flex
-            } else {
-                Display::None
-            };
+        let target = if state.theme_overlay_open && *screen_state.get() == UiScreenState::Editor {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        if container.display != target {
+            container.display = target;
+        }
     }
 
     for mut picker_panel in node_queries.p1().iter_mut() {
-        picker_panel.display = if state.theme_color_picker_open
+        let target = if state.theme_color_picker_open
             && state.theme_category != ThemeCategory::Glass
             && state.theme_category != ThemeCategory::Themes
-            && (state.theme_overlay_open || *screen_state.get() == UiScreenState::Theme)
+            && theme_active
         {
             Display::Flex
         } else {
             Display::None
         };
+        if picker_panel.display != target {
+            picker_panel.display = target;
+        }
+    }
+
+    if !theme_active {
+        return;
+    }
+
+    if !state.is_changed() && !screen_state.is_changed() {
+        return;
     }
 
     for (section, mut node) in node_queries.p5().iter_mut() {

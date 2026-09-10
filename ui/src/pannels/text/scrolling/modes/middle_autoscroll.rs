@@ -183,14 +183,24 @@ pub(crate) fn sync_middle_autoscroll_indicator(
     };
 
     if !middle_autoscroll.is_active() {
-        indicator_node.display = Display::None;
+        if indicator_node.display != Display::None {
+            indicator_node.display = Display::None;
+        }
         return;
     }
 
     let half = MIDDLE_AUTOSCROLL_INDICATOR_SIZE_PX * 0.5;
-    indicator_node.display = Display::Flex;
-    indicator_node.left = px(middle_autoscroll.anchor_cursor_position.x - half);
-    indicator_node.top = px(middle_autoscroll.anchor_cursor_position.y - half);
+    if indicator_node.display != Display::Flex {
+        indicator_node.display = Display::Flex;
+    }
+    let left = px(middle_autoscroll.anchor_cursor_position.x - half);
+    let top = px(middle_autoscroll.anchor_cursor_position.y - half);
+    if indicator_node.left != left {
+        indicator_node.left = left;
+    }
+    if indicator_node.top != top {
+        indicator_node.top = top;
+    }
 }
 #[allow(unused_imports)]
 use super::*;

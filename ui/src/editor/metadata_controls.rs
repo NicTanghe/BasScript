@@ -447,18 +447,27 @@ pub(crate) fn sync_markdown_metadata_controls_ui(
     }
 
     for (slot, mut text, mut text_font) in field_text_query.iter_mut() {
-        **text = markdown_metadata_field_label(
+        let next_label = markdown_metadata_field_label(
             &front_matter.fields,
             slot.field,
             state.markdown_metadata_focus == Some(slot.field),
         );
-        text_font.font_size = FontSize::Px(metrics.font_size);
+        if text.0 != next_label {
+            **text = next_label;
+        }
+        let next_font_size = FontSize::Px(metrics.font_size);
+        if text_font.font_size != next_font_size {
+            text_font.font_size = next_font_size;
+        }
     }
 
     for (dropdown, mut node) in dropdown_root_query.iter_mut() {
         let choices = choice_sets.for_field(dropdown.field);
         let open = state.markdown_metadata_dropdown == Some(dropdown.field) && !choices.is_empty();
-        node.display = if open { Display::Flex } else { Display::None };
+        let target_display = if open { Display::Flex } else { Display::None };
+        if node.display != target_display {
+            node.display = target_display;
+        }
         node.left = px(metrics.dropdown_left(layout.geometry.paper_width, dropdown.field));
         node.top = px(metrics.dropdown_top(dropdown.field));
         node.width = px(metrics.dropdown_width(layout.geometry.paper_width));
@@ -474,12 +483,15 @@ pub(crate) fn sync_markdown_metadata_controls_ui(
     for (option, mut node, mut background) in option_button_query.iter_mut() {
         let choices = choice_sets.for_field(option.field);
         let choice = choices.get(option.slot_index);
-        node.display = if state.markdown_metadata_dropdown == Some(option.field) && choice.is_some()
+        let target_display = if state.markdown_metadata_dropdown == Some(option.field) && choice.is_some()
         {
             Display::Flex
         } else {
             Display::None
         };
+        if node.display != target_display {
+            node.display = target_display;
+        }
         background.0 = if state.markdown_metadata_dropdown == Some(option.field)
             && option.slot_index == state.markdown_metadata_dropdown_highlight
         {
@@ -493,8 +505,14 @@ pub(crate) fn sync_markdown_metadata_controls_ui(
 
     for (slot, mut text, mut text_font) in option_text_query.iter_mut() {
         let choices = choice_sets.for_field(slot.field);
-        **text = choices.get(slot.slot_index).cloned().unwrap_or_default();
-        text_font.font_size = FontSize::Px(metrics.font_size);
+        let next_text = choices.get(slot.slot_index).cloned().unwrap_or_default();
+        if text.0 != next_text {
+            **text = next_text;
+        }
+        let next_font_size = FontSize::Px(metrics.font_size);
+        if text_font.font_size != next_font_size {
+            text_font.font_size = next_font_size;
+        }
     }
 }
 
@@ -502,7 +520,9 @@ pub(crate) fn hide_markdown_metadata_controls(
     root_query: &mut Query<&mut Node, With<MarkdownMetadataPanelRoot>>,
 ) {
     if let Ok(mut root) = root_query.single_mut() {
-        root.display = Display::None;
+        if root.display != Display::None {
+            root.display = Display::None;
+        }
     }
 }
 

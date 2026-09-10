@@ -245,13 +245,17 @@ pub(crate) fn sync_workspace_prompt_ui(
 ) {
     let Some(prompt) = state.workspace_prompt.as_ref() else {
         if let Ok(mut root) = root_query.single_mut() {
-            root.display = Display::None;
+            if root.display != Display::None {
+                root.display = Display::None;
+            }
         }
         return;
     };
 
     if let Ok(mut root) = root_query.single_mut() {
-        root.display = Display::Flex;
+        if root.display != Display::Flex {
+            root.display = Display::Flex;
+        }
     }
 
     let (title, input, hint) = workspace_prompt_text(&state, prompt);
@@ -280,16 +284,28 @@ pub(crate) fn sync_workspace_prompt_ui(
         }),
         _ => None,
     };
+    if link_prompt.is_none() {
+        if let Ok(mut folder_root) = folder_root_query.single_mut() {
+            if folder_root.display != Display::None {
+                folder_root.display = Display::None;
+            }
+        }
+        for (_, _, mut node, _) in folder_option_query.iter_mut() {
+            if node.display != Display::None {
+                node.display = Display::None;
+            }
+        }
+        return;
+    }
+
     if let Ok(mut folder_root) = folder_root_query.single_mut() {
-        folder_root.display = if link_prompt.is_some() {
-            Display::Flex
-        } else {
-            Display::None
-        };
+        if folder_root.display != Display::Flex {
+            folder_root.display = Display::Flex;
+        }
     }
     for (option, interaction, mut node, mut color) in folder_option_query.iter_mut() {
         let index = option.slot;
-        node.display = if link_prompt
+        let display = if link_prompt
             .as_ref()
             .is_some_and(|(_, _, visible)| index < visible.len())
         {
@@ -297,7 +313,10 @@ pub(crate) fn sync_workspace_prompt_ui(
         } else {
             Display::None
         };
-        color.0 = if link_prompt.as_ref().is_some_and(|(_, selected, visible)| {
+        if node.display != display {
+            node.display = display;
+        }
+        let next_color = if link_prompt.as_ref().is_some_and(|(_, selected, visible)| {
             visible
                 .get(index)
                 .is_some_and(|folder_index| *folder_index == *selected)
@@ -309,10 +328,13 @@ pub(crate) fn sync_workspace_prompt_ui(
         } else {
             state.ui_colors.color(UiColor::ButtonBackground)
         };
+        if color.0 != next_color {
+            color.0 = next_color;
+        }
     }
     for (label, mut text) in folder_label_query.iter_mut() {
         let index = label.slot;
-        **text = link_prompt
+        let next_text = link_prompt
             .as_ref()
             .and_then(|(folders, selected, visible)| {
                 let folder_index = *visible.get(index)?;
@@ -338,6 +360,9 @@ pub(crate) fn sync_workspace_prompt_ui(
                 ))
             })
             .unwrap_or_default();
+        if text.0 != next_text {
+            **text = next_text;
+        }
     }
 }
 

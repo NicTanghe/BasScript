@@ -908,11 +908,14 @@ pub(crate) fn sync_story_query_sheet_ui(
 ) {
     let sheet_open = state.story_query_sheet.open;
     if let Ok(mut root) = root_query.single_mut() {
-        root.display = if sheet_open {
+        let display = if sheet_open {
             Display::Flex
         } else {
             Display::None
         };
+        if root.display != display {
+            root.display = display;
+        }
     }
 
     if !sheet_open {

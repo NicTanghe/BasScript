@@ -1,15 +1,19 @@
 use std::{
+    collections::{HashMap, HashSet},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use bevy::{
     ecs::system::SystemParam,
     prelude::*,
-    render::{Render, RenderApp, RenderSystems, render_resource::PipelineCache},
+    render::{
+        Render, RenderApp, RenderSystems,
+        render_resource::{CachedPipeline, PipelineCache, PipelineDescriptor},
+    },
     shader::Shader,
     window::{WindowBackendScaleFactorChanged, WindowResized},
     winit::{UpdateMode, WinitSettings},
@@ -20,6 +24,8 @@ const FOCUSED_IDLE_INTERVAL: Duration = Duration::from_millis(500);
 const UNFOCUSED_IDLE_INTERVAL: Duration = Duration::from_secs(1);
 // Give layout, font atlases and the pipelined renderer time to settle after changes.
 const SETTLE_TIME: Duration = Duration::from_millis(250);
+const PIPELINE_TIMEOUT: Duration = Duration::from_secs(3);
+const MAX_PIPELINE_SETTLE: Duration = Duration::from_secs(4);
 
 /// Keep the native event loop ticking during startup and asynchronous rendering work,
 /// then sleep between input events and the editor's caret/background-task ticks.
@@ -41,36 +47,177 @@ impl Plugin for ReactiveRenderingPlugin {
             .insert_resource(pipelines)
             .init_resource::<RedrawActivity>()
             .add_systems(Last, update_reactive_rendering);
+
+        if std::env::args().any(|arg| arg == "--diagnose-idle") {
+            app.insert_resource(IdleDiagnostics::default())
+                .add_systems(Last, report_idle_diagnostics.after(update_reactive_rendering));
+        }
     }
+}
+
+#[derive(Resource)]
+struct IdleDiagnostics {
+    since: Instant,
+    updates: usize,
+    asset_events: usize,
+    redraw_requests: usize,
+}
+
+impl Default for IdleDiagnostics {
+    fn default() -> Self {
+        Self {
+            since: Instant::now(),
+            updates: 0,
+            asset_events: 0,
+            redraw_requests: 0,
+        }
+    }
+}
+
+fn report_idle_diagnostics(
+    mut diagnostic: ResMut<IdleDiagnostics>,
+    pending: Res<PendingPipelines>,
+    settings: Res<WinitSettings>,
+    windows: Query<&Window>,
+    changed_nodes: Query<(), Changed<Node>>,
+    changed_text: Query<(), Or<(Changed<Text>, Changed<TextSpan>)>>,
+    changed_fonts: Query<(), Changed<TextFont>>,
+    mut fonts: MessageReader<AssetEvent<Font>>,
+    mut images: MessageReader<AssetEvent<Image>>,
+    mut redraws: MessageReader<bevy::window::RequestRedraw>,
+) {
+    diagnostic.updates += 1;
+    diagnostic.asset_events += fonts.read().count() + images.read().count();
+    diagnostic.redraw_requests += redraws.read().count();
+    let elapsed = diagnostic.since.elapsed();
+    if elapsed < Duration::from_secs(5) {
+        return;
+    }
+    let focused = windows.iter().any(|window| window.focused);
+    info!(
+        "[idle] {:.1} updates/s; focused={focused}; mode={:?}; pipelines_pending={}; asset_events={}; redraw_requests={}; changed_nodes={}; changed_text={}; changed_fonts={}",
+        diagnostic.updates as f64 / elapsed.as_secs_f64(),
+        settings.update_mode(focused),
+        pending.0.load(Ordering::Relaxed),
+        diagnostic.asset_events,
+        diagnostic.redraw_requests,
+        changed_nodes.iter().count(),
+        changed_text.iter().count(),
+        changed_fonts.iter().count(),
+    );
+    *diagnostic = IdleDiagnostics::default();
 }
 
 #[derive(Resource, Clone, Default)]
 struct PendingPipelines(Arc<AtomicBool>);
 
-fn track_pending_pipelines(cache: Res<PipelineCache>, pending: Res<PendingPipelines>) {
-    pending.0.store(
-        cache.waiting_pipelines().next().is_some(),
-        Ordering::Relaxed,
-    );
+fn is_actionable_pipeline(pipeline: &CachedPipeline) -> bool {
+    match &pipeline.descriptor {
+        PipelineDescriptor::RenderPipelineDescriptor(desc) => {
+            if desc.vertex.shader.id() == AssetId::default() {
+                return false;
+            }
+            if let Some(fragment) = &desc.fragment {
+                if fragment.shader.id() == AssetId::default() {
+                    return false;
+                }
+            }
+            true
+        }
+        PipelineDescriptor::ComputePipelineDescriptor(desc) => {
+            // Filter out Bevy 0.19's invalid sparse buffer update pipeline on GL/WebGL2
+            if desc.label.as_deref() == Some("sparse buffer update pipeline") {
+                return false;
+            }
+            if desc.shader.id() == AssetId::default() {
+                return false;
+            }
+            true
+        }
+    }
+}
+
+#[derive(Default)]
+struct PipelineTrackerState {
+    first_seen: HashMap<usize, Instant>,
+    diagnose_idle: bool,
+    last_diagnostic: Option<Instant>,
+}
+
+fn track_pending_pipelines(
+    cache: Res<PipelineCache>,
+    pending: Res<PendingPipelines>,
+    mut state: Local<PipelineTrackerState>,
+) {
+    let now = Instant::now();
+    let waiting: HashSet<usize> = cache.waiting_pipelines().collect();
+
+    // Clean up pipelines that are no longer waiting
+    state.first_seen.retain(|id, _| waiting.contains(id));
+
+    let mut any_pending = false;
+    for (index, pipeline) in cache.pipelines().enumerate() {
+        if waiting.contains(&index) && is_actionable_pipeline(pipeline) {
+            let first_seen = *state.first_seen.entry(index).or_insert(now);
+            if now.duration_since(first_seen) < PIPELINE_TIMEOUT {
+                any_pending = true;
+            }
+        }
+    }
+
+    pending.0.store(any_pending, Ordering::Relaxed);
+
+    if state.last_diagnostic.is_none() {
+        state.diagnose_idle = std::env::args().any(|arg| arg == "--diagnose-idle");
+        state.last_diagnostic = Some(now);
+    }
+    if state.diagnose_idle
+        && state
+            .last_diagnostic
+            .is_some_and(|t| t.elapsed() >= Duration::from_secs(5))
+    {
+        info!(
+            "[idle] render pipeline tracker ran; waiting={waiting:?}; actionable_pending={any_pending}"
+        );
+        for (index, pipeline) in cache.pipelines().enumerate() {
+            if waiting.contains(&index) {
+                info!(
+                    "[idle] pipeline {index}: {:?}; descriptor={:?}",
+                    pipeline.state, pipeline.descriptor
+                );
+            }
+        }
+        state.last_diagnostic = Some(now);
+    }
 }
 
 #[derive(Resource)]
 struct RedrawActivity {
     settle_until: Duration,
+    pipeline_settle_start: Option<Duration>,
 }
 
 impl Default for RedrawActivity {
     fn default() -> Self {
         Self {
             settle_until: SETTLE_TIME,
+            pipeline_settle_start: None,
         }
     }
 }
 
 impl RedrawActivity {
     fn update(&mut self, now: Duration, changed: bool, pipelines_pending: bool) -> bool {
-        if changed || pipelines_pending {
+        if changed {
             self.settle_until = now.saturating_add(SETTLE_TIME);
+            self.pipeline_settle_start = None;
+        } else if pipelines_pending {
+            let start = *self.pipeline_settle_start.get_or_insert(now);
+            if now.saturating_sub(start) < MAX_PIPELINE_SETTLE {
+                self.settle_until = now.saturating_add(SETTLE_TIME);
+            }
+        } else {
+            self.pipeline_settle_start = None;
         }
         now < self.settle_until
     }
@@ -273,5 +420,48 @@ mod tests {
         pending.0.store(false, Ordering::Relaxed);
         advance(&mut app, SETTLE_TIME);
         assert_activity(&app, false);
+    }
+
+    #[test]
+    fn pipeline_settle_is_capped_when_no_user_changes() {
+        let mut activity = RedrawActivity::default();
+        let step = Duration::from_millis(500);
+        let mut now = Duration::ZERO;
+        while now < MAX_PIPELINE_SETTLE {
+            assert!(activity.update(now, false, true));
+            now += step;
+        }
+        // Once past MAX_PIPELINE_SETTLE + SETTLE_TIME without user changes, it must settle to idle
+        assert!(!activity.update(now + SETTLE_TIME, false, true));
+    }
+
+    #[test]
+    fn unactionable_sparse_buffer_pipeline_is_filtered() {
+        use bevy::material::descriptor::ComputePipelineDescriptor;
+        use bevy::render::render_resource::CachedPipelineState;
+
+        let dummy_pipeline = CachedPipeline {
+            descriptor: PipelineDescriptor::ComputePipelineDescriptor(Box::new(
+                ComputePipelineDescriptor {
+                    label: Some("sparse buffer update pipeline".into()),
+                    shader: Handle::default(),
+                    ..default()
+                },
+            )),
+            state: CachedPipelineState::Queued,
+        };
+        assert!(!is_actionable_pipeline(&dummy_pipeline));
+
+        let empty_shader_pipeline = CachedPipeline {
+            descriptor: PipelineDescriptor::ComputePipelineDescriptor(Box::new(
+                ComputePipelineDescriptor {
+                    label: Some("custom compute".into()),
+                    shader: Handle::default(),
+                    ..default()
+                },
+            )),
+            state: CachedPipelineState::Queued,
+        };
+        assert!(!is_actionable_pipeline(&empty_shader_pipeline));
     }
 }

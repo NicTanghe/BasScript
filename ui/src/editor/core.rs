@@ -315,6 +315,7 @@ impl Plugin for UiPlugin {
                 sync_window_chrome,
                 sync_glass_surfaces.after(sync_window_chrome),
                 sync_top_menu_visibility,
+                sync_toolbar_layout,
                 sync_status_line_visibility,
                 sync_rounded_window_surfaces.after(sync_status_line_visibility),
             )

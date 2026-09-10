@@ -358,7 +358,9 @@ pub(crate) fn sync_link_autocomplete_ui(
         .as_ref()
         .filter(|active| !active.suggestions.is_empty())
     else {
-        root.display = Display::None;
+        if root.display != Display::None {
+            root.display = Display::None;
+        }
         return;
     };
 
@@ -369,7 +371,9 @@ pub(crate) fn sync_link_autocomplete_ui(
         .saturating_sub(visible_start)
         .min(LINK_AUTOCOMPLETE_VISIBLE_ROWS);
     if visible_count == 0 {
-        root.display = Display::None;
+        if root.display != Display::None {
+            root.display = Display::None;
+        }
         return;
     }
 
