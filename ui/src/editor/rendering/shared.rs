@@ -280,6 +280,7 @@ pub(crate) fn render_editor(
             state.processed_paginated,
             panel_paper.slot,
         ));
+        node.border_radius = BorderRadius::all(px(PAGE_CORNER_RADIUS * state.zoom));
         node.overflow = if state.processed_paginated {
             Overflow::clip()
         } else {

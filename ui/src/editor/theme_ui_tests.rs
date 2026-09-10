@@ -52,6 +52,9 @@ fn theme_popup_is_opaque_and_stacks_above_document_content() {
             .disable::<bevy::state::app::StatesPlugin>()
             .disable::<bevy::winit::WinitPlugin>()
             .disable::<bevy::render::RenderPlugin>()
+            .disable::<bevy::core_pipeline::CorePipelinePlugin>()
+            .disable::<bevy::sprite_render::SpriteRenderPlugin>()
+            .disable::<bevy::ui_render::UiRenderPlugin>()
             .disable::<bevy::log::LogPlugin>(),
     );
     app.world_mut()

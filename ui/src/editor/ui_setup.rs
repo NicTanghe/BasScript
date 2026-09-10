@@ -82,7 +82,8 @@ pub(crate) fn setup(
                             flex_direction: FlexDirection::Row,
                             justify_content: JustifyContent::SpaceBetween,
                             align_items: AlignItems::Center,
-                            padding: UiRect::axes(px(12.0), px(8.0)),
+                            column_gap: px(20.0),
+                            padding: UiRect::axes(px(16.0), px(10.0)),
                             ..default()
                         },
                         BackgroundColor(state.top_menu_bg_color),
@@ -90,9 +91,13 @@ pub(crate) fn setup(
                         children![
                             (
                                 Text::new("BasScript"),
+                                Node {
+                                    flex_shrink: 0.0,
+                                    ..default()
+                                },
                                 TextFont {
                                     font: font.clone().into(),
-                                    font_size: FontSize::Px(14.0),
+                                    font_size: FontSize::Px(15.0),
                                     ..default()
                                 },
                                 ThemedText::Main,
@@ -100,7 +105,12 @@ pub(crate) fn setup(
                             (
                                 Node {
                                     flex_direction: FlexDirection::Row,
-                                    column_gap: px(8.0),
+                                    flex_wrap: FlexWrap::Wrap,
+                                    flex_grow: 1.0,
+                                    min_width: px(0.0),
+                                    justify_content: JustifyContent::End,
+                                    column_gap: px(6.0),
+                                    row_gap: px(6.0),
                                     ..default()
                                 },
                                 children![
@@ -942,15 +952,21 @@ pub(crate) fn toolbar_button(
         Button,
         action,
         Node {
-            padding: UiRect::axes(px(12.0), px(6.0)),
+            min_height: px(32.0),
+            flex_shrink: 0.0,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            padding: UiRect::axes(px(12.0), px(7.0)),
+            border_radius: BorderRadius::all(px(UI_CONTROL_CORNER_RADIUS)),
             ..default()
         },
         ThemedButton,
         children![(
             Text::new(label),
+            TextLayout::no_wrap(),
             TextFont {
                 font: font.into(),
-                font_size: FontSize::Px(13.0),
+                font_size: FontSize::Px(12.5),
                 ..default()
             },
             ThemedText::Main,
@@ -963,7 +979,10 @@ pub(crate) fn settings_toggle_button(font: Handle<Font>, action: SettingsAction)
         Button,
         action,
         Node {
-            padding: UiRect::axes(px(12.0), px(6.0)),
+            min_height: px(32.0),
+            align_items: AlignItems::Center,
+            padding: UiRect::axes(px(12.0), px(7.0)),
+            border_radius: BorderRadius::all(px(UI_CONTROL_CORNER_RADIUS)),
             ..default()
         },
         ThemedButton,
@@ -990,7 +1009,10 @@ pub(crate) fn settings_action_button(
         Button,
         action,
         Node {
-            padding: UiRect::axes(px(12.0), px(6.0)),
+            min_height: px(32.0),
+            align_items: AlignItems::Center,
+            padding: UiRect::axes(px(12.0), px(7.0)),
+            border_radius: BorderRadius::all(px(UI_CONTROL_CORNER_RADIUS)),
             ..default()
         },
         ThemedButton,
